@@ -1,13 +1,13 @@
 services:
-  # PHP 8.4 with FPM
-  app:
+  # PHP 8.4 with FPM (API Backend)
+  api:
     build:
       context: .
       dockerfile: php/Dockerfile
       args:
         USER_ID: ${USER_ID:-1000}
         GROUP_ID: ${GROUP_ID:-1000}
-    container_name: ${APP_NAME:-laravel}_app
+    container_name: ${APP_NAME:-laravel}_api
     restart: unless-stopped
     working_dir: /var/www/html
     volumes:
@@ -24,21 +24,21 @@ services:
     environment:
       PHP_IDE_CONFIG: serverName=Docker
 
-  # Nginx Web Server
+  # Nginx (API Gateway)
   nginx:
     image: nginx:alpine
     container_name: ${APP_NAME:-laravel}_nginx
     restart: unless-stopped
     ports:
-      - "${APP_PORT:-8080}:80"
+      - "${APP_PORT:-8000}:80"
     volumes:
       - ../../:/var/www/html:ro
-      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/api.conf:/etc/nginx/conf.d/default.conf:ro
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     networks:
       - app-network
     depends_on:
-      - app
+      - api
 
   # PostgreSQL 17
   pgsql:
@@ -89,46 +89,56 @@ services:
     networks:
       - app-network
 
-  # Node.js for Vite - DISABLED: Run frontend on host instead
-  # Run: pnpm install && pnpm dev
-  # node:
-  #   image: node:22-slim
-  #   container_name: ${APP_NAME:-laravel}_node
-  #   restart: unless-stopped
-  #   working_dir: /var/www/html
-  #   environment:
-  #     - NODE_ENV=development
-  #     - CHOKIDAR_USEPOLLING=true
-  #   volumes:
-  #     - ../../:/var/www/html
-  #     - node_modules:/var/www/html/node_modules
-  #   ports:
-  #     - "${VITE_PORT:-5173}:5173"
-  #   command: sh -c "corepack enable && pnpm install && pnpm dev --host 0.0.0.0"
-  #   networks:
-  #     - app-network
-
-  # Worker (Queue + Scheduler)
-  worker:
+  # Queue Worker
+  queue-worker:
     build:
       context: .
       dockerfile: php/Dockerfile
       args:
         USER_ID: ${USER_ID:-1000}
         GROUP_ID: ${GROUP_ID:-1000}
-    container_name: ${APP_NAME:-laravel}_worker
+    container_name: ${APP_NAME:-laravel}_queue_worker
+    restart: unless-stopped
+    working_dir: /var/www/html
+    volumes:
+      - ../../:/var/www/html
+      - ./php/php.ini:/usr/local/etc/php/conf.d/custom.ini
+    command: php artisan queue:work --tries=3 --timeout=90 --sleep=3 --max-jobs=1000
+    networks:
+      - app-network
+    depends_on:
+      pgsql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      PHP_IDE_CONFIG: serverName=Docker
+
+  # Scheduler
+  scheduler:
+    build:
+      context: .
+      dockerfile: php/Dockerfile
+      args:
+        USER_ID: ${USER_ID:-1000}
+        GROUP_ID: ${GROUP_ID:-1000}
+    container_name: ${APP_NAME:-laravel}_scheduler
     restart: unless-stopped
     working_dir: /var/www/html
     volumes:
       - ../../:/var/www/html
       - ./php/php.ini:/usr/local/etc/php/conf.d/custom.ini
     command: >
-      sh -c "php artisan queue:work --tries=3 --timeout=90 &
-             while true; do php artisan schedule:run --verbose --no-interaction; sleep 60; done"
+      sh -c "while true; do php artisan schedule:run --verbose --no-interaction && sleep 60; done"
     networks:
       - app-network
     depends_on:
-      - app
+      pgsql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      PHP_IDE_CONFIG: serverName=Docker
 
 networks:
   app-network:

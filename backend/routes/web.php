@@ -14,5 +14,13 @@ use Illuminate\Support\Facades\Route;
 */
 
 Route::get('/', function () {
-    return view('welcome');
+    return response()->json([
+        'status' => 'ok',
+        'message' => 'API is running',
+        'app' => config('app.name'),
+        'version' => config('app.version'),
+        'build' => config('app.build'),
+        'environment' => config('app.env'),
+        'timestamp' => now()->toIso8601String(),
+    ]);
 });

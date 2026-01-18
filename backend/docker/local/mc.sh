@@ -59,13 +59,7 @@ cmd_help() {
     echo ""
     echo "Dependencies:"
     echo "  composer <cmd>  Run composer command"
-    echo "  pnpm <cmd>      Run pnpm command (on host)"
-    echo "  install         Install all dependencies"
-    echo ""
-    echo "Frontend (runs on host, not Docker):"
-    echo "  dev             Start Vite dev server"
-    echo "  front           Alias for 'dev'"
-    echo "  front-install   Install frontend dependencies"
+    echo "  install         Install PHP dependencies"
     echo ""
     echo "Setup:"
     echo "  setup           Initial setup (build, start, install deps)"
@@ -80,10 +74,8 @@ cmd_up() {
     success "Containers started!"
     echo ""
     echo "🌐 Access points:"
-    echo "   - Application: http://localhost:${APP_PORT:-8080}"
+    echo "   - API:         http://localhost:${APP_PORT:-8080}"
     echo "   - Mailpit:     http://localhost:${FORWARD_MAILPIT_DASHBOARD_PORT:-8025}"
-    echo ""
-    warn "Frontend runs on host. Start it with: ./mc.sh dev"
 }
 
 cmd_down() {
@@ -127,7 +119,7 @@ cmd_clean() {
 }
 
 cmd_shell() {
-    docker compose exec app sh
+    docker compose exec api sh
 }
 
 cmd_psql() {
@@ -139,94 +131,73 @@ cmd_redis() {
 }
 
 cmd_artisan() {
-    docker compose exec app php artisan "$@"
+    docker compose exec api php artisan "$@"
 }
 
 cmd_migrate() {
-    docker compose exec app php artisan migrate
+    docker compose exec api php artisan migrate
 }
 
 cmd_fresh() {
-    docker compose exec app php artisan migrate:fresh --seed
+    docker compose exec api php artisan migrate:fresh --seed
 }
 
 cmd_seed() {
-    docker compose exec app php artisan db:seed
+    docker compose exec api php artisan db:seed
 }
 
 cmd_test() {
-    docker compose exec app php artisan test "$@"
+    docker compose exec api php artisan test "$@"
 }
 
 cmd_tinker() {
-    docker compose exec app php artisan tinker
+    docker compose exec api php artisan tinker
 }
 
 cmd_cache() {
     info "Clearing caches..."
-    docker compose exec app php artisan config:clear
-    docker compose exec app php artisan cache:clear
-    docker compose exec app php artisan route:clear
-    docker compose exec app php artisan view:clear
+    docker compose exec api php artisan config:clear
+    docker compose exec api php artisan cache:clear
+    docker compose exec api php artisan route:clear
+    docker compose exec api php artisan view:clear
     success "All caches cleared!"
 }
 
 cmd_composer() {
-    docker compose exec app composer "$@"
-}
-
-cmd_pnpm() {
-    cd ../../
-    pnpm "$@"
-}
-
-cmd_front_install() {
-    info "Installing frontend dependencies on host..."
-    cd ../../
-    pnpm install
-    success "Frontend dependencies installed!"
-}
-
-cmd_dev() {
-    info "Starting Vite dev server on host..."
-    cd ../../
-    NODE_OPTIONS="--max-old-space-size=8192" pnpm dev
+    docker compose exec api composer "$@"
 }
 
 cmd_install() {
     info "Installing PHP dependencies..."
-    docker compose exec app composer install
-    info "Installing Node dependencies on host..."
-    cd ../../
-    pnpm install
-    success "All dependencies installed!"
+    docker compose exec api composer install
+    success "PHP dependencies installed!"
 }
 
 cmd_setup() {
     check_docker
-    
+
     info "Setting up Docker environment..."
-    
+
     # Copy .env if needed
     if [ ! -f .env ]; then
         cp .env.example .env
         success ".env file created"
     fi
-    
+
     # Build and start
     info "Building containers..."
     docker compose build
-    
+
     info "Starting containers..."
     docker compose up -d
-    
+
     # Wait for services
     info "Waiting for services..."
     sleep 5
-    
+
     cmd_install
     cmd_init
-    
+
     success "Setup complete!"
     cmd_up
 }
@@ -239,8 +210,8 @@ cmd_init() {
         cp ../../.env.example ../../.env 2>/dev/null || true
     fi
 
-    docker compose exec app php artisan key:generate --force
-    docker compose exec app php artisan migrate --force
+    docker compose exec api php artisan key:generate --force
+    docker compose exec api php artisan migrate --force
 
     success "Laravel initialized!"
 }
@@ -266,13 +237,9 @@ case "${1:-help}" in
     tinker) cmd_tinker ;;
     cache) cmd_cache ;;
     composer) shift; cmd_composer "$@" ;;
-    pnpm) shift; cmd_pnpm "$@" ;;
     install) cmd_install ;;
     setup) cmd_setup ;;
     init) cmd_init ;;
-    dev) cmd_dev ;;
-    front) cmd_dev ;;
-    front-install) cmd_front_install ;;
     *) error "Unknown command: $1. Run './mc.sh help' for usage." ;;
 esac
 
