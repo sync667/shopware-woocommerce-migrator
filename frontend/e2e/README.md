@@ -31,7 +31,7 @@ Tests are organized by page/feature:
 
 The Playwright configuration is in `playwright.config.ts`. Key settings:
 - Tests run against `http://localhost:4173` (preview server)
-- The app is automatically built and served before tests run
+- You must build the app first with `npm run build`; then the preview server is started automatically before tests run
 - Only Chromium browser is configured (can be extended for Firefox, Safari)
 - Tests run in headless mode by default
 

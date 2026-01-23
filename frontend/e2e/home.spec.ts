@@ -31,7 +31,7 @@ test.describe('Home Page', () => {
     await page.locator('a:has-text("Login")').click();
     
     // Verify we're on the login page
-    await expect(page).toHaveURL('/login');
+    await expect(page).toHaveURL(/\/login$/);
     await expect(page.locator('h1:has-text("Login")')).toBeVisible();
   });
 
@@ -42,7 +42,7 @@ test.describe('Home Page', () => {
     await page.locator('a:has-text("Register")').click();
     
     // Verify we're on the register page
-    await expect(page).toHaveURL('/register');
+    await expect(page).toHaveURL(/\/register$/);
     await expect(page.locator('h1:has-text("Register")')).toBeVisible();
   });
 });
