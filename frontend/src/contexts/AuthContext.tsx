@@ -9,6 +9,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     useEffect(() => {
         let isMounted = true;
+        let timeoutId: ReturnType<typeof setTimeout> | null = null;
         const token = localStorage.getItem('auth_token');
 
         if (token) {
@@ -29,16 +30,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 });
         } else {
             // Use setTimeout to avoid synchronous setState in effect
-            const timeout = setTimeout(() => {
+            timeoutId = setTimeout(() => {
                 if (isMounted) {
                     setIsLoading(false);
                 }
             }, 0);
-            return () => clearTimeout(timeout);
         }
 
         return () => {
             isMounted = false;
+            if (timeoutId) {
+                clearTimeout(timeoutId);
+            }
         };
     }, []);
 

@@ -78,6 +78,17 @@ jobs:
         working-directory: backend
         run: php artisan key:generate
 
+      - name: Run database migrations
+        working-directory: backend
+        env:
+          DB_CONNECTION: pgsql
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_DATABASE: laravel_testing
+          DB_USERNAME: laravel
+          DB_PASSWORD: secret
+        run: php artisan migrate --force
+
       - name: Run Pint (code style)
         working-directory: backend
         run: vendor/bin/pint --test

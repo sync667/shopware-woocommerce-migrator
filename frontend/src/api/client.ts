@@ -25,11 +25,18 @@ apiClient.interceptors.request.use(
     }
 );
 
+// Endpoints that should not trigger automatic redirect on 401
+const AUTH_ENDPOINTS = ['/login', '/register'];
+
 // Response interceptor to handle auth errors
 apiClient.interceptors.response.use(
     (response) => response,
     (error) => {
-        if (error.response?.status === 401) {
+        const requestUrl = error.config?.url || '';
+        const isAuthEndpoint = AUTH_ENDPOINTS.some((endpoint) => requestUrl.includes(endpoint));
+        const isOnLoginPage = window.location.pathname === '/login';
+
+        if (error.response?.status === 401 && !isAuthEndpoint && !isOnLoginPage) {
             localStorage.removeItem('auth_token');
             window.location.href = '/login';
         }
