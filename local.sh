@@ -83,7 +83,7 @@ cmd_back() {
 
 # Frontend commands
 cmd_front() {
-    local frontend_dir="$PROJECT_ROOT/fontend"
+    local frontend_dir="$PROJECT_ROOT/frontend"
     
     if [ ! -d "$frontend_dir" ]; then
         error "Frontend directory not found at: $frontend_dir"

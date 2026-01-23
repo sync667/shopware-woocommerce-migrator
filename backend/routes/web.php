@@ -24,3 +24,8 @@ Route::get('/', function () {
         'timestamp' => now()->toIso8601String(),
     ]);
 });
+
+// Ziggy route list for frontend
+Route::get('/api/ziggy', function () {
+    return response()->json(app('ziggy')->toArray());
+})->name('ziggy');
