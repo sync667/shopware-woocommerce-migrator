@@ -9,7 +9,12 @@
         "guzzlehttp/guzzle": "^7.2",
         "laravel/framework": "^v12.45.1",
         "laravel/horizon": "^5.42",
-        "laravel/sanctum": "^v4.2.2"
+        "laravel/sanctum": "^v4.2.2",
+        "owen-it/laravel-auditing": "^14.0",
+        "spatie/laravel-data": "^4.19",
+        "spatie/laravel-medialibrary": "^11.17",
+        "spatie/laravel-permission": "^6.24",
+        "tightenco/ziggy": "^2.6"
     },
     "require-dev": {
         "fakerphp/faker": "^v1.24.1",
