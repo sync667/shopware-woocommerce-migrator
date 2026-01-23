@@ -1,11 +1,13 @@
 import { test, expect } from '@playwright/test';
 
+const APP_TITLE = 'frontend';
+
 test.describe('Home Page', () => {
   test('should load and display the home page', async ({ page }) => {
     await page.goto('/');
     
     // Check that the page loads
-    await expect(page).toHaveTitle('frontend');
+    await expect(page).toHaveTitle(APP_TITLE);
     
     // Check that the main heading is visible
     await expect(page.locator('h1:has-text("Welcome to the App")')).toBeVisible();

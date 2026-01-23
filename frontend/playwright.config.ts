@@ -1,5 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
+const WEB_SERVER_TIMEOUT = 120 * 1000;
+
 /**
  * See https://playwright.dev/docs/test-configuration.
  */
@@ -36,6 +38,6 @@ export default defineConfig({
     command: 'npm run preview',
     url: 'http://localhost:4173',
     reuseExistingServer: !process.env.CI,
-    timeout: 120 * 1000,
+    timeout: WEB_SERVER_TIMEOUT,
   },
 });
