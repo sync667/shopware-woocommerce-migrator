@@ -23,6 +23,18 @@ const ICONS = {
     review: Star,
 };
 
+const LABELS = {
+    manufacturer: 'Manufacturers',
+    tax: 'Taxes',
+    category: 'Categories',
+    product: 'Products',
+    variation: 'Variations',
+    customer: 'Customers',
+    order: 'Orders',
+    coupon: 'Coupons',
+    review: 'Reviews',
+};
+
 export default function StepCard({ entityType, counts = {}, isActive = false }) {
     const Icon = ICONS[entityType] || Package;
     const success = counts.success || 0;
@@ -31,7 +43,7 @@ export default function StepCard({ entityType, counts = {}, isActive = false }) 
     const running = counts.running || 0;
     const skipped = counts.skipped || 0;
     const total = success + failed + pending + running + skipped;
-    const label = entityType.charAt(0).toUpperCase() + entityType.slice(1) + 's';
+    const label = LABELS[entityType] || entityType.charAt(0).toUpperCase() + entityType.slice(1) + 's';
 
     return (
         <div

@@ -35,8 +35,8 @@ test.describe('Migration Show Page', () => {
 
         const entityTypes = [
             'Manufacturers',
-            'Taxs',
-            'Categorys',
+            'Taxes',
+            'Categories',
             'Products',
             'Variations',
             'Customers',

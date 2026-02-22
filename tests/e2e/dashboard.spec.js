@@ -22,8 +22,8 @@ test.describe('Dashboard Page', () => {
 
         const entityTypes = [
             'Manufacturers',
-            'Taxs',
-            'Categorys',
+            'Taxes',
+            'Categories',
             'Products',
             'Customers',
             'Orders',
