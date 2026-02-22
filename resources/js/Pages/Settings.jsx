@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { router } from '@inertiajs/react';
 import ConnectionStatus from '../Components/ConnectionStatus';
 import { ArrowLeft, Play, FlaskConical, Loader2 } from 'lucide-react';
 

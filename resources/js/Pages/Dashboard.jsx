@@ -1,8 +1,5 @@
-import { useState } from 'react';
-import { router } from '@inertiajs/react';
 import StepCard from '../Components/StepCard';
-import ConnectionStatus from '../Components/ConnectionStatus';
-import { Play, FlaskConical, Settings } from 'lucide-react';
+import { FlaskConical, Settings } from 'lucide-react';
 
 const ENTITY_TYPES = [
     'manufacturer',

@@ -64,7 +64,7 @@ function StatusBadge({ status }) {
 export default function Show({ migrationId }) {
     const [showWarnings, setShowWarnings] = useState(false);
 
-    const { data, isLoading } = useQuery({
+    const { data } = useQuery({
         queryKey: ['migration-status', migrationId],
         queryFn: async () => {
             const res = await fetch(`/api/migrations/${migrationId}/status`);
