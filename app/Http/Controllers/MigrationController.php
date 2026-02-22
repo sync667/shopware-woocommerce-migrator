@@ -100,6 +100,62 @@ class MigrationController extends Controller
             ->limit(20)
             ->get(['entity_type', 'shopware_id', 'message', 'created_at']);
 
+        $recentWarnings = $migration->logs()
+            ->where('level', 'warning')
+            ->orderByDesc('created_at')
+            ->limit(10)
+            ->get(['entity_type', 'shopware_id', 'message', 'created_at']);
+
+        // Summary stats
+        $totalSuccess = 0;
+        $totalFailed = 0;
+        $totalPending = 0;
+        $totalRunning = 0;
+        $totalSkipped = 0;
+
+        foreach ($counts as $entityCounts) {
+            $totalSuccess += $entityCounts['success'] ?? 0;
+            $totalFailed += $entityCounts['failed'] ?? 0;
+            $totalPending += $entityCounts['pending'] ?? 0;
+            $totalRunning += $entityCounts['running'] ?? 0;
+            $totalSkipped += $entityCounts['skipped'] ?? 0;
+        }
+
+        $totalAll = $totalSuccess + $totalFailed + $totalPending + $totalRunning + $totalSkipped;
+
+        // Elapsed time and ETA
+        $elapsedSeconds = null;
+        $etaSeconds = null;
+        if ($migration->started_at) {
+            $endTime = $migration->finished_at ?? now();
+            $elapsedSeconds = (int) $migration->started_at->diffInSeconds($endTime);
+
+            if ($totalSuccess > 0 && $totalPending + $totalRunning > 0 && $elapsedSeconds > 0) {
+                $rate = $totalSuccess / $elapsedSeconds;
+                $etaSeconds = $rate > 0 ? (int) ceil(($totalPending + $totalRunning) / $rate) : null;
+            }
+        }
+
+        // Current step determination
+        $stepOrder = ['manufacturer', 'tax', 'category', 'product', 'variation', 'customer', 'order', 'coupon', 'review'];
+        $currentStep = null;
+        if ($migration->status === 'running') {
+            foreach ($stepOrder as $step) {
+                $stepCounts = $counts[$step] ?? [];
+                $hasRunning = ($stepCounts['running'] ?? 0) > 0;
+                $hasPending = ($stepCounts['pending'] ?? 0) > 0;
+                if ($hasRunning || $hasPending) {
+                    $currentStep = $step;
+                    break;
+                }
+            }
+        }
+
+        // Last activity
+        $lastLog = $migration->logs()
+            ->orderByDesc('created_at')
+            ->first(['message', 'entity_type', 'level', 'created_at']);
+
         return response()->json([
             'migration' => [
                 'id' => $migration->id,
@@ -108,9 +164,30 @@ class MigrationController extends Controller
                 'is_dry_run' => $migration->is_dry_run,
                 'started_at' => $migration->started_at?->toIso8601String(),
                 'finished_at' => $migration->finished_at?->toIso8601String(),
+                'created_at' => $migration->created_at->toIso8601String(),
             ],
             'counts' => $counts,
+            'summary' => [
+                'total' => $totalAll,
+                'success' => $totalSuccess,
+                'failed' => $totalFailed,
+                'pending' => $totalPending,
+                'running' => $totalRunning,
+                'skipped' => $totalSkipped,
+            ],
+            'timing' => [
+                'elapsed_seconds' => $elapsedSeconds,
+                'eta_seconds' => $etaSeconds,
+            ],
+            'current_step' => $currentStep,
+            'last_activity' => $lastLog ? [
+                'message' => $lastLog->message,
+                'entity_type' => $lastLog->entity_type,
+                'level' => $lastLog->level,
+                'created_at' => $lastLog->created_at?->toIso8601String(),
+            ] : null,
             'recent_errors' => $recentErrors,
+            'recent_warnings' => $recentWarnings,
         ]);
     }
 

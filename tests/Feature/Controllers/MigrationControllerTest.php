@@ -152,9 +152,14 @@ class MigrationControllerTest extends TestCase
 
         $response->assertOk()
             ->assertJsonStructure([
-                'migration' => ['id', 'name', 'status', 'is_dry_run', 'started_at', 'finished_at'],
+                'migration' => ['id', 'name', 'status', 'is_dry_run', 'started_at', 'finished_at', 'created_at'],
                 'counts',
+                'summary' => ['total', 'success', 'failed', 'pending', 'running', 'skipped'],
+                'timing' => ['elapsed_seconds', 'eta_seconds'],
+                'current_step',
+                'last_activity',
                 'recent_errors',
+                'recent_warnings',
             ]);
     }
 
@@ -229,6 +234,104 @@ class MigrationControllerTest extends TestCase
         $response = $this->getJson("/api/migrations/{$migration->id}/status");
 
         $response->assertStatus(401);
+    }
+
+    public function test_status_returns_summary_stats(): void
+    {
+        $migration = MigrationRun::create([
+            'name' => 'Summary Test',
+            'settings' => $this->validPayload()['settings'],
+            'status' => 'running',
+            'is_dry_run' => false,
+            'started_at' => now()->subMinutes(5),
+        ]);
+
+        MigrationEntity::create(['migration_id' => $migration->id, 'entity_type' => 'product', 'shopware_id' => 'p1', 'status' => 'success', 'woo_id' => 1]);
+        MigrationEntity::create(['migration_id' => $migration->id, 'entity_type' => 'product', 'shopware_id' => 'p2', 'status' => 'success', 'woo_id' => 2]);
+        MigrationEntity::create(['migration_id' => $migration->id, 'entity_type' => 'product', 'shopware_id' => 'p3', 'status' => 'failed', 'error_message' => 'Error']);
+        MigrationEntity::create(['migration_id' => $migration->id, 'entity_type' => 'category', 'shopware_id' => 'c1', 'status' => 'pending']);
+
+        $response = $this->actingAs($this->user, 'sanctum')
+            ->getJson("/api/migrations/{$migration->id}/status");
+
+        $response->assertOk();
+        $summary = $response->json('summary');
+        $this->assertEquals(4, $summary['total']);
+        $this->assertEquals(2, $summary['success']);
+        $this->assertEquals(1, $summary['failed']);
+        $this->assertEquals(1, $summary['pending']);
+    }
+
+    public function test_status_returns_elapsed_time(): void
+    {
+        $migration = MigrationRun::create([
+            'name' => 'Timing Test',
+            'settings' => $this->validPayload()['settings'],
+            'status' => 'running',
+            'is_dry_run' => false,
+            'started_at' => now()->subMinutes(2),
+        ]);
+
+        $response = $this->actingAs($this->user, 'sanctum')
+            ->getJson("/api/migrations/{$migration->id}/status");
+
+        $response->assertOk();
+        $timing = $response->json('timing');
+        $this->assertNotNull($timing['elapsed_seconds']);
+        $this->assertGreaterThanOrEqual(120, $timing['elapsed_seconds']);
+    }
+
+    public function test_status_returns_warnings(): void
+    {
+        $migration = MigrationRun::create([
+            'name' => 'Warning Test',
+            'settings' => $this->validPayload()['settings'],
+            'status' => 'running',
+            'is_dry_run' => false,
+        ]);
+
+        MigrationLog::create([
+            'migration_id' => $migration->id,
+            'entity_type' => 'review',
+            'level' => 'warning',
+            'message' => 'Product not yet migrated, skipping review',
+            'created_at' => now(),
+        ]);
+
+        $response = $this->actingAs($this->user, 'sanctum')
+            ->getJson("/api/migrations/{$migration->id}/status");
+
+        $response->assertOk();
+        $warnings = $response->json('recent_warnings');
+        $this->assertCount(1, $warnings);
+        $this->assertStringContainsString('skipping review', $warnings[0]['message']);
+    }
+
+    public function test_status_returns_last_activity(): void
+    {
+        $migration = MigrationRun::create([
+            'name' => 'Activity Test',
+            'settings' => $this->validPayload()['settings'],
+            'status' => 'running',
+            'is_dry_run' => false,
+        ]);
+
+        MigrationLog::create([
+            'migration_id' => $migration->id,
+            'entity_type' => 'product',
+            'level' => 'info',
+            'message' => 'Migrated product SKU-001',
+            'created_at' => now(),
+        ]);
+
+        $response = $this->actingAs($this->user, 'sanctum')
+            ->getJson("/api/migrations/{$migration->id}/status");
+
+        $response->assertOk();
+        $lastActivity = $response->json('last_activity');
+        $this->assertNotNull($lastActivity);
+        $this->assertEquals('product', $lastActivity['entity_type']);
+        $this->assertEquals('info', $lastActivity['level']);
     }
 
     // === Pause/Resume/Cancel tests ===
