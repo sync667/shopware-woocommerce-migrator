@@ -9,16 +9,18 @@ use Illuminate\Support\Facades\Log;
 class WooCommerceClient
 {
     protected Client $client;
+    protected array $config;
 
-    public function __construct()
+    public function __construct(array $config)
     {
-        $baseUrl = rtrim(config('services.woocommerce.base_url', env('WOO_BASE_URL', '')), '/');
+        $this->config = $config;
+        $baseUrl = rtrim($config['base_url'] ?? '', '/');
 
         $this->client = new Client([
             'base_uri' => $baseUrl . '/wp-json/wc/v3/',
             'auth' => [
-                config('services.woocommerce.consumer_key', env('WOO_CONSUMER_KEY', '')),
-                config('services.woocommerce.consumer_secret', env('WOO_CONSUMER_SECRET', '')),
+                $config['consumer_key'] ?? '',
+                $config['consumer_secret'] ?? '',
             ],
             'headers' => [
                 'Content-Type' => 'application/json',
@@ -26,6 +28,11 @@ class WooCommerceClient
             ],
             'timeout' => 30,
         ]);
+    }
+
+    public static function fromMigration(\App\Models\MigrationRun $migration): static
+    {
+        return new static($migration->woocommerceSettings());
     }
 
     public function get(string $endpoint, array $query = []): array

@@ -11,6 +11,7 @@ return new class extends Migration
         Schema::create('migration_runs', function (Blueprint $table) {
             $table->id();
             $table->string('name');
+            $table->json('settings');
             $table->enum('status', ['pending', 'running', 'dry_run', 'completed', 'failed', 'paused'])->default('pending');
             $table->boolean('is_dry_run')->default(false);
             $table->timestamp('started_at')->nullable();

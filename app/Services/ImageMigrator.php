@@ -9,11 +9,21 @@ class ImageMigrator
 {
     protected Client $httpClient;
     protected WordPressMediaClient $wpMedia;
+    protected string $shopwareBaseUrl;
 
-    public function __construct(WordPressMediaClient $wpMedia)
+    public function __construct(WordPressMediaClient $wpMedia, string $shopwareBaseUrl = '')
     {
         $this->wpMedia = $wpMedia;
+        $this->shopwareBaseUrl = rtrim($shopwareBaseUrl, '/');
         $this->httpClient = new Client(['timeout' => 30]);
+    }
+
+    public static function fromMigration(\App\Models\MigrationRun $migration): static
+    {
+        $wpMedia = WordPressMediaClient::fromMigration($migration);
+        $shopwareBaseUrl = $migration->setting('shopware.base_url', '');
+
+        return new static($wpMedia, $shopwareBaseUrl);
     }
 
     public function migrate(string $imageUrl, string $filename, string $title = '', string $altText = ''): ?int
@@ -36,9 +46,7 @@ class ImageMigrator
 
     public function buildShopwareMediaUrl(string $path, string $fileName, string $extension): string
     {
-        $baseUrl = rtrim(config('shopware.base_url'), '/');
-
-        return "{$baseUrl}/media/{$path}/{$fileName}.{$extension}";
+        return "{$this->shopwareBaseUrl}/media/{$path}/{$fileName}.{$extension}";
     }
 
     protected function guessMimeType(string $filename): string

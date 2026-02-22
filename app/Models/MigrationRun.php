@@ -11,6 +11,7 @@ class MigrationRun extends Model
 
     protected $fillable = [
         'name',
+        'settings',
         'status',
         'is_dry_run',
         'started_at',
@@ -18,9 +19,14 @@ class MigrationRun extends Model
     ];
 
     protected $casts = [
+        'settings' => 'encrypted:array',
         'is_dry_run' => 'boolean',
         'started_at' => 'datetime',
         'finished_at' => 'datetime',
+    ];
+
+    protected $hidden = [
+        'settings',
     ];
 
     public function entities(): HasMany
@@ -51,5 +57,25 @@ class MigrationRun extends Model
     public function markPaused(): void
     {
         $this->update(['status' => 'paused']);
+    }
+
+    public function setting(string $key, mixed $default = null): mixed
+    {
+        return data_get($this->settings, $key, $default);
+    }
+
+    public function shopwareSettings(): array
+    {
+        return $this->setting('shopware', []);
+    }
+
+    public function woocommerceSettings(): array
+    {
+        return $this->setting('woocommerce', []);
+    }
+
+    public function wordpressSettings(): array
+    {
+        return $this->setting('wordpress', []);
     }
 }
