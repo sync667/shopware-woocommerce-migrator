@@ -10,7 +10,7 @@ class CustomerReader
 
     public function fetchAll(): array
     {
-        return $this->db->select("
+        return $this->db->select('
             SELECT
                 LOWER(HEX(c.id)) AS id,
                 c.first_name,
@@ -22,7 +22,7 @@ class CustomerReader
                 LOWER(HEX(c.default_shipping_address_id)) AS shipping_address_id
             FROM customer c
             ORDER BY c.email ASC
-        ");
+        ');
     }
 
     public function fetchAddress(string $addressId): ?object

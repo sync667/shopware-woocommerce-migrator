@@ -52,7 +52,7 @@ class OrderReader
 
     public function fetchOrderCustomer(string $orderId): ?object
     {
-        $results = $this->db->select("
+        $results = $this->db->select('
             SELECT
                 oc.first_name,
                 oc.last_name,
@@ -61,7 +61,7 @@ class OrderReader
             FROM order_customer oc
             WHERE oc.order_id = UNHEX(?)
               AND oc.order_version_id = ?
-        ", [$orderId, $this->db->liveVersionIdBin()]);
+        ', [$orderId, $this->db->liveVersionIdBin()]);
 
         return $results[0] ?? null;
     }

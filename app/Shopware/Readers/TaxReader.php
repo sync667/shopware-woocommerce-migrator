@@ -10,14 +10,14 @@ class TaxReader
 
     public function fetchAll(): array
     {
-        return $this->db->select("
+        return $this->db->select('
             SELECT
                 LOWER(HEX(t.id)) AS id,
                 t.tax_rate,
                 t.name
             FROM tax t
             ORDER BY t.name ASC
-        ");
+        ');
     }
 
     public function fetchRules(string $taxId): array

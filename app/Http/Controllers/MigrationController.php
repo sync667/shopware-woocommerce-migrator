@@ -87,7 +87,7 @@ class MigrationController extends Controller
     public function status(MigrationRun $migration): JsonResponse
     {
         $counts = $migration->entities()
-            ->selectRaw("entity_type, status, COUNT(*) as count")
+            ->selectRaw('entity_type, status, COUNT(*) as count')
             ->groupBy('entity_type', 'status')
             ->get()
             ->groupBy('entity_type')

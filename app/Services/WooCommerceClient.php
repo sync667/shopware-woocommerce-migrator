@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Log;
 class WooCommerceClient
 {
     protected Client $client;
+
     protected array $config;
 
     public function __construct(array $config)
@@ -17,7 +18,7 @@ class WooCommerceClient
         $baseUrl = rtrim($config['base_url'] ?? '', '/');
 
         $this->client = new Client([
-            'base_uri' => $baseUrl . '/wp-json/wc/v3/',
+            'base_uri' => $baseUrl.'/wp-json/wc/v3/',
             'auth' => [
                 $config['consumer_key'] ?? '',
                 $config['consumer_secret'] ?? '',

@@ -9,6 +9,7 @@ use Illuminate\Database\MySqlConnection;
 class ShopwareDB
 {
     protected array $config;
+
     protected ?Connection $connection = null;
 
     public function __construct(array $config)

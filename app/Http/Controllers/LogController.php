@@ -23,7 +23,7 @@ class LogController extends Controller
         }
 
         if ($request->filled('search')) {
-            $query->where('message', 'like', '%' . $request->input('search') . '%');
+            $query->where('message', 'like', '%'.$request->input('search').'%');
         }
 
         $logs = $query->paginate($request->input('per_page', 50));

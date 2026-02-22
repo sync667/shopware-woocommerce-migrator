@@ -6,7 +6,7 @@ class ReviewTransformer
 {
     public function transform(object $review, int $wooProductId): array
     {
-        $authorName = trim(($review->author_first_name ?? '') . ' ' . ($review->author_last_name ?? ''));
+        $authorName = trim(($review->author_first_name ?? '').' '.($review->author_last_name ?? ''));
 
         return [
             'product_id' => $wooProductId,

@@ -93,8 +93,8 @@ class MigrateShopwareCommand extends Command
             $migration->markFailed();
         })->dispatch();
 
-        $this->info('Migration jobs dispatched. Monitor progress at: /migrations/' . $migration->id);
-        $this->info('Or check status via: GET /api/migrations/' . $migration->id . '/status');
+        $this->info('Migration jobs dispatched. Monitor progress at: /migrations/'.$migration->id);
+        $this->info('Or check status via: GET /api/migrations/'.$migration->id.'/status');
 
         return Command::SUCCESS;
     }

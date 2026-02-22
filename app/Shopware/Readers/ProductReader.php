@@ -45,7 +45,7 @@ class ProductReader
 
     public function fetchVariants(string $parentId): array
     {
-        return $this->db->select("
+        return $this->db->select('
             SELECT
                 LOWER(HEX(p.id)) AS id,
                 p.product_number AS sku,
@@ -59,7 +59,7 @@ class ProductReader
             WHERE p.version_id = ?
               AND p.parent_id = UNHEX(?)
             ORDER BY p.product_number ASC
-        ", [$this->db->liveVersionIdBin(), $parentId]);
+        ', [$this->db->liveVersionIdBin(), $parentId]);
     }
 
     public function fetchMedia(string $productId): array
@@ -86,12 +86,12 @@ class ProductReader
 
     public function fetchCategories(string $productId): array
     {
-        return $this->db->select("
+        return $this->db->select('
             SELECT LOWER(HEX(pc.category_id)) AS category_id
             FROM product_category pc
             WHERE pc.product_id = UNHEX(?)
               AND pc.product_version_id = ?
-        ", [$productId, $this->db->liveVersionIdBin()]);
+        ', [$productId, $this->db->liveVersionIdBin()]);
     }
 
     public function fetchConfiguratorSettings(string $productId): array
@@ -151,7 +151,7 @@ class ProductReader
 
     public function fetchTags(string $productId): array
     {
-        return $this->db->select("
+        return $this->db->select('
             SELECT COALESCE(tt.name, t.name) AS name
             FROM product_tag ptag
             INNER JOIN tag t ON t.id = ptag.tag_id
@@ -160,12 +160,12 @@ class ProductReader
                 AND tt.language_id = ?
             WHERE ptag.product_id = UNHEX(?)
               AND ptag.product_version_id = ?
-        ", [$this->db->languageIdBin(), $productId, $this->db->liveVersionIdBin()]);
+        ', [$this->db->languageIdBin(), $productId, $this->db->liveVersionIdBin()]);
     }
 
     public function fetchCrossSells(string $productId): array
     {
-        return $this->db->select("
+        return $this->db->select('
             SELECT
                 LOWER(HEX(pcsa.product_id)) AS target_product_id,
                 pcs.type
@@ -174,7 +174,7 @@ class ProductReader
                 ON pcsa.cross_selling_id = pcs.id
             WHERE pcs.product_id = UNHEX(?)
               AND pcs.product_version_id = ?
-        ", [$productId, $this->db->liveVersionIdBin()]);
+        ', [$productId, $this->db->liveVersionIdBin()]);
     }
 
     public function fetchVariantOptions(string $variantId): array

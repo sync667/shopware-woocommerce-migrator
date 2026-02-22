@@ -8,7 +8,9 @@ use Illuminate\Support\Facades\Log;
 class ImageMigrator
 {
     protected Client $httpClient;
+
     protected WordPressMediaClient $wpMedia;
+
     protected string $shopwareBaseUrl;
 
     public function __construct(WordPressMediaClient $wpMedia, string $shopwareBaseUrl = '')

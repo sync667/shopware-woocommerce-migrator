@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Log;
 class WordPressMediaClient
 {
     protected Client $client;
+
     protected array $config;
 
     public function __construct(array $config)
@@ -16,7 +17,7 @@ class WordPressMediaClient
         $baseUrl = rtrim($config['base_url'] ?? '', '/');
 
         $this->client = new Client([
-            'base_uri' => $baseUrl . '/wp-json/wp/v2/',
+            'base_uri' => $baseUrl.'/wp-json/wp/v2/',
             'auth' => [
                 $config['wp_username'] ?? '',
                 $config['wp_app_password'] ?? '',

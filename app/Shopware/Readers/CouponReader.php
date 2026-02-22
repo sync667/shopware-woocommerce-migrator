@@ -10,7 +10,7 @@ class CouponReader
 
     public function fetchAll(): array
     {
-        return $this->db->select("
+        return $this->db->select('
             SELECT
                 LOWER(HEX(p.id)) AS id,
                 COALESCE(pt.name, p.name) AS name,
@@ -26,12 +26,12 @@ class CouponReader
                 ON pt.promotion_id = p.id
                 AND pt.language_id = ?
             ORDER BY p.name ASC
-        ", [$this->db->languageIdBin()]);
+        ', [$this->db->languageIdBin()]);
     }
 
     public function fetchDiscounts(string $promotionId): array
     {
-        return $this->db->select("
+        return $this->db->select('
             SELECT
                 LOWER(HEX(pd.id)) AS id,
                 pd.type AS discount_type,
@@ -39,17 +39,17 @@ class CouponReader
                 pd.scope
             FROM promotion_discount pd
             WHERE pd.promotion_id = UNHEX(?)
-        ", [$promotionId]);
+        ', [$promotionId]);
     }
 
     public function fetchIndividualCodes(string $promotionId): array
     {
-        return $this->db->select("
+        return $this->db->select('
             SELECT
                 LOWER(HEX(pic.id)) AS id,
                 pic.code
             FROM promotion_individual_code pic
             WHERE pic.promotion_id = UNHEX(?)
-        ", [$promotionId]);
+        ', [$promotionId]);
     }
 }
