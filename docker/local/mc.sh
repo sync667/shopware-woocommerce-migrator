@@ -57,9 +57,13 @@ cmd_help() {
     echo "  tinker          Open Laravel Tinker"
     echo "  cache           Clear all caches"
     echo ""
+    echo "Frontend:"
+    echo "  npm <cmd>       Run npm command in the Node container"
+    echo "  npm-build       Build frontend assets"
+    echo ""
     echo "Dependencies:"
     echo "  composer <cmd>  Run composer command"
-    echo "  install         Install PHP dependencies"
+    echo "  install         Install PHP + JS dependencies"
     echo ""
     echo "Setup:"
     echo "  setup           Initial setup (build, start, install deps)"
@@ -74,7 +78,8 @@ cmd_up() {
     success "Containers started!"
     echo ""
     echo "🌐 Access points:"
-    echo "   - API:         http://localhost:${APP_PORT:-8080}"
+    echo "   - App:         http://localhost:${APP_PORT:-8080}"
+    echo "   - Vite (dev):  http://localhost:${FORWARD_VITE_PORT:-5173}"
     echo "   - Mailpit:     http://localhost:${FORWARD_MAILPIT_DASHBOARD_PORT:-8025}"
 }
 
@@ -167,10 +172,23 @@ cmd_composer() {
     docker compose exec api composer "$@"
 }
 
+cmd_npm() {
+    docker compose exec node npm "$@"
+}
+
+cmd_npm_build() {
+    info "Building frontend assets..."
+    docker compose exec node npm run build
+    success "Frontend assets built!"
+}
+
 cmd_install() {
     info "Installing PHP dependencies..."
     docker compose exec api composer install
     success "PHP dependencies installed!"
+    info "Installing Node dependencies..."
+    docker compose exec node npm install
+    success "Node dependencies installed!"
 }
 
 cmd_setup() {
@@ -237,6 +255,8 @@ case "${1:-help}" in
     tinker) cmd_tinker ;;
     cache) cmd_cache ;;
     composer) shift; cmd_composer "$@" ;;
+    npm) shift; cmd_npm "$@" ;;
+    npm-build) cmd_npm_build ;;
     install) cmd_install ;;
     setup) cmd_setup ;;
     init) cmd_init ;;

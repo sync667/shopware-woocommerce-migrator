@@ -32,6 +32,7 @@ RUN docker-php-ext-configure gd \
     --with-avif \
     && docker-php-ext-install -j$(nproc) \
     pdo \
+    pdo_mysql \
     pdo_pgsql \
     pgsql \
     mbstring \
