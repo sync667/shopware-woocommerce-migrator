@@ -72,6 +72,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, pdo_sqlite
+          coverage: none
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -79,11 +86,31 @@ jobs:
           cache: 'npm'
           cache-dependency-path: package-lock.json
 
-      - name: Install dependencies
+      - name: Install PHP dependencies
+        run: composer install --no-interaction --prefer-dist
+
+      - name: Install Node dependencies
         run: npm ci
 
       - name: Install Playwright Browsers
         run: npx playwright install --with-deps chromium
+
+      - name: Setup environment
+        run: |
+          cp .env.example .env
+          sed -i 's/DB_CONNECTION=pgsql/DB_CONNECTION=sqlite/' .env
+          sed -i 's/DB_HOST=pgsql/# DB_HOST=/' .env
+          sed -i 's/DB_PORT=5432/# DB_PORT=/' .env
+          sed -i 's/DB_DATABASE=laravel/# DB_DATABASE=/' .env
+          sed -i 's/DB_USERNAME=laravel/# DB_USERNAME=/' .env
+          sed -i 's/DB_PASSWORD=secret/# DB_PASSWORD=/' .env
+          sed -i 's/CACHE_DRIVER=redis/CACHE_DRIVER=array/' .env
+          sed -i 's/CACHE_STORE=redis/CACHE_STORE=array/' .env
+          sed -i 's/QUEUE_CONNECTION=redis/QUEUE_CONNECTION=sync/' .env
+          sed -i 's/SESSION_DRIVER=redis/SESSION_DRIVER=file/' .env
+          touch database/database.sqlite
+          php artisan key:generate
+          php artisan migrate --force
 
       - name: Build frontend
         run: npm run build
