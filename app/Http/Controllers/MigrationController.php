@@ -36,9 +36,9 @@ class MigrationController extends Controller
             'settings.shopware.db_password' => 'required|string',
             'settings.shopware.language_id' => 'required|string',
             'settings.shopware.live_version_id' => 'required|string',
-            'settings.shopware.base_url' => 'required|string|url',
+            'settings.shopware.base_url' => 'required|string|url|starts_with:https://',
             'settings.woocommerce' => 'required|array',
-            'settings.woocommerce.base_url' => 'required|string|url',
+            'settings.woocommerce.base_url' => 'required|string|url|starts_with:https://',
             'settings.woocommerce.consumer_key' => 'required|string',
             'settings.woocommerce.consumer_secret' => 'required|string',
             'settings.wordpress' => 'required|array',
@@ -244,7 +244,7 @@ class MigrationController extends Controller
     public function pingWoocommerce(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'base_url' => 'required|string|url',
+            'base_url' => 'required|string|url|starts_with:https://',
             'consumer_key' => 'required|string',
             'consumer_secret' => 'required|string',
         ]);

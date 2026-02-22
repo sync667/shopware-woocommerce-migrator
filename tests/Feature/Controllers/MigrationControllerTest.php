@@ -117,6 +117,30 @@ class MigrationControllerTest extends TestCase
             ->assertJsonValidationErrors(['settings.shopware.base_url']);
     }
 
+    public function test_store_rejects_http_shopware_base_url(): void
+    {
+        $payload = $this->validPayload();
+        $payload['settings']['shopware']['base_url'] = 'http://insecure.test';
+
+        $response = $this->actingAs($this->user, 'sanctum')
+            ->postJson('/api/migrations', $payload);
+
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors(['settings.shopware.base_url']);
+    }
+
+    public function test_store_rejects_http_woocommerce_base_url(): void
+    {
+        $payload = $this->validPayload();
+        $payload['settings']['woocommerce']['base_url'] = 'http://insecure.test';
+
+        $response = $this->actingAs($this->user, 'sanctum')
+            ->postJson('/api/migrations', $payload);
+
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors(['settings.woocommerce.base_url']);
+    }
+
     public function test_store_creates_dry_run(): void
     {
         Queue::fake();
@@ -445,6 +469,19 @@ class MigrationControllerTest extends TestCase
         $response = $this->actingAs($this->user, 'sanctum')
             ->postJson('/api/woocommerce/ping', [
                 'base_url' => 'not-a-url',
+                'consumer_key' => 'ck_test',
+                'consumer_secret' => 'cs_test',
+            ]);
+
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors(['base_url']);
+    }
+
+    public function test_ping_woocommerce_rejects_http_url(): void
+    {
+        $response = $this->actingAs($this->user, 'sanctum')
+            ->postJson('/api/woocommerce/ping', [
+                'base_url' => 'http://insecure.test',
                 'consumer_key' => 'ck_test',
                 'consumer_secret' => 'cs_test',
             ]);
