@@ -4,12 +4,24 @@ on:
   push:
     branches: [main, develop]
     paths:
-      - 'backend/**'
+      - 'app/**'
+      - 'config/**'
+      - 'routes/**'
+      - 'database/**'
+      - 'tests/**'
+      - 'composer.json'
+      - 'composer.lock'
       - '.github/workflows/backend-ci.yml'
   pull_request:
     branches: [main, develop]
     paths:
-      - 'backend/**'
+      - 'app/**'
+      - 'config/**'
+      - 'routes/**'
+      - 'database/**'
+      - 'tests/**'
+      - 'composer.json'
+      - 'composer.lock'
       - '.github/workflows/backend-ci.yml'
 
 permissions:
@@ -56,30 +68,25 @@ jobs:
 
       - name: Get Composer Cache Directory
         id: composer-cache
-        working-directory: backend
         run: echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
 
       - name: Cache Composer dependencies
         uses: actions/cache@v4
         with:
           path: ${{ steps.composer-cache.outputs.dir }}
-          key: ${{ runner.os }}-composer-${{ hashFiles('backend/composer.lock') }}
+          key: ${{ runner.os }}-composer-${{ hashFiles('composer.lock') }}
           restore-keys: ${{ runner.os }}-composer-
 
       - name: Install dependencies
-        working-directory: backend
         run: composer install --prefer-dist --no-progress --no-interaction
 
       - name: Copy environment file
-        working-directory: backend
         run: cp .env.example .env
 
       - name: Generate application key
-        working-directory: backend
         run: php artisan key:generate
 
       - name: Run database migrations
-        working-directory: backend
         env:
           DB_CONNECTION: pgsql
           DB_HOST: localhost
@@ -90,11 +97,9 @@ jobs:
         run: php artisan migrate --force
 
       - name: Run Pint (code style)
-        working-directory: backend
         run: vendor/bin/pint --test
 
       - name: Run tests
-        working-directory: backend
         env:
           DB_CONNECTION: pgsql
           DB_HOST: localhost
@@ -123,20 +128,17 @@ jobs:
 
       - name: Get Composer Cache Directory
         id: composer-cache
-        working-directory: backend
         run: echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
 
       - name: Cache Composer dependencies
         uses: actions/cache@v4
         with:
           path: ${{ steps.composer-cache.outputs.dir }}
-          key: ${{ runner.os }}-composer-${{ hashFiles('backend/composer.lock') }}
+          key: ${{ runner.os }}-composer-${{ hashFiles('composer.lock') }}
           restore-keys: ${{ runner.os }}-composer-
 
       - name: Install dependencies
-        working-directory: backend
         run: composer install --prefer-dist --no-progress --no-interaction
 
       - name: Run Laravel Pint
-        working-directory: backend
         run: vendor/bin/pint --test
