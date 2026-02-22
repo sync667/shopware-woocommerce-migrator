@@ -1,31 +1,11 @@
 <?php
 
+use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\LogController;
+use App\Http\Controllers\MigrationController;
 use Illuminate\Support\Facades\Route;
 
-/*
-|--------------------------------------------------------------------------
-| Web Routes
-|--------------------------------------------------------------------------
-|
-| Here is where you can register web routes for your application. These
-| routes are loaded by the RouteServiceProvider and all of them will
-| be assigned to the "web" middleware group. Make something great!
-|
-*/
-
-Route::get('/', function () {
-    return response()->json([
-        'status' => 'ok',
-        'message' => 'API is running',
-        'app' => config('app.name'),
-        'version' => config('app.version'),
-        'build' => config('app.build'),
-        'environment' => config('app.env'),
-        'timestamp' => now()->toIso8601String(),
-    ]);
-});
-
-// Ziggy route list for frontend
-Route::get('/api/ziggy', function () {
-    return response()->json(app('ziggy')->toArray());
-})->name('ziggy');
+Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
+Route::get('/settings', [DashboardController::class, 'settings'])->name('settings');
+Route::get('/migrations/{migration}', [MigrationController::class, 'show'])->name('migrations.show');
+Route::get('/migrations/{migration}/logs', [LogController::class, 'show'])->name('migrations.logs');

@@ -1,6 +1,9 @@
 <?php
 
 use App\Http\Controllers\Api\V1\AuthController;
+use App\Http\Controllers\LogController;
+use App\Http\Controllers\MigrationController;
+use App\Models\MigrationRun;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -31,4 +34,22 @@ Route::prefix('v1')->group(function () {
 // Legacy route (backward compatibility)
 Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     return $request->user();
+});
+
+// Model binding for migration routes
+Route::model('migration', MigrationRun::class);
+
+// Migration API Routes (protected)
+Route::middleware('auth:sanctum')->group(function () {
+    Route::prefix('migrations')->group(function () {
+        Route::post('/', [MigrationController::class, 'store']);
+        Route::get('/{migration}/status', [MigrationController::class, 'status']);
+        Route::get('/{migration}/logs', [LogController::class, 'index']);
+        Route::post('/{migration}/pause', [MigrationController::class, 'pause']);
+        Route::post('/{migration}/resume', [MigrationController::class, 'resume']);
+        Route::post('/{migration}/cancel', [MigrationController::class, 'cancel']);
+    });
+
+    Route::post('/shopware/ping', [MigrationController::class, 'pingShopware']);
+    Route::post('/woocommerce/ping', [MigrationController::class, 'pingWoocommerce']);
 });

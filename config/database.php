@@ -63,6 +63,20 @@ return [
             ]) : [],
         ],
 
+        'shopware' => [
+            'driver' => 'mysql',
+            'host' => env('SHOPWARE_DB_HOST', '127.0.0.1'),
+            'port' => env('SHOPWARE_DB_PORT', '3306'),
+            'database' => env('SHOPWARE_DB_DATABASE', 'shopware'),
+            'username' => env('SHOPWARE_DB_USERNAME', 'root'),
+            'password' => env('SHOPWARE_DB_PASSWORD', ''),
+            'charset' => 'utf8mb4',
+            'collation' => 'utf8mb4_unicode_ci',
+            'prefix' => '',
+            'strict' => true,
+            'engine' => null,
+        ],
+
         'pgsql' => [
             'driver' => 'pgsql',
             'url' => env('DATABASE_URL'),
