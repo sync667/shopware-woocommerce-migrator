@@ -124,7 +124,7 @@ class MigrationJobsTest extends TestCase
 
         // New entity should not be marked as migrated
         $this->assertFalse(
-            $stateManager->alreadyMigrated('manufacturer', 'new-one', $this->migration->id)
+            $stateManager->alreadyMigrated('manufacturer', 'not-yet-migrated-manufacturer', $this->migration->id)
         );
     }
 

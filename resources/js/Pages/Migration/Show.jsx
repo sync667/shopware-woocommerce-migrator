@@ -122,7 +122,7 @@ export default function Show({ migrationId }) {
                             {currentStep && isRunning && (
                                 <span className="flex items-center gap-1 text-xs text-blue-600">
                                     <Activity className="h-3 w-3 animate-pulse" />
-                                    Processing: {currentStep}s
+                                    Processing: {currentStep}
                                 </span>
                             )}
                         </div>
