@@ -16,6 +16,7 @@ use App\Services\WooCommerceClient;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -29,7 +30,7 @@ class MigrationController extends Controller
             'settings' => 'required|array',
             'settings.shopware' => 'required|array',
             'settings.shopware.db_host' => 'required|string',
-            'settings.shopware.db_port' => 'required|integer',
+            'settings.shopware.db_port' => 'required|integer|min:1|max:65535',
             'settings.shopware.db_database' => 'required|string',
             'settings.shopware.db_username' => 'required|string',
             'settings.shopware.db_password' => 'required|string',
@@ -145,7 +146,7 @@ class MigrationController extends Controller
     {
         $validated = $request->validate([
             'db_host' => 'required|string',
-            'db_port' => 'required|integer',
+            'db_port' => 'required|integer|min:1|max:65535',
             'db_database' => 'required|string',
             'db_username' => 'required|string',
             'db_password' => 'required|string',
@@ -157,7 +158,9 @@ class MigrationController extends Controller
 
             return response()->json(['connected' => $connected]);
         } catch (\Exception $e) {
-            return response()->json(['connected' => false, 'error' => $e->getMessage()]);
+            Log::warning('Shopware ping failed', ['error' => $e->getMessage()]);
+
+            return response()->json(['connected' => false, 'error' => 'Connection failed']);
         }
     }
 
@@ -175,7 +178,9 @@ class MigrationController extends Controller
 
             return response()->json(['connected' => $connected]);
         } catch (\Exception $e) {
-            return response()->json(['connected' => false, 'error' => $e->getMessage()]);
+            Log::warning('WooCommerce ping failed', ['error' => $e->getMessage()]);
+
+            return response()->json(['connected' => false, 'error' => 'Connection failed']);
         }
     }
 }

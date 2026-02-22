@@ -39,15 +39,17 @@ Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
 // Model binding for migration routes
 Route::model('migration', MigrationRun::class);
 
-// Migration API Routes
-Route::prefix('migrations')->group(function () {
-    Route::post('/', [MigrationController::class, 'store']);
-    Route::get('/{migration}/status', [MigrationController::class, 'status']);
-    Route::get('/{migration}/logs', [LogController::class, 'index']);
-    Route::post('/{migration}/pause', [MigrationController::class, 'pause']);
-    Route::post('/{migration}/resume', [MigrationController::class, 'resume']);
-    Route::post('/{migration}/cancel', [MigrationController::class, 'cancel']);
-});
+// Migration API Routes (protected)
+Route::middleware('auth:sanctum')->group(function () {
+    Route::prefix('migrations')->group(function () {
+        Route::post('/', [MigrationController::class, 'store']);
+        Route::get('/{migration}/status', [MigrationController::class, 'status']);
+        Route::get('/{migration}/logs', [LogController::class, 'index']);
+        Route::post('/{migration}/pause', [MigrationController::class, 'pause']);
+        Route::post('/{migration}/resume', [MigrationController::class, 'resume']);
+        Route::post('/{migration}/cancel', [MigrationController::class, 'cancel']);
+    });
 
-Route::post('/shopware/ping', [MigrationController::class, 'pingShopware']);
-Route::post('/woocommerce/ping', [MigrationController::class, 'pingWoocommerce']);
+    Route::post('/shopware/ping', [MigrationController::class, 'pingShopware']);
+    Route::post('/woocommerce/ping', [MigrationController::class, 'pingWoocommerce']);
+});
