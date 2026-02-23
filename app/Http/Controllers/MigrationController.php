@@ -30,6 +30,7 @@ class MigrationController extends Controller
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'is_dry_run' => 'boolean',
+            'clean_woocommerce' => 'boolean',
             'sync_mode' => 'nullable|string|in:full,delta',
             'conflict_strategy' => 'nullable|string|in:shopware_wins,woo_wins,manual',
             'cms_options' => 'nullable|array',
@@ -64,6 +65,7 @@ class MigrationController extends Controller
             'name' => $validated['name'],
             'settings' => $validated['settings'],
             'is_dry_run' => $validated['is_dry_run'] ?? false,
+            'clean_woocommerce' => $validated['clean_woocommerce'] ?? false,
             'sync_mode' => $validated['sync_mode'] ?? 'full',
             'conflict_strategy' => $validated['conflict_strategy'] ?? 'shopware_wins',
             'status' => 'pending',
@@ -71,7 +73,26 @@ class MigrationController extends Controller
 
         $migration->markRunning();
 
-        $jobs = [
+        $jobs = [];
+
+        // Clean WooCommerce if requested (and not dry run)
+        if (($validated['clean_woocommerce'] ?? false) && ! ($validated['is_dry_run'] ?? false)) {
+            $jobs[] = function () use ($migration) {
+                $wooClient = new \App\Services\WooCommerceClient($migration->settings['woocommerce']);
+                $cleanup = new \App\Services\WooCommerceCleanup($wooClient, $migration->id);
+                $results = $cleanup->cleanAll();
+
+                \App\Models\MigrationLog::create([
+                    'migration_id' => $migration->id,
+                    'entity_type' => 'cleanup',
+                    'level' => 'info',
+                    'message' => 'WooCommerce cleanup completed: '.json_encode($results),
+                    'created_at' => now(),
+                ]);
+            };
+        }
+
+        $jobs = array_merge($jobs, [
             new MigrateManufacturersJob($migration->id),
             new MigrateTaxesJob($migration->id),
             new MigrateCategoriesJob($migration->id),
@@ -80,7 +101,7 @@ class MigrationController extends Controller
             new MigrateOrdersJob($migration->id),
             new MigrateCouponsJob($migration->id),
             new MigrateReviewsJob($migration->id),
-        ];
+        ]);
 
         // Add CMS pages migration if requested
         $cmsOptions = $validated['cms_options'] ?? [];

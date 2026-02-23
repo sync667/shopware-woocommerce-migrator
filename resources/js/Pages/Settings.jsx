@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import ConnectionStatus from '../Components/ConnectionStatus';
-import { ArrowLeft, Play, FlaskConical, Loader2, ChevronDown, ChevronUp, Check, X, AlertCircle } from 'lucide-react';
+import HelpModal from '../Components/HelpModal';
+import { guides } from '../Components/SetupGuides';
+import { ArrowLeft, Play, FlaskConical, Loader2, ChevronDown, ChevronUp, Check, X, AlertCircle, HelpCircle } from 'lucide-react';
 
 export default function Settings() {
     const [name, setName] = useState('');
@@ -37,6 +39,7 @@ export default function Settings() {
     // Migration options
     const [syncMode, setSyncMode] = useState('full');
     const [conflictStrategy, setConflictStrategy] = useState('shopware_wins');
+    const [cleanWoocommerce, setCleanWoocommerce] = useState(false);
 
     // CMS options
     const [cmsEnabled, setCmsEnabled] = useState(false);
@@ -45,9 +48,14 @@ export default function Settings() {
     const [selectedCmsPages, setSelectedCmsPages] = useState([]);
     const [loadingCmsPages, setLoadingCmsPages] = useState(false);
 
+    // Shopware config options
+    const [availableLanguages, setAvailableLanguages] = useState([]);
+    const [loadingLanguages, setLoadingLanguages] = useState(false);
+
     const [testResults, setTestResults] = useState(null);
     const [submitting, setSubmitting] = useState(false);
     const [testing, setTesting] = useState(false);
+    const [activeGuide, setActiveGuide] = useState(null);
 
     const updateShopware = (key, value) =>
         setShopware((prev) => ({ ...prev, [key]: value }));
@@ -95,6 +103,91 @@ export default function Settings() {
             });
         }
         setTesting(false);
+    };
+
+    const loadShopwareConfig = async () => {
+        setLoadingLanguages(true);
+        try {
+            const swConfig = {
+                db_host: shopware.db_host,
+                db_port: shopware.db_port,
+                db_database: shopware.db_database,
+                db_username: shopware.db_username,
+                db_password: shopware.db_password,
+            };
+
+            if (sshEnabled) {
+                swConfig.ssh = {
+                    host: sshConfig.host,
+                    port: sshConfig.port,
+                    username: sshConfig.username,
+                    ...(sshConfig.auth_method === 'password'
+                        ? { password: sshConfig.password }
+                        : { key: sshConfig.key }
+                    )
+                };
+            }
+
+            // Load languages
+            const langRes = await fetch('/api/shopware/languages', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(swConfig),
+            });
+            const langData = await langRes.json();
+
+            if (langData.success) {
+                setAvailableLanguages(langData.languages);
+
+                // Auto-select first/default language if none selected
+                if (!shopware.language_id && langData.languages.length > 0) {
+                    updateShopware('language_id', langData.languages[0].id);
+                }
+
+                // Since we successfully connected to Shopware, auto-populate test results
+                setTestResults((prev) => ({
+                    ...prev,
+                    shopware: {
+                        success: true,
+                        details: {
+                            database: swConfig.db_database,
+                            languages_found: langData.languages.length,
+                        }
+                    }
+                }));
+            } else {
+                alert('Failed to load languages: ' + langData.error);
+                setTestResults((prev) => ({
+                    ...prev,
+                    shopware: {
+                        success: false,
+                        error: langData.error,
+                    }
+                }));
+            }
+
+            // Load live version ID
+            const versionRes = await fetch('/api/shopware/live-version', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(swConfig),
+            });
+            const versionData = await versionRes.json();
+
+            if (versionData.success && !shopware.live_version_id) {
+                updateShopware('live_version_id', versionData.live_version_id);
+            }
+        } catch (err) {
+            alert('Failed to load Shopware configuration: ' + err.message);
+            setTestResults((prev) => ({
+                ...prev,
+                shopware: {
+                    success: false,
+                    error: err.message,
+                }
+            }));
+        }
+        setLoadingLanguages(false);
     };
 
     const loadCmsPages = async () => {
@@ -157,6 +250,7 @@ export default function Settings() {
                 body: JSON.stringify({
                     name: name || `Migration ${new Date().toLocaleString()}`,
                     is_dry_run: isDryRun,
+                    clean_woocommerce: cleanWoocommerce,
                     sync_mode: syncMode,
                     conflict_strategy: conflictStrategy,
                     cms_options: cmsOptions,
@@ -177,6 +271,17 @@ export default function Settings() {
         'w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500';
     const labelClass = 'block text-sm font-medium text-gray-700 mb-1';
     const sectionClass = 'mb-6 rounded-lg border border-gray-200 bg-white p-6';
+
+    const HelpButton = ({ guideKey }) => (
+        <button
+            type="button"
+            onClick={() => setActiveGuide(guideKey)}
+            className="ml-2 inline-flex items-center text-blue-600 hover:text-blue-700"
+            title="Click for help"
+        >
+            <HelpCircle className="h-4 w-4" />
+        </button>
+    );
 
     return (
         <div className="mx-auto max-w-4xl px-4 py-8">
@@ -221,6 +326,29 @@ export default function Settings() {
                             <option value="manual">Manual Review (flag conflicts)</option>
                         </select>
                     </div>
+                </div>
+
+                {/* Clean WooCommerce Option */}
+                <div className="mt-4 border-t border-gray-200 pt-4">
+                    <label className="flex items-start gap-3 cursor-pointer">
+                        <input
+                            type="checkbox"
+                            checked={cleanWoocommerce}
+                            onChange={(e) => setCleanWoocommerce(e.target.checked)}
+                            className="mt-1 rounded border-gray-300 text-red-600 focus:ring-red-500"
+                        />
+                        <div className="flex-1">
+                            <div className="flex items-center gap-2">
+                                <span className="text-sm font-medium text-gray-900">Clean WooCommerce Before Migration</span>
+                                <span className="rounded bg-red-100 px-2 py-0.5 text-xs text-red-700">Destructive</span>
+                            </div>
+                            <p className="mt-1 text-xs text-gray-500">
+                                <AlertCircle className="inline h-3 w-3 mr-1" />
+                                Delete all existing WooCommerce products, categories, customers, orders, coupons, and reviews before migration.
+                                <span className="font-medium text-red-600"> This cannot be undone!</span>
+                            </p>
+                        </div>
+                    </label>
                 </div>
             </div>
 
@@ -288,7 +416,10 @@ export default function Settings() {
 
             {/* Shopware Source */}
             <div className={sectionClass}>
-                <h2 className="mb-4 text-lg font-medium text-gray-900">Shopware Source Database</h2>
+                <h2 className="mb-4 text-lg font-medium text-gray-900">
+                    Shopware Source Database
+                    <HelpButton guideKey="database_connection" />
+                </h2>
                 <div className="grid grid-cols-2 gap-4 mb-4">
                     <div>
                         <label className={labelClass}>Host</label>
@@ -314,15 +445,58 @@ export default function Settings() {
                         <label className={labelClass}>Base URL</label>
                         <input type="text" value={shopware.base_url} onChange={(e) => updateShopware('base_url', e.target.value)} className={inputClass} placeholder="https://shop.example.com" />
                     </div>
-                    <div>
-                        <label className={labelClass}>Language ID</label>
-                        <input type="text" value={shopware.language_id} onChange={(e) => updateShopware('language_id', e.target.value)} className={inputClass} placeholder="hex string" />
-                    </div>
-                    <div>
-                        <label className={labelClass}>Live Version ID</label>
-                        <input type="text" value={shopware.live_version_id} onChange={(e) => updateShopware('live_version_id', e.target.value)} className={inputClass} placeholder="hex string" />
-                    </div>
                 </div>
+
+                {/* Load Configuration Button */}
+                <div className="mb-4">
+                    <button
+                        onClick={loadShopwareConfig}
+                        disabled={loadingLanguages || !shopware.db_host || !shopware.db_database}
+                        className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        {loadingLanguages ? 'Connecting...' : 'Connect & Load Configuration'}
+                    </button>
+                    <p className="mt-2 text-xs text-gray-500">
+                        This will connect to your Shopware database, test the connection, and load available languages
+                    </p>
+                </div>
+
+                {/* Language & Version Selection */}
+                {availableLanguages.length > 0 && (
+                    <div className="grid grid-cols-2 gap-4 p-4 bg-green-50 rounded-md border border-green-200">
+                        <div>
+                            <label className={labelClass}>
+                                Language
+                                <HelpButton guideKey="shopware_language_id" />
+                            </label>
+                            <select
+                                value={shopware.language_id}
+                                onChange={(e) => updateShopware('language_id', e.target.value)}
+                                className={inputClass}
+                            >
+                                {availableLanguages.map(lang => (
+                                    <option key={lang.id} value={lang.id}>
+                                        {lang.name} {lang.locale_code ? `(${lang.locale_code})` : ''}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                        <div>
+                            <label className={labelClass}>
+                                Live Version ID
+                                <HelpButton guideKey="shopware_version_id" />
+                            </label>
+                            <input
+                                type="text"
+                                value={shopware.live_version_id}
+                                onChange={(e) => updateShopware('live_version_id', e.target.value)}
+                                className={inputClass}
+                                placeholder="Auto-detected"
+                            />
+                            <p className="mt-1 text-xs text-green-700">✓ Auto-detected from database</p>
+                        </div>
+                    </div>
+                )}
 
                 {/* SSH Tunnel Section */}
                 <div className="border-t border-gray-200 pt-4">
@@ -335,6 +509,7 @@ export default function Settings() {
                                 className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                             />
                             <span className="text-sm font-medium text-gray-700">Use SSH Tunnel</span>
+                            <HelpButton guideKey="ssh_keys" />
                         </label>
                     </div>
 
@@ -377,7 +552,10 @@ export default function Settings() {
 
             {/* WooCommerce Target */}
             <div className={sectionClass}>
-                <h2 className="mb-4 text-lg font-medium text-gray-900">WooCommerce Target API</h2>
+                <h2 className="mb-4 text-lg font-medium text-gray-900">
+                    WooCommerce Target API
+                    <HelpButton guideKey="woocommerce_keys" />
+                </h2>
                 <div className="grid grid-cols-2 gap-4">
                     <div className="col-span-2">
                         <label className={labelClass}>Base URL</label>
@@ -396,7 +574,10 @@ export default function Settings() {
 
             {/* WordPress Media */}
             <div className={sectionClass}>
-                <h2 className="mb-4 text-lg font-medium text-gray-900">WordPress Media API</h2>
+                <h2 className="mb-4 text-lg font-medium text-gray-900">
+                    WordPress Media API
+                    <HelpButton guideKey="wordpress_app_password" />
+                </h2>
                 <div className="grid grid-cols-2 gap-4">
                     <div>
                         <label className={labelClass}>WP Username</label>
@@ -484,18 +665,39 @@ export default function Settings() {
                 )}
             </div>
 
+            {/* Configuration Warning */}
+            {(!shopware.language_id || !shopware.live_version_id) && (
+                <div className={`${sectionClass} bg-yellow-50 border-2 border-yellow-300`}>
+                    <div className="flex items-start gap-3">
+                        <AlertCircle className="h-5 w-5 text-yellow-600 mt-0.5 flex-shrink-0" />
+                        <div>
+                            <h3 className="text-sm font-medium text-yellow-900">Configuration Required</h3>
+                            <p className="mt-1 text-sm text-yellow-800">
+                                You must load Shopware languages and configuration before testing connections or starting migration.
+                                Click the <strong>"Load Languages & Configuration"</strong> button in the Shopware Source Database section above.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Connection Test */}
             <div className={sectionClass}>
                 <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-lg font-medium text-gray-900">Test Connections</h2>
+                    <h2 className="text-lg font-medium text-gray-900">Connection Status</h2>
                     <button
                         onClick={testAllConnections}
-                        disabled={testing}
-                        className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                        disabled={testing || !shopware.language_id || !shopware.live_version_id}
+                        className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                        {testing ? 'Testing...' : 'Test All Connections'}
+                        {testing ? 'Testing...' : 'Test WooCommerce & WordPress'}
                     </button>
                 </div>
+                {(!shopware.language_id || !shopware.live_version_id) && (
+                    <p className="text-sm text-gray-500 mb-4">
+                        ℹ️ Connect to Shopware first (using "Connect & Load Configuration" button above), then test WooCommerce and WordPress
+                    </p>
+                )}
 
                 {testResults && (
                     <div className="space-y-3">
@@ -570,28 +772,49 @@ export default function Settings() {
             </div>
 
             {/* Actions */}
-            <div className="flex gap-3">
-                <button
-                    onClick={() => startMigration(true)}
-                    disabled={submitting}
-                    className="inline-flex items-center gap-2 rounded-lg border border-purple-300 bg-purple-50 px-6 py-3 text-sm font-medium text-purple-700 hover:bg-purple-100 disabled:opacity-50"
-                >
-                    <FlaskConical className="h-4 w-4" />
-                    Dry Run
-                </button>
-                <button
-                    onClick={() => startMigration(false)}
-                    disabled={submitting}
-                    className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-6 py-3 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-                >
-                    {submitting ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                        <Play className="h-4 w-4" />
-                    )}
-                    Start Migration
-                </button>
+            <div className="space-y-3">
+                {(!shopware.language_id || !shopware.live_version_id) && (
+                    <div className="flex items-center gap-2 text-sm text-yellow-700 bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                        <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                        <span>
+                            Migration buttons are disabled until you load Shopware configuration (language & version ID)
+                        </span>
+                    </div>
+                )}
+                <div className="flex gap-3">
+                    <button
+                        onClick={() => startMigration(true)}
+                        disabled={submitting || !shopware.language_id || !shopware.live_version_id}
+                        className="inline-flex items-center gap-2 rounded-lg border border-purple-300 bg-purple-50 px-6 py-3 text-sm font-medium text-purple-700 hover:bg-purple-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        <FlaskConical className="h-4 w-4" />
+                        Dry Run
+                    </button>
+                    <button
+                        onClick={() => startMigration(false)}
+                        disabled={submitting || !shopware.language_id || !shopware.live_version_id}
+                        className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-6 py-3 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        {submitting ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                            <Play className="h-4 w-4" />
+                        )}
+                        Start Migration
+                    </button>
+                </div>
             </div>
+
+            {/* Help Modals */}
+            {activeGuide && guides[activeGuide] && (
+                <HelpModal
+                    isOpen={true}
+                    onClose={() => setActiveGuide(null)}
+                    title={guides[activeGuide].title}
+                >
+                    {guides[activeGuide].content}
+                </HelpModal>
+            )}
         </div>
     );
 }

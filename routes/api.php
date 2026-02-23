@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\LogController;
 use App\Http\Controllers\MigrationController;
+use App\Http\Controllers\ShopwareConfigController;
 use App\Models\MigrationRun;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -54,4 +55,6 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/woocommerce/ping', [MigrationController::class, 'pingWoocommerce']);
     Route::post('/test-connections', [MigrationController::class, 'testConnections']);
     Route::post('/cms-pages/list', [MigrationController::class, 'listCmsPages']);
+    Route::post('/shopware/languages', [ShopwareConfigController::class, 'getLanguages']);
+    Route::post('/shopware/live-version', [ShopwareConfigController::class, 'getLiveVersionId']);
 });
