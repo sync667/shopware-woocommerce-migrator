@@ -14,10 +14,12 @@ services:
       - ../../:/var/www/html
       - ./php/php.ini:/usr/local/etc/php/conf.d/custom.ini
       - ./php/php-fpm.conf:/usr/local/etc/php-fpm.d/zzz-custom.conf
+    env_file:
+      - .env.docker
     networks:
       - app-network
     depends_on:
-      pgsql:
+      mysql:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -40,28 +42,31 @@ services:
     depends_on:
       - api
 
-  # PostgreSQL 17
-  pgsql:
-    image: postgres:17-alpine
-    container_name: ${APP_NAME:-laravel}_pgsql
+  # MySQL 8 - Development Database (Application & Shopware Source)
+  mysql:
+    image: mysql:8.0
+    container_name: ${APP_NAME:-laravel}_mysql
     restart: unless-stopped
     ports:
-      - "${FORWARD_DB_PORT:-5432}:5432"
+      - "3306:3306"
     environment:
-      POSTGRES_DB: ${DB_DATABASE:-laravel}
-      POSTGRES_USER: ${DB_USERNAME:-laravel}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-secret}
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: migrator_app
+      MYSQL_USER: migrator
+      MYSQL_PASSWORD: migrator
     volumes:
-      - pgsql-data:/var/lib/postgresql/data
+      - mysql-data:/var/lib/mysql
+      - ./mysql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     networks:
       - app-network
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U ${DB_USERNAME:-laravel}" ]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
       interval: 5s
       timeout: 5s
       retries: 5
+    command: --default-authentication-plugin=mysql_native_password
 
-  # MySQL 8 - For Testing & Shopware Source Database
+  # MySQL 8 - Testing Database (PHPUnit)
   mysql-test:
     image: mysql:8.0
     container_name: ${APP_NAME:-laravel}_mysql_test
@@ -71,8 +76,8 @@ services:
     environment:
       MYSQL_ROOT_PASSWORD: root
       MYSQL_DATABASE: migrator_test
-      MYSQL_USER: migrator
-      MYSQL_PASSWORD: migrator
+      MYSQL_USER: migrator_test
+      MYSQL_PASSWORD: migrator_test
     volumes:
       - mysql-test-data:/var/lib/mysql
     networks:
@@ -82,7 +87,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
-    command: --default-authentication-plugin=mysql_native_password
+    command: --default-authentication-plugin=mysql_native_password --innodb-flush-log-at-trx-commit=0
 
   # Redis 7
   redis:
@@ -141,10 +146,12 @@ services:
       - ../../:/var/www/html
       - ./php/php.ini:/usr/local/etc/php/conf.d/custom.ini
     command: php artisan queue:work --tries=3 --timeout=90 --sleep=3 --max-jobs=1000
+    env_file:
+      - .env.docker
     networks:
       - app-network
     depends_on:
-      pgsql:
+      mysql:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -167,10 +174,12 @@ services:
       - ./php/php.ini:/usr/local/etc/php/conf.d/custom.ini
     command: >
       sh -c "while true; do php artisan schedule:run --verbose --no-interaction && sleep 60; done"
+    env_file:
+      - .env.docker
     networks:
       - app-network
     depends_on:
-      pgsql:
+      mysql:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -182,6 +191,6 @@ networks:
     driver: bridge
 
 volumes:
-  pgsql-data:
-  redis-data:
+  mysql-data:
   mysql-test-data:
+  redis-data:
