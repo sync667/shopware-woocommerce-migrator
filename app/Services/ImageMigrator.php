@@ -51,6 +51,39 @@ class ImageMigrator
         return "{$this->shopwareBaseUrl}/media/{$path}/{$fileName}.{$extension}";
     }
 
+    /**
+     * Migrate image from URL (for inline images in content)
+     */
+    public function migrateFromUrl(string $imageUrl, string $altText = ''): ?int
+    {
+        // Extract filename from URL
+        $filename = basename(parse_url($imageUrl, PHP_URL_PATH));
+
+        if (empty($filename)) {
+            $filename = 'image-'.md5($imageUrl).'.jpg';
+        }
+
+        return $this->migrate($imageUrl, $filename, '', $altText);
+    }
+
+    /**
+     * Get WordPress media URL from media ID
+     */
+    public function getWordPressMediaUrl(int $mediaId): ?string
+    {
+        try {
+            $media = $this->wpMedia->get($mediaId);
+
+            return $media['source_url'] ?? null;
+        } catch (\Exception $e) {
+            Log::error("Failed to get WordPress media URL: {$e->getMessage()}", [
+                'media_id' => $mediaId,
+            ]);
+
+            return null;
+        }
+    }
+
     protected function guessMimeType(string $filename): string
     {
         $ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));

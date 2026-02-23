@@ -145,4 +145,40 @@ class OrderReader
 
         return is_array($trackingCodes) ? $trackingCodes : [];
     }
+
+    /**
+     * Fetch orders updated since given timestamp (for delta migration)
+     */
+    public function fetchUpdatedSince(\DateTimeInterface $since): array
+    {
+        return $this->db->select("
+            SELECT
+                LOWER(HEX(o.id)) AS id,
+                o.order_number,
+                o.order_date_time AS order_date,
+                o.amount_total AS total,
+                o.amount_net AS subtotal,
+                o.position_price,
+                o.shipping_total,
+                o.customer_comment,
+                o.currency_factor,
+                LOWER(HEX(o.billing_address_id)) AS billing_address_id,
+                COALESCE(sms.technical_name, '') AS status,
+                o.custom_fields,
+                o.deep_link_code,
+                o.affiliate_code,
+                o.campaign_code,
+                o.updated_at,
+                o.created_at
+            FROM `order` o
+            LEFT JOIN state_machine_state sms ON sms.id = o.state_id
+            WHERE o.version_id = ?
+              AND (o.updated_at > ? OR o.created_at > ?)
+            ORDER BY o.updated_at ASC, o.created_at ASC
+        ", [
+            $this->db->liveVersionIdBin(),
+            $since->format('Y-m-d H:i:s'),
+            $since->format('Y-m-d H:i:s'),
+        ]);
+    }
 }

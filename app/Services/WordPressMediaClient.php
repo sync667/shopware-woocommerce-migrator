@@ -75,4 +75,22 @@ class WordPressMediaClient
             return null;
         }
     }
+
+    /**
+     * Get media details by ID
+     */
+    public function get(int $mediaId): ?array
+    {
+        try {
+            $response = $this->client->get("media/{$mediaId}");
+
+            return json_decode($response->getBody()->getContents(), true);
+        } catch (\Exception $e) {
+            Log::error("WordPress media fetch failed: {$e->getMessage()}", [
+                'media_id' => $mediaId,
+            ]);
+
+            return null;
+        }
+    }
 }

@@ -10,10 +10,16 @@ class CategoryTransformer
             'name' => $category->name ?: 'Unnamed Category',
             'description' => $category->description ?? '',
             'menu_order' => (int) ($category->sort_order ?? 0),
+            'meta_data' => [],
         ];
 
         if ($wooParentId) {
             $data['parent'] = $wooParentId;
+        }
+
+        // Store Shopware category ID for reference
+        if ($category->id ?? '') {
+            $data['meta_data'][] = ['key' => '_shopware_category_id', 'value' => $category->id];
         }
 
         return $data;

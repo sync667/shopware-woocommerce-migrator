@@ -52,4 +52,34 @@ class CustomerReader
 
         return $results[0] ?? null;
     }
+
+    /**
+     * Fetch customers updated since given timestamp (for delta migration)
+     */
+    public function fetchUpdatedSince(\DateTimeInterface $since): array
+    {
+        return $this->db->select('
+            SELECT
+                LOWER(HEX(c.id)) AS id,
+                c.first_name,
+                c.last_name,
+                c.email,
+                c.password,
+                c.active,
+                c.customer_number,
+                c.company,
+                c.guest,
+                c.newsletter,
+                LOWER(HEX(c.default_billing_address_id)) AS billing_address_id,
+                LOWER(HEX(c.default_shipping_address_id)) AS shipping_address_id,
+                c.updated_at,
+                c.created_at
+            FROM customer c
+            WHERE c.updated_at > ? OR c.created_at > ?
+            ORDER BY c.updated_at ASC, c.created_at ASC
+        ', [
+            $since->format('Y-m-d H:i:s'),
+            $since->format('Y-m-d H:i:s'),
+        ]);
+    }
 }

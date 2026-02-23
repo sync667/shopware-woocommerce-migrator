@@ -33,7 +33,22 @@ class MigrateManufacturersJob implements ShouldQueue
         $reader = new ManufacturerReader($db);
         $transformer = new ManufacturerTransformer;
 
-        $manufacturers = $reader->fetchAll();
+        // Fetch manufacturers based on sync mode
+        if ($migration->sync_mode === 'delta' && $migration->last_sync_at) {
+            $manufacturers = $reader->fetchUpdatedSince($migration->last_sync_at);
+            $mode = 'delta (updated since '.$migration->last_sync_at->format('Y-m-d H:i:s').')';
+        } else {
+            $manufacturers = $reader->fetchAll();
+            $mode = $migration->sync_mode === 'delta' ? 'delta (first run - all manufacturers)' : 'full';
+        }
+
+        MigrationLog::create([
+            'migration_id' => $this->migrationId,
+            'entity_type' => 'manufacturer',
+            'level' => 'info',
+            'message' => 'Processing '.count($manufacturers)." manufacturers (mode: {$mode})",
+            'created_at' => now(),
+        ]);
 
         foreach ($manufacturers as $manufacturer) {
             if ($stateManager->alreadyMigrated('manufacturer', $manufacturer->id, $this->migrationId)) {
@@ -66,6 +81,11 @@ class MigrateManufacturersJob implements ShouldQueue
                 $stateManager->markFailed('manufacturer', $manufacturer->id, $this->migrationId, $e->getMessage());
                 $this->log('error', "Failed: {$e->getMessage()}", $manufacturer->id, 'manufacturer');
             }
+        }
+
+        // Update last_sync_at timestamp for delta migrations
+        if ($migration->sync_mode === 'delta') {
+            $migration->update(['last_sync_at' => now()]);
         }
     }
 

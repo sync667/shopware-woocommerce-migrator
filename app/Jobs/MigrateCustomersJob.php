@@ -35,7 +35,22 @@ class MigrateCustomersJob implements ShouldQueue
         $transformer = new CustomerTransformer;
         $passwordMigrator = new PasswordMigrator;
 
-        $customers = $reader->fetchAll();
+        // Fetch customers based on sync mode
+        if ($migration->sync_mode === 'delta' && $migration->last_sync_at) {
+            $customers = $reader->fetchUpdatedSince($migration->last_sync_at);
+            $mode = 'delta (updated since '.$migration->last_sync_at->format('Y-m-d H:i:s').')';
+        } else {
+            $customers = $reader->fetchAll();
+            $mode = $migration->sync_mode === 'delta' ? 'delta (first run - all customers)' : 'full';
+        }
+
+        MigrationLog::create([
+            'migration_id' => $this->migrationId,
+            'entity_type' => 'customer',
+            'level' => 'info',
+            'message' => 'Processing '.count($customers)." customers (mode: {$mode})",
+            'created_at' => now(),
+        ]);
 
         foreach ($customers as $customer) {
             if ($stateManager->alreadyMigrated('customer', $customer->id, $this->migrationId)) {
@@ -88,6 +103,11 @@ class MigrateCustomersJob implements ShouldQueue
                 $stateManager->markFailed('customer', $customer->id, $this->migrationId, $e->getMessage());
                 $this->log('error', "Failed: {$e->getMessage()}", $customer->id);
             }
+        }
+
+        // Update last_sync_at timestamp for delta migrations
+        if ($migration->sync_mode === 'delta') {
+            $migration->update(['last_sync_at' => now()]);
         }
     }
 

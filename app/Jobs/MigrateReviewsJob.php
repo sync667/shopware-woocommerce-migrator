@@ -33,7 +33,22 @@ class MigrateReviewsJob implements ShouldQueue
         $reader = new ReviewReader($db);
         $transformer = new ReviewTransformer;
 
-        $reviews = $reader->fetchAll();
+        // Fetch reviews based on sync mode
+        if ($migration->sync_mode === 'delta' && $migration->last_sync_at) {
+            $reviews = $reader->fetchUpdatedSince($migration->last_sync_at);
+            $mode = 'delta (updated since '.$migration->last_sync_at->format('Y-m-d H:i:s').')';
+        } else {
+            $reviews = $reader->fetchAll();
+            $mode = $migration->sync_mode === 'delta' ? 'delta (first run - all reviews)' : 'full';
+        }
+
+        MigrationLog::create([
+            'migration_id' => $this->migrationId,
+            'entity_type' => 'review',
+            'level' => 'info',
+            'message' => 'Processing '.count($reviews)." reviews (mode: {$mode})",
+            'created_at' => now(),
+        ]);
 
         foreach ($reviews as $review) {
             if ($stateManager->alreadyMigrated('review', $review->id, $this->migrationId)) {
@@ -70,6 +85,11 @@ class MigrateReviewsJob implements ShouldQueue
                 $stateManager->markFailed('review', $review->id, $this->migrationId, $e->getMessage());
                 $this->log('error', "Failed: {$e->getMessage()}", $review->id);
             }
+        }
+
+        // Update last_sync_at timestamp for delta migrations
+        if ($migration->sync_mode === 'delta') {
+            $migration->update(['last_sync_at' => now()]);
         }
     }
 

@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Jobs\MigrateCategoriesJob;
+use App\Jobs\MigrateCmsPagesJob;
 use App\Jobs\MigrateCouponsJob;
 use App\Jobs\MigrateCustomersJob;
 use App\Jobs\MigrateManufacturersJob;
@@ -22,6 +23,8 @@ class MigrateShopwareCommand extends Command
     protected $signature = 'shopware:migrate
         {--name=CLI Migration : Migration run name}
         {--dry-run : Run without writing to WooCommerce}
+        {--mode=full : Migration mode: full or delta}
+        {--conflict=shopware_wins : Conflict resolution strategy: shopware_wins, woo_wins, manual}
         {--sw-host= : Shopware DB host}
         {--sw-port=3306 : Shopware DB port}
         {--sw-database= : Shopware DB database}
@@ -34,12 +37,30 @@ class MigrateShopwareCommand extends Command
         {--wc-key= : WooCommerce consumer key}
         {--wc-secret= : WooCommerce consumer secret}
         {--wp-username= : WordPress username}
-        {--wp-app-password= : WordPress application password}';
+        {--wp-app-password= : WordPress application password}
+        {--cms-all : Migrate all CMS pages}
+        {--cms-ids= : Migrate specific CMS pages by ID (comma-separated)}';
 
     protected $description = 'Run Shopware → WooCommerce migration via CLI';
 
     public function handle(): int
     {
+        // Validate mode
+        $mode = $this->option('mode');
+        if (! in_array($mode, ['full', 'delta'])) {
+            $this->error("Invalid mode: {$mode}. Must be 'full' or 'delta'");
+
+            return Command::FAILURE;
+        }
+
+        // Validate conflict strategy
+        $conflictStrategy = $this->option('conflict');
+        if (! in_array($conflictStrategy, ['shopware_wins', 'woo_wins', 'manual'])) {
+            $this->error("Invalid conflict strategy: {$conflictStrategy}");
+
+            return Command::FAILURE;
+        }
+
         $settings = [
             'shopware' => [
                 'db_host' => $this->option('sw-host') ?: config('shopware.db.host'),
@@ -66,6 +87,8 @@ class MigrateShopwareCommand extends Command
             'name' => $this->option('name'),
             'settings' => $settings,
             'is_dry_run' => (bool) $this->option('dry-run'),
+            'sync_mode' => $mode,
+            'conflict_strategy' => $conflictStrategy,
             'status' => 'pending',
         ]);
 
@@ -75,9 +98,18 @@ class MigrateShopwareCommand extends Command
             $this->warn('Running in DRY RUN mode — no data will be written to WooCommerce.');
         }
 
+        // Display migration mode information
+        if ($mode === 'delta') {
+            $this->info('🔄 Running DELTA migration (only changed records)');
+            $this->info("⚔️  Conflict strategy: {$conflictStrategy}");
+        } else {
+            $this->info('🔄 Running FULL migration (all records)');
+        }
+
         $migration->markRunning();
 
-        Bus::chain([
+        // Build job chain
+        $jobs = [
             new MigrateManufacturersJob($migration->id),
             new MigrateTaxesJob($migration->id),
             new MigrateCategoriesJob($migration->id),
@@ -89,13 +121,27 @@ class MigrateShopwareCommand extends Command
             new MigrateShippingMethodsJob($migration->id),
             new MigratePaymentMethodsJob($migration->id),
             new MigrateSeoUrlsJob($migration->id),
-            function () use ($migration) {
-                $migration->refresh();
-                if ($migration->status === 'running') {
-                    $migration->markCompleted();
-                }
-            },
-        ])->catch(function (\Throwable $e) use ($migration) {
+        ];
+
+        // Add CMS pages migration if requested
+        if ($this->option('cms-all')) {
+            $jobs[] = new MigrateCmsPagesJob($migration->id);
+            $this->info('CMS pages: Migrating all pages');
+        } elseif ($cmsIds = $this->option('cms-ids')) {
+            $ids = array_map('trim', explode(',', $cmsIds));
+            $jobs[] = new MigrateCmsPagesJob($migration->id, $ids);
+            $this->info('CMS pages: Migrating '.count($ids).' selected page(s)');
+        }
+
+        // Add completion handler
+        $jobs[] = function () use ($migration) {
+            $migration->refresh();
+            if ($migration->status === 'running') {
+                $migration->markCompleted();
+            }
+        };
+
+        Bus::chain($jobs)->catch(function (\Throwable $e) use ($migration) {
             $migration->markFailed();
         })->dispatch();
 

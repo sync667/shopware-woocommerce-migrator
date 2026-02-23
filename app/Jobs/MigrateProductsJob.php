@@ -28,19 +28,31 @@ class MigrateProductsJob implements ShouldQueue
         $db = ShopwareDB::fromMigration($migration);
         $reader = new ProductReader($db);
 
-        $products = $reader->fetchAllParents();
+        // Fetch products based on sync mode
+        if ($migration->sync_mode === 'delta' && $migration->last_sync_at) {
+            $products = $reader->fetchUpdatedSince($migration->last_sync_at);
+            $mode = 'delta (updated since '.$migration->last_sync_at->format('Y-m-d H:i:s').')';
+        } else {
+            $products = $reader->fetchAllParents();
+            $mode = $migration->sync_mode === 'delta' ? 'delta (first run - all products)' : 'full';
+        }
 
         MigrationLog::create([
             'migration_id' => $this->migrationId,
             'entity_type' => 'product',
             'level' => 'info',
-            'message' => 'Dispatching '.count($products).' product migration jobs',
+            'message' => 'Dispatching '.count($products)." product migration jobs (mode: {$mode})",
             'created_at' => now(),
         ]);
 
         foreach ($products as $product) {
             MigrateProductJob::dispatch($this->migrationId, $product->id)
                 ->onQueue('products');
+        }
+
+        // Update last_sync_at timestamp for delta migrations
+        if ($migration->sync_mode === 'delta') {
+            $migration->update(['last_sync_at' => now()]);
         }
     }
 }

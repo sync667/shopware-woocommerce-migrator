@@ -2,8 +2,14 @@
 
 namespace App\Shopware\Transformers;
 
+use App\Services\ContentMigrator;
+
 class ProductTransformer
 {
+    public function __construct(
+        protected ?ContentMigrator $contentMigrator = null
+    ) {}
+
     public function transform(
         object $product,
         array $categoryWooIds = [],
@@ -14,13 +20,25 @@ class ProductTransformer
     ): array {
         $prices = $this->parsePrices($product->price ?? '[]');
 
+        // Process description with ContentMigrator if available
+        $description = $product->description ?? '';
+        if ($this->contentMigrator && ! empty($description)) {
+            $description = $this->contentMigrator->processHtmlContent($description);
+        }
+
+        // Generate short description from full description
+        $shortDescription = '';
+        if ($this->contentMigrator && ! empty($description)) {
+            $shortDescription = $this->contentMigrator->extractPlainText($description, 150);
+        }
+
         $data = [
             'name' => $product->name ?: 'Unnamed Product',
             'sku' => $product->sku ?? '',
             'type' => $this->mapProductType($product->type ?? 'product'),
             'status' => ($product->active ?? false) ? 'publish' : 'draft',
-            'description' => $product->description ?? '',
-            'short_description' => '',
+            'description' => $description,
+            'short_description' => $shortDescription,
             'regular_price' => $prices['regular'],
             'manage_stock' => (bool) ($product->manage_stock ?? false),
             'stock_quantity' => (int) ($product->stock ?? 0),
@@ -47,6 +65,15 @@ class ProductTransformer
         }
 
         $data['meta_data'] = [];
+
+        // Store Shopware product ID and number for reference
+        if ($product->id ?? '') {
+            $data['meta_data'][] = ['key' => '_shopware_product_id', 'value' => $product->id];
+        }
+
+        if ($product->sku ?? '') {
+            $data['meta_data'][] = ['key' => '_shopware_product_number', 'value' => $product->sku];
+        }
 
         if ($product->meta_title ?? '') {
             $data['meta_data'][] = ['key' => '_yoast_wpseo_title', 'value' => $product->meta_title];

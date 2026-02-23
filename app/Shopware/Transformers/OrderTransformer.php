@@ -31,6 +31,7 @@ class OrderTransformer
             'line_items' => $this->transformLineItems($lineItems),
             'meta_data' => [
                 ['key' => '_shopware_order_number', 'value' => $order->order_number ?? ''],
+                ['key' => '_shopware_order_id', 'value' => $order->id ?? ''],
             ],
         ];
 

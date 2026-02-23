@@ -33,7 +33,22 @@ class MigrateOrdersJob implements ShouldQueue
         $reader = new OrderReader($db);
         $transformer = new OrderTransformer;
 
-        $orders = $reader->fetchAll();
+        // Fetch orders based on sync mode
+        if ($migration->sync_mode === 'delta' && $migration->last_sync_at) {
+            $orders = $reader->fetchUpdatedSince($migration->last_sync_at);
+            $mode = 'delta (updated since '.$migration->last_sync_at->format('Y-m-d H:i:s').')';
+        } else {
+            $orders = $reader->fetchAll();
+            $mode = $migration->sync_mode === 'delta' ? 'delta (first run - all orders)' : 'full';
+        }
+
+        MigrationLog::create([
+            'migration_id' => $this->migrationId,
+            'entity_type' => 'order',
+            'level' => 'info',
+            'message' => 'Processing '.count($orders)." orders (mode: {$mode})",
+            'created_at' => now(),
+        ]);
 
         foreach ($orders as $order) {
             if ($stateManager->alreadyMigrated('order', $order->id, $this->migrationId)) {
@@ -76,6 +91,11 @@ class MigrateOrdersJob implements ShouldQueue
                 $stateManager->markFailed('order', $order->id, $this->migrationId, $e->getMessage());
                 $this->log('error', "Failed: {$e->getMessage()}", $order->id);
             }
+        }
+
+        // Update last_sync_at timestamp for delta migrations
+        if ($migration->sync_mode === 'delta') {
+            $migration->update(['last_sync_at' => now()]);
         }
     }
 

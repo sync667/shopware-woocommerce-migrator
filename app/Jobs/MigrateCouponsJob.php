@@ -33,7 +33,22 @@ class MigrateCouponsJob implements ShouldQueue
         $reader = new CouponReader($db);
         $transformer = new CouponTransformer;
 
-        $promotions = $reader->fetchAll();
+        // Fetch coupons based on sync mode
+        if ($migration->sync_mode === 'delta' && $migration->last_sync_at) {
+            $promotions = $reader->fetchUpdatedSince($migration->last_sync_at);
+            $mode = 'delta (updated since '.$migration->last_sync_at->format('Y-m-d H:i:s').')';
+        } else {
+            $promotions = $reader->fetchAll();
+            $mode = $migration->sync_mode === 'delta' ? 'delta (first run - all coupons)' : 'full';
+        }
+
+        MigrationLog::create([
+            'migration_id' => $this->migrationId,
+            'entity_type' => 'coupon',
+            'level' => 'info',
+            'message' => 'Processing '.count($promotions)." coupons (mode: {$mode})",
+            'created_at' => now(),
+        ]);
 
         foreach ($promotions as $promotion) {
             if ($stateManager->alreadyMigrated('coupon', $promotion->id, $this->migrationId)) {
@@ -78,6 +93,11 @@ class MigrateCouponsJob implements ShouldQueue
                 $stateManager->markFailed('coupon', $promotion->id, $this->migrationId, $e->getMessage());
                 $this->log('error', "Failed: {$e->getMessage()}", $promotion->id);
             }
+        }
+
+        // Update last_sync_at timestamp for delta migrations
+        if ($migration->sync_mode === 'delta') {
+            $migration->update(['last_sync_at' => now()]);
         }
     }
 

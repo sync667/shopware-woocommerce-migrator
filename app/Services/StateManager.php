@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\MigrationEntity;
+use Carbon\Carbon;
 
 class StateManager
 {
@@ -78,5 +79,54 @@ class StateManager
                 'payload' => $payload,
             ]
         );
+    }
+
+    /**
+     * Get full entity record with metadata
+     */
+    public function getEntity(string $entityType, string $shopwareId, int $migrationId): ?MigrationEntity
+    {
+        return MigrationEntity::where('migration_id', $migrationId)
+            ->where('entity_type', $entityType)
+            ->where('shopware_id', $shopwareId)
+            ->first();
+    }
+
+    /**
+     * Update sync metadata for delta migration
+     */
+    public function updateSyncMetadata(
+        string $entityType,
+        string $shopwareId,
+        int $migrationId,
+        ?Carbon $shopwareUpdatedAt,
+        string $syncStatus
+    ): void {
+        MigrationEntity::where('migration_id', $migrationId)
+            ->where('entity_type', $entityType)
+            ->where('shopware_id', $shopwareId)
+            ->update([
+                'shopware_updated_at' => $shopwareUpdatedAt,
+                'last_synced_at' => now(),
+                'sync_status' => $syncStatus,
+            ]);
+    }
+
+    /**
+     * Mark entity as having a conflict
+     */
+    public function markConflict(
+        string $entityType,
+        string $shopwareId,
+        int $migrationId,
+        array $conflictInfo
+    ): void {
+        MigrationEntity::where('migration_id', $migrationId)
+            ->where('entity_type', $entityType)
+            ->where('shopware_id', $shopwareId)
+            ->update([
+                'sync_status' => 'conflict',
+                'error_message' => json_encode($conflictInfo),
+            ]);
     }
 }

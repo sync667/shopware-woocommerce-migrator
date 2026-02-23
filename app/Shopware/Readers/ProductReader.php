@@ -212,4 +212,60 @@ class ProductReader
             $this->db->liveVersionIdBin(),
         ]);
     }
+
+    /**
+     * Fetch products updated since given timestamp (for delta migration)
+     */
+    public function fetchUpdatedSince(\DateTimeInterface $since): array
+    {
+        return $this->db->select("
+            SELECT
+                LOWER(HEX(p.id)) AS id,
+                LOWER(HEX(p.parent_id)) AS parent_id,
+                p.product_number AS sku,
+                p.active,
+                p.stock,
+                p.is_closeout AS manage_stock,
+                p.weight,
+                p.width,
+                p.height,
+                p.length AS depth,
+                p.price,
+                CASE WHEN p.child_count > 0 THEN 'grouped' ELSE 'simple' END AS type,
+                LOWER(HEX(p.tax_id)) AS tax_id,
+                LOWER(HEX(p.product_manufacturer_id)) AS manufacturer_id,
+                LOWER(HEX(p.product_media_id)) AS cover_id,
+                COALESCE(pt.name, '') AS name,
+                COALESCE(pt.description, '') AS description,
+                COALESCE(pt.meta_title, '') AS meta_title,
+                COALESCE(pt.meta_description, '') AS meta_description,
+                COALESCE(pt.custom_search_keywords, '') AS keywords,
+                p.ean,
+                p.manufacturer_number,
+                p.min_purchase,
+                p.max_purchase,
+                p.purchase_steps,
+                p.purchase_unit,
+                p.reference_unit,
+                p.shipping_free,
+                p.mark_as_topseller,
+                p.available,
+                p.updated_at,
+                p.created_at
+            FROM product p
+            LEFT JOIN product_translation pt
+                ON pt.product_id = p.id
+                AND pt.product_version_id = p.version_id
+                AND pt.language_id = ?
+            WHERE p.version_id = ?
+              AND p.parent_id IS NULL
+              AND (p.updated_at > ? OR p.created_at > ?)
+            ORDER BY p.updated_at ASC, p.created_at ASC
+        ", [
+            $this->db->languageIdBin(),
+            $this->db->liveVersionIdBin(),
+            $since->format('Y-m-d H:i:s'),
+            $since->format('Y-m-d H:i:s'),
+        ]);
+    }
 }

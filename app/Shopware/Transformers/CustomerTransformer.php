@@ -14,6 +14,11 @@ class CustomerTransformer
             'meta_data' => [],
         ];
 
+        // Store Shopware customer ID and number for reference
+        if ($customer->id ?? '') {
+            $data['meta_data'][] = ['key' => '_shopware_customer_id', 'value' => $customer->id];
+        }
+
         if ($customer->customer_number ?? '') {
             $data['meta_data'][] = ['key' => '_shopware_customer_number', 'value' => $customer->customer_number];
         }

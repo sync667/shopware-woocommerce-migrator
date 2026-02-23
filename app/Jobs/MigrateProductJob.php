@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Models\MigrationLog;
 use App\Models\MigrationRun;
+use App\Services\ContentMigrator;
 use App\Services\ImageMigrator;
 use App\Services\ShopwareDB;
 use App\Services\StateManager;
@@ -39,8 +40,9 @@ class MigrateProductJob implements ShouldQueue
         $db = ShopwareDB::fromMigration($migration);
         $woo = WooCommerceClient::fromMigration($migration);
         $imageMigrator = ImageMigrator::fromMigration($migration);
+        $contentMigrator = new ContentMigrator($imageMigrator);
         $reader = new ProductReader($db);
-        $transformer = new ProductTransformer;
+        $transformer = new ProductTransformer($contentMigrator);
 
         $products = $db->select("
             SELECT

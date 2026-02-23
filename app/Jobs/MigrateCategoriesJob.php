@@ -36,7 +36,22 @@ class MigrateCategoriesJob implements ShouldQueue
         $reader = new CategoryReader($db);
         $transformer = new CategoryTransformer;
 
-        $categories = $reader->fetchAll();
+        // Fetch categories based on sync mode
+        if ($migration->sync_mode === 'delta' && $migration->last_sync_at) {
+            $categories = $reader->fetchUpdatedSince($migration->last_sync_at);
+            $mode = 'delta (updated since '.$migration->last_sync_at->format('Y-m-d H:i:s').')';
+        } else {
+            $categories = $reader->fetchAll();
+            $mode = $migration->sync_mode === 'delta' ? 'delta (first run - all categories)' : 'full';
+        }
+
+        MigrationLog::create([
+            'migration_id' => $this->migrationId,
+            'entity_type' => 'category',
+            'level' => 'info',
+            'message' => 'Processing '.count($categories)." categories (mode: {$mode})",
+            'created_at' => now(),
+        ]);
 
         foreach ($categories as $category) {
             if ($stateManager->alreadyMigrated('category', $category->id, $this->migrationId)) {
@@ -86,6 +101,11 @@ class MigrateCategoriesJob implements ShouldQueue
                 $stateManager->markFailed('category', $category->id, $this->migrationId, $e->getMessage());
                 $this->log('error', "Failed: {$e->getMessage()}", $category->id, 'category');
             }
+        }
+
+        // Update last_sync_at timestamp for delta migrations
+        if ($migration->sync_mode === 'delta') {
+            $migration->update(['last_sync_at' => now()]);
         }
     }
 
