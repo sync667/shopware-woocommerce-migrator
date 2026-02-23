@@ -24,16 +24,35 @@ A Laravel 12 web application with an Inertia.js + React dashboard that migrates 
 | Source | Shopware 6.4 MySQL (direct TCP connection) |
 | Target | WooCommerce REST API v3, WordPress Media API |
 
-## Requirements
+## Quick Start (Docker — Recommended)
 
-- PHP 8.3+
-- Composer
-- Node.js 20+
-- PostgreSQL (application database)
-- Redis (recommended for queues) or database queue driver
-- Network access to Shopware MySQL and WooCommerce REST API
+```bash
+git clone https://github.com/sync667/shopware-woocommerce-migrator.git
+cd shopware-woocommerce-migrator
 
-## Installation
+# Copy Docker env file and configure ports if needed
+cp docker/local/.env.example docker/local/.env
+
+# Copy application env file
+cp .env.example .env
+
+# One-command setup: builds images, starts services, installs deps, runs migrations
+./local.sh setup
+```
+
+Once running, visit **http://localhost:8080**.
+
+> The Vite hot-reload dev server is available at **http://localhost:5173** (started automatically by the `node` container).
+
+For all Docker helper commands, run:
+
+```bash
+./local.sh help
+```
+
+See [`docker/local/README.md`](docker/local/README.md) for full details.
+
+## Manual Installation
 
 ```bash
 # Clone the repository
@@ -69,6 +88,15 @@ npm run build
 # Start the development server
 php artisan serve
 ```
+
+## Requirements
+
+- PHP 8.3+ with `pdo_pgsql` and `pdo_mysql` extensions
+- Composer
+- Node.js 20+
+- PostgreSQL (application database)
+- Redis (recommended for queues) or database queue driver
+- Network access to Shopware MySQL and WooCommerce REST API
 
 ## Queue Worker
 
@@ -185,6 +213,10 @@ SELECT LOWER(HEX(id)) FROM version WHERE name = 'Live';
 | POST | `/api/shopware/ping` | Test Shopware DB connection |
 | POST | `/api/woocommerce/ping` | Test WooCommerce API connection |
 
+## Contributing
+
+Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to open issues, submit pull requests, and run the test suite.
+
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE) for details.

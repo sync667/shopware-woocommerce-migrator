@@ -1,0 +1,48 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# CI / editor
+.github
+.idea
+.vscode
+.cursor
+.ai
+.junie
+.editorconfig
+
+# Documentation
+*.md
+LICENSE
+
+# Node
+node_modules
+npm-debug.log
+yarn-error.log
+
+# Frontend build (rebuilt inside image)
+public/build
+public/hot
+
+# PHP dev tools / test artefacts
+vendor
+.phpunit.cache
+.phpunit.result.cache
+phpunit.xml
+playwright.config.js
+playwright-report
+test-results
+
+# Laravel local files
+.env
+.env.*
+storage/*.key
+bootstrap/cache/*.php
+
+# Docker config (not needed inside the image)
+docker
+docker-compose*.yml
+
+# Misc
+*.sh
