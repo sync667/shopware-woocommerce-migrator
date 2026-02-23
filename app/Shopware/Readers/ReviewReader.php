@@ -17,7 +17,7 @@ class ReviewReader
                 LOWER(HEX(pr.customer_id)) AS customer_id,
                 pr.points AS rating,
                 pr.status AS active,
-                pr.comment,
+                COALESCE(pr.content, pr.comment, '') AS comment,
                 pr.title,
                 pr.created_at,
                 COALESCE(c.first_name, '') AS author_first_name,

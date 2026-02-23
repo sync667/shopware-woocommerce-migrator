@@ -60,6 +60,47 @@ class ProductTransformer
             $data['meta_data'][] = ['key' => '_manufacturer_id', 'value' => (string) $manufacturerWooId];
         }
 
+        if ($product->ean ?? '') {
+            $data['meta_data'][] = ['key' => '_ean', 'value' => $product->ean];
+        }
+
+        if ($product->manufacturer_number ?? '') {
+            $data['meta_data'][] = ['key' => '_manufacturer_number', 'value' => $product->manufacturer_number];
+        }
+
+        if (isset($product->min_purchase) && $product->min_purchase > 1) {
+            $data['meta_data'][] = ['key' => '_min_purchase', 'value' => (int) $product->min_purchase];
+        }
+
+        if (isset($product->max_purchase) && $product->max_purchase > 0) {
+            $data['meta_data'][] = ['key' => '_max_purchase', 'value' => (int) $product->max_purchase];
+        }
+
+        if (isset($product->purchase_steps) && $product->purchase_steps > 1) {
+            $data['meta_data'][] = ['key' => '_purchase_steps', 'value' => (int) $product->purchase_steps];
+        }
+
+        if ($product->purchase_unit ?? null) {
+            $data['meta_data'][] = ['key' => '_purchase_unit', 'value' => (float) $product->purchase_unit];
+        }
+
+        if ($product->reference_unit ?? null) {
+            $data['meta_data'][] = ['key' => '_reference_unit', 'value' => (float) $product->reference_unit];
+        }
+
+        if (isset($product->shipping_free) && $product->shipping_free) {
+            $data['meta_data'][] = ['key' => '_shipping_free', 'value' => true];
+        }
+
+        if (isset($product->mark_as_topseller) && $product->mark_as_topseller) {
+            $data['meta_data'][] = ['key' => '_featured', 'value' => true];
+            $data['featured'] = true;
+        }
+
+        if (isset($product->available)) {
+            $data['meta_data'][] = ['key' => '_available', 'value' => (bool) $product->available];
+        }
+
         return $data;
     }
 

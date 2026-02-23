@@ -13,7 +13,7 @@ class CouponReader
         return $this->db->select('
             SELECT
                 LOWER(HEX(p.id)) AS id,
-                COALESCE(pt.name, p.name) AS name,
+                pt.name AS name,
                 p.active,
                 p.valid_from,
                 p.valid_until,
@@ -25,7 +25,7 @@ class CouponReader
             LEFT JOIN promotion_translation pt
                 ON pt.promotion_id = p.id
                 AND pt.language_id = ?
-            ORDER BY p.name ASC
+            ORDER BY pt.name ASC
         ', [$this->db->languageIdBin()]);
     }
 

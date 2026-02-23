@@ -61,6 +61,29 @@ services:
       timeout: 5s
       retries: 5
 
+  # MySQL 8 - For Testing & Shopware Source Database
+  mysql-test:
+    image: mysql:8.0
+    container_name: ${APP_NAME:-laravel}_mysql_test
+    restart: unless-stopped
+    ports:
+      - "3307:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: migrator_test
+      MYSQL_USER: migrator
+      MYSQL_PASSWORD: migrator
+    volumes:
+      - mysql-test-data:/var/lib/mysql
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    command: --default-authentication-plugin=mysql_native_password
+
   # Redis 7
   redis:
     image: redis:7-alpine
@@ -161,3 +184,4 @@ networks:
 volumes:
   pgsql-data:
   redis-data:
+  mysql-test-data:

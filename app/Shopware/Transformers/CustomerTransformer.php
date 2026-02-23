@@ -11,10 +11,21 @@ class CustomerTransformer
             'first_name' => $customer->first_name ?? '',
             'last_name' => $customer->last_name ?? '',
             'role' => 'customer',
+            'meta_data' => [],
         ];
+
+        if ($customer->customer_number ?? '') {
+            $data['meta_data'][] = ['key' => '_shopware_customer_number', 'value' => $customer->customer_number];
+        }
+
+        if (isset($customer->guest)) {
+            $data['meta_data'][] = ['key' => '_is_guest', 'value' => (bool) $customer->guest];
+        }
 
         if ($billingAddress) {
             $data['billing'] = $this->transformAddress($billingAddress);
+        } elseif ($customer->company ?? '') {
+            $data['billing'] = ['company' => $customer->company];
         }
 
         if ($shippingAddress) {

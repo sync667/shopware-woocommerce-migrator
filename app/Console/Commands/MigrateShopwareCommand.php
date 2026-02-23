@@ -7,8 +7,11 @@ use App\Jobs\MigrateCouponsJob;
 use App\Jobs\MigrateCustomersJob;
 use App\Jobs\MigrateManufacturersJob;
 use App\Jobs\MigrateOrdersJob;
+use App\Jobs\MigratePaymentMethodsJob;
 use App\Jobs\MigrateProductsJob;
 use App\Jobs\MigrateReviewsJob;
+use App\Jobs\MigrateSeoUrlsJob;
+use App\Jobs\MigrateShippingMethodsJob;
 use App\Jobs\MigrateTaxesJob;
 use App\Models\MigrationRun;
 use Illuminate\Console\Command;
@@ -83,6 +86,9 @@ class MigrateShopwareCommand extends Command
             new MigrateOrdersJob($migration->id),
             new MigrateCouponsJob($migration->id),
             new MigrateReviewsJob($migration->id),
+            new MigrateShippingMethodsJob($migration->id),
+            new MigratePaymentMethodsJob($migration->id),
+            new MigrateSeoUrlsJob($migration->id),
             function () use ($migration) {
                 $migration->refresh();
                 if ($migration->status === 'running') {

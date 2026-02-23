@@ -18,6 +18,9 @@ class CustomerReader
                 c.email,
                 c.password,
                 c.active,
+                c.customer_number,
+                c.company,
+                c.guest,
                 LOWER(HEX(c.default_billing_address_id)) AS billing_address_id,
                 LOWER(HEX(c.default_shipping_address_id)) AS shipping_address_id
             FROM customer c

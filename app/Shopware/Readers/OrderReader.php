@@ -22,7 +22,11 @@ class OrderReader
                 o.customer_comment,
                 o.currency_factor,
                 LOWER(HEX(o.billing_address_id)) AS billing_address_id,
-                COALESCE(sms.technical_name, '') AS status
+                COALESCE(sms.technical_name, '') AS status,
+                o.custom_fields,
+                o.deep_link_code,
+                o.affiliate_code,
+                o.campaign_code
             FROM `order` o
             LEFT JOIN state_machine_state sms ON sms.id = o.state_id
             WHERE o.version_id = ?

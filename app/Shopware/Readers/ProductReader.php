@@ -23,15 +23,25 @@ class ProductReader
                 p.height,
                 p.length AS depth,
                 p.price,
-                p.product_type AS type,
+                CASE WHEN p.child_count > 0 THEN 'grouped' ELSE 'simple' END AS type,
                 LOWER(HEX(p.tax_id)) AS tax_id,
                 LOWER(HEX(p.product_manufacturer_id)) AS manufacturer_id,
-                LOWER(HEX(p.cover_id)) AS cover_id,
+                LOWER(HEX(p.product_media_id)) AS cover_id,
                 COALESCE(pt.name, '') AS name,
                 COALESCE(pt.description, '') AS description,
                 COALESCE(pt.meta_title, '') AS meta_title,
                 COALESCE(pt.meta_description, '') AS meta_description,
-                COALESCE(pt.custom_search_keywords, '') AS keywords
+                COALESCE(pt.custom_search_keywords, '') AS keywords,
+                p.ean,
+                p.manufacturer_number,
+                p.min_purchase,
+                p.max_purchase,
+                p.purchase_steps,
+                p.purchase_unit,
+                p.reference_unit,
+                p.shipping_free,
+                p.mark_as_topseller,
+                p.available
             FROM product p
             LEFT JOIN product_translation pt
                 ON pt.product_id = p.id
@@ -54,7 +64,7 @@ class ProductReader
                 p.is_closeout AS manage_stock,
                 p.weight,
                 p.price,
-                LOWER(HEX(p.cover_id)) AS cover_id
+                LOWER(HEX(p.product_media_id)) AS cover_id
             FROM product p
             WHERE p.version_id = ?
               AND p.parent_id = UNHEX(?)
@@ -70,7 +80,6 @@ class ProductReader
                 pm.position,
                 COALESCE(m.file_name, '') AS file_name,
                 COALESCE(m.file_extension, '') AS file_extension,
-                COALESCE(m.path, '') AS path,
                 COALESCE(mt.alt, '') AS alt,
                 COALESCE(mt.title, '') AS title
             FROM product_media pm
@@ -99,12 +108,12 @@ class ProductReader
         return $this->db->select("
             SELECT
                 LOWER(HEX(pcs.id)) AS id,
-                LOWER(HEX(pcs.option_id)) AS option_id,
+                LOWER(HEX(pcs.property_group_option_id)) AS option_id,
                 COALESCE(pgot.name, '') AS option_name,
                 COALESCE(pgt.name, '') AS group_name,
                 LOWER(HEX(pgo.property_group_id)) AS group_id
             FROM product_configurator_setting pcs
-            INNER JOIN property_group_option pgo ON pgo.id = pcs.option_id
+            INNER JOIN property_group_option pgo ON pgo.id = pcs.property_group_option_id
             INNER JOIN property_group pg ON pg.id = pgo.property_group_id
             LEFT JOIN property_group_option_translation pgot
                 ON pgot.property_group_option_id = pgo.id
