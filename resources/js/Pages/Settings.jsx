@@ -1,10 +1,15 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import ConnectionStatus from '../Components/ConnectionStatus';
 import HelpModal from '../Components/HelpModal';
 import { guides } from '../Components/SetupGuides';
-import { ArrowLeft, Play, FlaskConical, Loader2, ChevronDown, ChevronUp, Check, X, AlertCircle, HelpCircle } from 'lucide-react';
+import { ArrowLeft, Play, FlaskConical, Loader2, ChevronDown, ChevronUp, Check, X, AlertCircle, HelpCircle, LogOut } from 'lucide-react';
+import { logout } from '../utils/auth';
 
 export default function Settings() {
+    // Check if cloning from existing migration
+    const urlParams = new URLSearchParams(window.location.search);
+    const cloneMigrationId = urlParams.get('clone');
+
     const [name, setName] = useState('');
     const [shopware, setShopware] = useState({
         db_host: '',
@@ -34,7 +39,9 @@ export default function Settings() {
     const [wordpress, setWordpress] = useState({
         username: '',
         app_password: '',
+        custom_headers: {},
     });
+    const [customHeadersEnabled, setCustomHeadersEnabled] = useState(false);
 
     // Migration options
     const [syncMode, setSyncMode] = useState('full');
@@ -66,6 +73,53 @@ export default function Settings() {
     const updateSsh = (key, value) =>
         setSshConfig((prev) => ({ ...prev, [key]: value }));
 
+    // Load settings from existing migration if cloning
+    useEffect(() => {
+        if (cloneMigrationId) {
+            fetch(`/api/migrations/${cloneMigrationId}/status`)
+                .then(res => res.json())
+                .then(data => {
+                    const migration = data.migration;
+                    if (migration?.settings) {
+                        const settings = typeof migration.settings === 'string'
+                            ? JSON.parse(migration.settings)
+                            : migration.settings;
+
+                        // Pre-fill form with cloned settings
+                        setName(migration.name + ' (Copy)');
+
+                        if (settings.shopware) {
+                            setShopware(settings.shopware);
+                            if (settings.shopware.ssh) {
+                                setSshEnabled(true);
+                                setSshConfig(settings.shopware.ssh);
+                            }
+                        }
+
+                        if (settings.woocommerce) {
+                            setWoocommerce(settings.woocommerce);
+                        }
+
+                        if (settings.wordpress) {
+                            setWordpress(settings.wordpress);
+                        }
+
+                        // Load additional options
+                        setSyncMode(migration.sync_mode || 'full');
+                        setConflictStrategy(migration.conflict_strategy || 'shopware_wins');
+                        setCleanWoocommerce(migration.clean_woocommerce || false);
+
+                        // Show notification
+                        alert(`Settings loaded from migration: ${migration.name}`);
+                    }
+                })
+                .catch(err => {
+                    console.error('Failed to load migration settings:', err);
+                    alert('Failed to load migration settings');
+                });
+        }
+    }, [cloneMigrationId]);
+
     const testAllConnections = async () => {
         setTesting(true);
         setTestResults(null);
@@ -84,13 +138,24 @@ export default function Settings() {
                 };
             }
 
+            // Filter out empty custom headers
+            const wpConfig = { ...wordpress };
+            if (wpConfig.custom_headers) {
+                wpConfig.custom_headers = Object.fromEntries(
+                    Object.entries(wpConfig.custom_headers).filter(([_, v]) => v && v.trim() !== '')
+                );
+                if (Object.keys(wpConfig.custom_headers).length === 0) {
+                    delete wpConfig.custom_headers;
+                }
+            }
+
             const res = await fetch('/api/test-connections', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
                 body: JSON.stringify({
                     shopware: swConfig,
                     woocommerce,
-                    wordpress,
+                    wordpress: wpConfig,
                 }),
             });
             const data = await res.json();
@@ -244,6 +309,17 @@ export default function Settings() {
                 selected_ids: cmsMigrateAll ? null : selectedCmsPages,
             } : null;
 
+            // Filter out empty custom headers
+            const wpConfig = { ...wordpress };
+            if (wpConfig.custom_headers) {
+                wpConfig.custom_headers = Object.fromEntries(
+                    Object.entries(wpConfig.custom_headers).filter(([_, v]) => v && v.trim() !== '')
+                );
+                if (Object.keys(wpConfig.custom_headers).length === 0) {
+                    delete wpConfig.custom_headers;
+                }
+            }
+
             const res = await fetch('/api/migrations', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
@@ -254,7 +330,7 @@ export default function Settings() {
                     sync_mode: syncMode,
                     conflict_strategy: conflictStrategy,
                     cms_options: cmsOptions,
-                    settings: { shopware: swConfig, woocommerce, wordpress },
+                    settings: { shopware: swConfig, woocommerce, wordpress: wpConfig },
                 }),
             });
             const data = await res.json();
@@ -285,12 +361,37 @@ export default function Settings() {
 
     return (
         <div className="mx-auto max-w-4xl px-4 py-8">
-            <div className="mb-6 flex items-center gap-3">
-                <a href="/" className="text-gray-400 hover:text-gray-600">
-                    <ArrowLeft className="h-5 w-5" />
-                </a>
-                <h1 className="text-2xl font-bold text-gray-900">New Migration</h1>
+            <div className="mb-6 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                    <a href="/" className="text-gray-400 hover:text-gray-600">
+                        <ArrowLeft className="h-5 w-5" />
+                    </a>
+                    <h1 className="text-2xl font-bold text-gray-900">New Migration</h1>
+                </div>
+                <button
+                    onClick={logout}
+                    className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                    title="Logout"
+                >
+                    <LogOut className="h-4 w-4" />
+                    Logout
+                </button>
             </div>
+
+            {/* Clone Notice */}
+            {cloneMigrationId && (
+                <div className="rounded-lg border-2 border-blue-200 bg-blue-50 p-4">
+                    <div className="flex items-start gap-3">
+                        <AlertCircle className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                        <div>
+                            <h3 className="text-sm font-medium text-blue-900">Cloning Migration Settings</h3>
+                            <p className="mt-1 text-sm text-blue-800">
+                                Settings have been loaded from migration #{cloneMigrationId}. Review and modify as needed, then start the migration.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Migration Name */}
             <div className={sectionClass}>
@@ -588,6 +689,111 @@ export default function Settings() {
                         <input type="password" value={wordpress.app_password} onChange={(e) => updateWp('app_password', e.target.value)} className={inputClass} />
                     </div>
                 </div>
+            </div>
+
+            {/* Custom Headers for Zero Trust */}
+            <div className={sectionClass}>
+                <div
+                    onClick={() => setCustomHeadersEnabled(!customHeadersEnabled)}
+                    className="flex items-center justify-between cursor-pointer mb-4"
+                >
+                    <div className="flex items-center gap-2">
+                        <h2 className="text-lg font-medium text-gray-900">
+                            Custom Headers (Optional)
+                        </h2>
+                        <span className="rounded bg-blue-100 px-2 py-0.5 text-xs text-blue-700">Zero Trust</span>
+                    </div>
+                    {customHeadersEnabled ? <ChevronUp className="h-5 w-5 text-gray-400" /> : <ChevronDown className="h-5 w-5 text-gray-400" />}
+                </div>
+
+                {customHeadersEnabled && (
+                    <div className="space-y-4">
+                        <p className="text-sm text-gray-600 mb-3">
+                            Add custom HTTP headers for Zero Trust services like Cloudflare Access, Azure AD, or other authentication proxies.
+                        </p>
+
+                        {/* Cloudflare Access */}
+                        <div className="p-4 bg-gray-50 rounded-md">
+                            <h3 className="text-sm font-medium text-gray-900 mb-3 flex items-center gap-2">
+                                <span>Cloudflare Access</span>
+                                <a
+                                    href="https://developers.cloudflare.com/cloudflare-one/identity/service-tokens/"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-blue-600 hover:text-blue-800"
+                                >
+                                    <HelpCircle className="h-4 w-4" />
+                                </a>
+                            </h3>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className={labelClass}>CF-Access-Client-Id</label>
+                                    <input
+                                        type="text"
+                                        value={wordpress.custom_headers?.['CF-Access-Client-Id'] || ''}
+                                        onChange={(e) => updateWp('custom_headers', {
+                                            ...wordpress.custom_headers,
+                                            'CF-Access-Client-Id': e.target.value
+                                        })}
+                                        className={inputClass}
+                                        placeholder="Service Token Client ID"
+                                    />
+                                </div>
+                                <div>
+                                    <label className={labelClass}>CF-Access-Client-Secret</label>
+                                    <input
+                                        type="password"
+                                        value={wordpress.custom_headers?.['CF-Access-Client-Secret'] || ''}
+                                        onChange={(e) => updateWp('custom_headers', {
+                                            ...wordpress.custom_headers,
+                                            'CF-Access-Client-Secret': e.target.value
+                                        })}
+                                        className={inputClass}
+                                        placeholder="Service Token Client Secret"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Azure AD / Other */}
+                        <div className="p-4 bg-gray-50 rounded-md">
+                            <h3 className="text-sm font-medium text-gray-900 mb-3">
+                                Other Custom Headers
+                            </h3>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className={labelClass}>X-Auth-Token</label>
+                                    <input
+                                        type="text"
+                                        value={wordpress.custom_headers?.['X-Auth-Token'] || ''}
+                                        onChange={(e) => updateWp('custom_headers', {
+                                            ...wordpress.custom_headers,
+                                            'X-Auth-Token': e.target.value
+                                        })}
+                                        className={inputClass}
+                                        placeholder="Optional"
+                                    />
+                                </div>
+                                <div>
+                                    <label className={labelClass}>X-API-Key</label>
+                                    <input
+                                        type="text"
+                                        value={wordpress.custom_headers?.['X-API-Key'] || ''}
+                                        onChange={(e) => updateWp('custom_headers', {
+                                            ...wordpress.custom_headers,
+                                            'X-API-Key': e.target.value
+                                        })}
+                                        className={inputClass}
+                                        placeholder="Optional"
+                                    />
+                                </div>
+                            </div>
+                            <p className="mt-3 text-xs text-gray-500">
+                                💡 Leave empty if not using Zero Trust authentication. Headers with empty values will be ignored.
+                            </p>
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* CMS Pages */}

@@ -25,6 +25,8 @@ class MigrateCategoriesJob implements ShouldQueue
 
     public int $backoff = 5;
 
+    public int $timeout = 3600; // 1 hour timeout for large migrations
+
     public function __construct(protected int $migrationId) {}
 
     public function handle(StateManager $stateManager): void

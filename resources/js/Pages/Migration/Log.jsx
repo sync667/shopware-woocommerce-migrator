@@ -4,8 +4,10 @@ import LogTable from '../../Components/LogTable';
 import { ArrowLeft, Download } from 'lucide-react';
 
 export default function Log({ migrationId }) {
-    const [entityType, setEntityType] = useState('');
-    const [level, setLevel] = useState('');
+    // Get initial filter from URL query params
+    const urlParams = new URLSearchParams(window.location.search);
+    const [entityType, setEntityType] = useState(urlParams.get('entity_type') || '');
+    const [level, setLevel] = useState(urlParams.get('level') || '');
     const [page, setPage] = useState(1);
 
     const { data, isLoading } = useQuery({

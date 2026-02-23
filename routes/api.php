@@ -37,24 +37,5 @@ Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     return $request->user();
 });
 
-// Model binding for migration routes
-Route::model('migration', MigrationRun::class);
-
-// Migration API Routes (protected)
-Route::middleware('auth:sanctum')->group(function () {
-    Route::prefix('migrations')->group(function () {
-        Route::post('/', [MigrationController::class, 'store']);
-        Route::get('/{migration}/status', [MigrationController::class, 'status']);
-        Route::get('/{migration}/logs', [LogController::class, 'index']);
-        Route::post('/{migration}/pause', [MigrationController::class, 'pause']);
-        Route::post('/{migration}/resume', [MigrationController::class, 'resume']);
-        Route::post('/{migration}/cancel', [MigrationController::class, 'cancel']);
-    });
-
-    Route::post('/shopware/ping', [MigrationController::class, 'pingShopware']);
-    Route::post('/woocommerce/ping', [MigrationController::class, 'pingWoocommerce']);
-    Route::post('/test-connections', [MigrationController::class, 'testConnections']);
-    Route::post('/cms-pages/list', [MigrationController::class, 'listCmsPages']);
-    Route::post('/shopware/languages', [ShopwareConfigController::class, 'getLanguages']);
-    Route::post('/shopware/live-version', [ShopwareConfigController::class, 'getLiveVersionId']);
-});
+// All API routes have been moved to routes/web.php to support session-based authentication
+// This is because we use sessions for auth, not stateless API tokens

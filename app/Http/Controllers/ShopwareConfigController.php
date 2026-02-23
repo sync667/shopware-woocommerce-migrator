@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Shopware\ShopwareDB;
+use App\Services\ShopwareDB;
 use Illuminate\Http\Request;
 
 class ShopwareConfigController extends Controller
@@ -22,14 +22,14 @@ class ShopwareConfigController extends Controller
         ]);
 
         try {
-            $db = new ShopwareDB(
-                host: $validated['db_host'],
-                port: $validated['db_port'],
-                database: $validated['db_database'],
-                username: $validated['db_username'],
-                password: $validated['db_password'],
-                sshConfig: $validated['ssh'] ?? null
-            );
+            $db = new ShopwareDB([
+                'db_host' => $validated['db_host'],
+                'db_port' => $validated['db_port'],
+                'db_database' => $validated['db_database'],
+                'db_username' => $validated['db_username'],
+                'db_password' => $validated['db_password'],
+                'ssh' => $validated['ssh'] ?? null,
+            ]);
 
             // Query available languages
             $languages = $db->select("
@@ -72,14 +72,14 @@ class ShopwareConfigController extends Controller
         ]);
 
         try {
-            $db = new ShopwareDB(
-                host: $validated['db_host'],
-                port: $validated['db_port'],
-                database: $validated['db_database'],
-                username: $validated['db_username'],
-                password: $validated['db_password'],
-                sshConfig: $validated['ssh'] ?? null
-            );
+            $db = new ShopwareDB([
+                'db_host' => $validated['db_host'],
+                'db_port' => $validated['db_port'],
+                'db_database' => $validated['db_database'],
+                'db_username' => $validated['db_username'],
+                'db_password' => $validated['db_password'],
+                'ssh' => $validated['ssh'] ?? null,
+            ]);
 
             // Query live version ID
             $result = $db->select("

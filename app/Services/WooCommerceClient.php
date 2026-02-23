@@ -17,44 +17,59 @@ class WooCommerceClient
         $this->config = $config;
         $baseUrl = rtrim($config['base_url'] ?? '', '/');
 
+        $headers = [
+            'Content-Type' => 'application/json',
+            'Accept' => 'application/json',
+        ];
+
+        // Merge custom headers if provided (for Zero Trust services like Cloudflare Access)
+        if (! empty($config['custom_headers'])) {
+            $headers = array_merge($headers, $config['custom_headers']);
+        }
+
         $this->client = new Client([
             'base_uri' => $baseUrl.'/wp-json/wc/v3/',
             'auth' => [
                 $config['consumer_key'] ?? '',
                 $config['consumer_secret'] ?? '',
             ],
-            'headers' => [
-                'Content-Type' => 'application/json',
-                'Accept' => 'application/json',
-            ],
+            'headers' => $headers,
             'timeout' => 30,
         ]);
     }
 
     public static function fromMigration(\App\Models\MigrationRun $migration): static
     {
-        return new static($migration->woocommerceSettings());
+        $config = $migration->woocommerceSettings();
+
+        // Custom headers are stored at the WordPress level but apply to both WooCommerce and WordPress
+        $wpSettings = $migration->wordpressSettings();
+        if (! empty($wpSettings['custom_headers'])) {
+            $config['custom_headers'] = $wpSettings['custom_headers'];
+        }
+
+        return new static($config);
     }
 
     public function get(string $endpoint, array $query = []): array
     {
         $response = $this->client->get($endpoint, ['query' => $query]);
 
-        return json_decode($response->getBody()->getContents(), true);
+        return json_decode($response->getBody()->getContents(), true) ?? [];
     }
 
     public function post(string $endpoint, array $data = []): array
     {
         $response = $this->client->post($endpoint, ['json' => $data]);
 
-        return json_decode($response->getBody()->getContents(), true);
+        return json_decode($response->getBody()->getContents(), true) ?? [];
     }
 
     public function put(string $endpoint, array $data = []): array
     {
         $response = $this->client->put($endpoint, ['json' => $data]);
 
-        return json_decode($response->getBody()->getContents(), true);
+        return json_decode($response->getBody()->getContents(), true) ?? [];
     }
 
     public function findExisting(string $endpoint, array $query): ?array

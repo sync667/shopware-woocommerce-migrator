@@ -247,6 +247,37 @@ class MigrationController extends Controller
         ]);
     }
 
+    public function logs(Request $request, MigrationRun $migration): JsonResponse
+    {
+        $validated = $request->validate([
+            'page' => 'nullable|integer|min:1',
+            'per_page' => 'nullable|integer|min:1|max:500',
+            'entity_type' => 'nullable|string',
+            'level' => 'nullable|string|in:debug,info,warning,error',
+        ]);
+
+        $query = $migration->logs()->orderByDesc('created_at');
+
+        if (! empty($validated['entity_type'])) {
+            $query->where('entity_type', $validated['entity_type']);
+        }
+
+        if (! empty($validated['level'])) {
+            $query->where('level', $validated['level']);
+        }
+
+        $logs = $query->paginate($validated['per_page'] ?? 100);
+
+        return response()->json($logs);
+    }
+
+    public function showLogs(MigrationRun $migration): Response
+    {
+        return Inertia::render('Migration/Log', [
+            'migrationId' => $migration->id,
+        ]);
+    }
+
     public function pause(MigrationRun $migration): JsonResponse
     {
         $migration->markPaused();
@@ -333,6 +364,7 @@ class MigrationController extends Controller
             'wordpress' => 'nullable|array',
             'wordpress.username' => 'nullable|string',
             'wordpress.app_password' => 'nullable|string',
+            'wordpress.custom_headers' => 'nullable|array',
         ]);
 
         $results = [
@@ -341,14 +373,26 @@ class MigrationController extends Controller
             'wordpress' => null,
         ];
 
+        // Pass custom headers to both WooCommerce and WordPress clients
+        $customHeaders = $validated['wordpress']['custom_headers'] ?? [];
+
         if (! empty($validated['woocommerce']['base_url'])) {
-            $results['woocommerce'] = $this->testWooCommerceDetailed($validated['woocommerce']);
+            $wooConfig = $validated['woocommerce'];
+            if (! empty($customHeaders)) {
+                $wooConfig['custom_headers'] = $customHeaders;
+            }
+            $results['woocommerce'] = $this->testWooCommerceDetailed($wooConfig);
         }
 
         if (! empty($validated['wordpress']['username'])) {
-            $results['wordpress'] = $this->testWordPressDetailed(
-                array_merge($validated['wordpress'], ['base_url' => $validated['woocommerce']['base_url'] ?? ''])
+            $wpConfig = array_merge(
+                $validated['wordpress'],
+                ['base_url' => $validated['woocommerce']['base_url'] ?? '']
             );
+            if (! empty($customHeaders)) {
+                $wpConfig['custom_headers'] = $customHeaders;
+            }
+            $results['wordpress'] = $this->testWordPressDetailed($wpConfig);
         }
 
         $allPassed = $results['shopware']['success']
@@ -459,13 +503,74 @@ class MigrationController extends Controller
     {
         try {
             $woo = new WooCommerceClient($config);
-            $systemStatus = $woo->get('system_status');
 
-            $details = [
-                'version' => $systemStatus['environment']['version'] ?? 'Unknown',
-            ];
+            // Try multiple methods to get WooCommerce version
+            $version = 'Unknown';
 
-            // Test endpoints
+            // Method 1: Try root endpoint
+            try {
+                $root = $woo->get('');
+                Log::debug('WooCommerce root response', ['data' => $root]);
+                $version = $root['store']['wc_version'] ?? $root['version'] ?? null;
+
+                if (! $version && isset($root['routes'])) {
+                    // Root endpoint exists but no version, try to extract from namespace
+                    $version = $root['namespace'] ?? null;
+                }
+            } catch (\Exception $e) {
+                Log::debug('WooCommerce root endpoint failed', ['error' => $e->getMessage()]);
+            }
+
+            // Method 2: Try system_status endpoint
+            if ($version === 'Unknown' || ! $version) {
+                try {
+                    $systemStatus = $woo->get('system_status');
+                    Log::debug('WooCommerce system_status response', ['data' => $systemStatus]);
+                    $version = $systemStatus['environment']['version']
+                        ?? $systemStatus['environment']['wc_version']
+                        ?? $systemStatus['wc_version']
+                        ?? null;
+                } catch (\Exception $e) {
+                    Log::debug('WooCommerce system_status failed', ['error' => $e->getMessage()]);
+                }
+            }
+
+            // Method 3: Try data endpoint
+            if ($version === 'Unknown' || ! $version) {
+                try {
+                    $data = $woo->get('data');
+                    Log::debug('WooCommerce data response', ['data' => $data]);
+                    if (is_array($data) && ! empty($data)) {
+                        foreach ($data as $item) {
+                            if (isset($item['slug']) && $item['slug'] === 'wc/v3') {
+                                $version = $item['name'] ?? null;
+                                break;
+                            }
+                        }
+                    }
+                } catch (\Exception $e) {
+                    Log::debug('WooCommerce data endpoint failed', ['error' => $e->getMessage()]);
+                }
+            }
+
+            // Method 4: Try getting a product to confirm API works (version may stay unknown)
+            if ($version === 'Unknown' || ! $version) {
+                try {
+                    $products = $woo->get('products', ['per_page' => 1]);
+                    if (! empty($products)) {
+                        // API works but version unknown - that's ok
+                        $version = $version ?: 'Unknown (API accessible)';
+                    }
+                } catch (\Exception $e) {
+                    Log::debug('WooCommerce products test failed', ['error' => $e->getMessage()]);
+                }
+            }
+
+            $version = $version ?: 'Unknown';
+
+            $details = ['version' => $version];
+
+            // Test critical endpoints
             $woo->get('products', ['per_page' => 1]);
             $woo->get('products/categories', ['per_page' => 1]);
 
@@ -473,10 +578,43 @@ class MigrationController extends Controller
                 'success' => true,
                 'details' => $details,
             ];
-        } catch (\Exception $e) {
+        } catch (\GuzzleHttp\Exception\ClientException $e) {
+            $statusCode = $e->getResponse()->getStatusCode();
+            $errorMessage = $e->getMessage();
+
+            // Detect Cloudflare Access or Zero Trust issues
+            if ($statusCode === 302 || $statusCode === 403) {
+                return [
+                    'success' => false,
+                    'error' => "Access blocked ({$statusCode}) - Check Zero Trust/Cloudflare Access configuration. Custom headers may be required.",
+                ];
+            }
+
+            if ($statusCode === 401) {
+                return [
+                    'success' => false,
+                    'error' => 'Authentication failed (401) - check WooCommerce consumer key and secret',
+                ];
+            }
+
             return [
                 'success' => false,
-                'error' => $e->getMessage(),
+                'error' => "API error ({$statusCode}): {$errorMessage}",
+            ];
+        } catch (\Exception $e) {
+            $errorMessage = $e->getMessage();
+
+            // Check if error message contains redirect/access keywords
+            if (stripos($errorMessage, 'cloudflare') !== false || stripos($errorMessage, 'access') !== false) {
+                return [
+                    'success' => false,
+                    'error' => 'Blocked by Zero Trust/Cloudflare Access - configure custom headers with Service Token credentials',
+                ];
+            }
+
+            return [
+                'success' => false,
+                'error' => 'Connection failed: '.$errorMessage,
             ];
         }
     }
@@ -484,20 +622,39 @@ class MigrationController extends Controller
     protected function testWordPressDetailed(array $config): array
     {
         try {
-            $wpMedia = new WordPressMediaClient([
+            $wpClientConfig = [
                 'base_url' => $config['base_url'],
                 'wp_username' => $config['username'],
                 'wp_app_password' => $config['app_password'],
-            ]);
+            ];
 
-            // Try test upload
-            $testContent = 'Connection test';
-            $mediaId = $wpMedia->upload($testContent, 'test-'.time().'.txt', 'text/plain');
+            // Add custom headers if provided
+            if (! empty($config['custom_headers'])) {
+                $wpClientConfig['custom_headers'] = $config['custom_headers'];
+            }
+
+            $wpMedia = new WordPressMediaClient($wpClientConfig);
+
+            // First, test if API is accessible and authentication works
+            $apiTest = $wpMedia->testApiAccess();
+            if (! $apiTest['success']) {
+                // Check if error indicates Cloudflare/Zero Trust blocking
+                if (stripos($apiTest['error'], 'cloudflare') !== false || stripos($apiTest['error'], 'access') !== false) {
+                    $apiTest['error'] .= ' - Configure custom headers with Cloudflare Service Token';
+                }
+
+                return $apiTest;
+            }
+
+            // API is accessible, now try test upload
+            $testContent = 'Connection test from Shopware Migration Tool';
+            $mediaId = $wpMedia->upload($testContent, 'migration-test-'.time().'.txt', 'text/plain');
 
             if ($mediaId) {
                 return [
                     'success' => true,
                     'details' => [
+                        'authenticated_as' => $apiTest['user'] ?? 'Unknown',
                         'test_upload_id' => $mediaId,
                     ],
                 ];
@@ -505,7 +662,7 @@ class MigrationController extends Controller
 
             return [
                 'success' => false,
-                'error' => 'Upload test failed',
+                'error' => 'Authentication OK but upload failed - check media upload permissions',
             ];
         } catch (\Exception $e) {
             return [

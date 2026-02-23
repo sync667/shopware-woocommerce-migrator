@@ -1,5 +1,6 @@
 import StepCard from '../Components/StepCard';
-import { FlaskConical, Settings } from 'lucide-react';
+import { FlaskConical, Settings, LogOut } from 'lucide-react';
+import { logout } from '../utils/auth';
 
 const ENTITY_TYPES = [
     'manufacturer',
@@ -36,13 +37,23 @@ export default function Dashboard({ migrations = [] }) {
                         Manage and monitor your migration runs
                     </p>
                 </div>
-                <a
-                    href="/settings"
-                    className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-                >
-                    <Settings className="h-4 w-4" />
-                    New Migration
-                </a>
+                <div className="flex items-center gap-3">
+                    <a
+                        href="/settings"
+                        className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                    >
+                        <Settings className="h-4 w-4" />
+                        New Migration
+                    </a>
+                    <button
+                        onClick={logout}
+                        className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                        title="Logout"
+                    >
+                        <LogOut className="h-4 w-4" />
+                        Logout
+                    </button>
+                </div>
             </div>
 
             {/* Entity type cards (overview) */}

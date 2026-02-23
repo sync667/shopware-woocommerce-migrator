@@ -133,6 +133,15 @@ export default function Show({ migrationId }) {
                     </div>
                 </div>
                 <div className="flex gap-2">
+                    {isFinished && (
+                        <a
+                            href={`/settings?clone=${migrationId}`}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-blue-300 bg-blue-50 px-3 py-2 text-sm text-blue-700 hover:bg-blue-100"
+                        >
+                            <Play className="h-4 w-4" />
+                            Run Again
+                        </a>
+                    )}
                     <a
                         href={`/migrations/${migrationId}/logs`}
                         className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
@@ -167,6 +176,13 @@ export default function Show({ migrationId }) {
                             Cancel
                         </button>
                     )}
+                    <a
+                        href={`/migrations/${migrationId}/logs`}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                    >
+                        <FileText className="h-4 w-4" />
+                        View All Logs
+                    </a>
                 </div>
             </div>
 
@@ -279,8 +295,14 @@ export default function Show({ migrationId }) {
                     <div className="flex items-center justify-between border-b border-red-100 px-4 py-3">
                         <h3 className="flex items-center gap-2 font-medium text-red-800">
                             <XOctagon className="h-4 w-4" />
-                            Errors ({recentErrors.length})
+                            Recent Errors (last 10)
                         </h3>
+                        <a
+                            href={`/migrations/${migrationId}/logs?level=error`}
+                            className="text-xs text-red-600 hover:text-red-800"
+                        >
+                            View All Errors →
+                        </a>
                     </div>
                     <div className="max-h-64 divide-y divide-red-50 overflow-y-auto">
                         {recentErrors.map((err, i) => (
@@ -306,18 +328,26 @@ export default function Show({ migrationId }) {
             {/* Recent warnings (collapsible) */}
             {recentWarnings.length > 0 && (
                 <div className="rounded-lg border border-yellow-200 bg-white">
-                    <button
-                        onClick={() => setShowWarnings(!showWarnings)}
-                        className="flex w-full items-center justify-between border-b border-yellow-100 px-4 py-3 text-left"
-                    >
-                        <h3 className="flex items-center gap-2 font-medium text-yellow-800">
-                            <AlertTriangle className="h-4 w-4" />
-                            Warnings ({recentWarnings.length})
-                        </h3>
-                        <span className="text-xs text-yellow-600">
-                            {showWarnings ? 'Hide' : 'Show'}
-                        </span>
-                    </button>
+                    <div className="flex w-full items-center justify-between border-b border-yellow-100 px-4 py-3">
+                        <button
+                            onClick={() => setShowWarnings(!showWarnings)}
+                            className="flex flex-1 items-center justify-between text-left"
+                        >
+                            <h3 className="flex items-center gap-2 font-medium text-yellow-800">
+                                <AlertTriangle className="h-4 w-4" />
+                                Recent Warnings (last 10)
+                            </h3>
+                            <span className="text-xs text-yellow-600">
+                                {showWarnings ? 'Hide' : 'Show'}
+                            </span>
+                        </button>
+                        <a
+                            href={`/migrations/${migrationId}/logs?level=warning`}
+                            className="ml-4 text-xs text-yellow-600 hover:text-yellow-800"
+                        >
+                            View All →
+                        </a>
+                    </div>
                     {showWarnings && (
                         <div className="max-h-48 divide-y divide-yellow-50 overflow-y-auto">
                             {recentWarnings.map((warn, i) => (
