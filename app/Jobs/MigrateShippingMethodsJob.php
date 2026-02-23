@@ -31,7 +31,12 @@ class MigrateShippingMethodsJob implements ShouldQueue
         $reader = new ShippingMethodReader($db);
         $transformer = new ShippingMethodTransformer;
 
-        $shippingMethods = $reader->fetchAll();
+        // Delta migration: only fetch updated records
+        if ($migration->sync_mode === 'delta' && $migration->last_synced_at) {
+            $shippingMethods = $reader->fetchUpdatedSince($migration->last_synced_at);
+        } else {
+            $shippingMethods = $reader->fetchAll();
+        }
 
         foreach ($shippingMethods as $method) {
             if ($stateManager->alreadyMigrated('shipping_method', $method->id, $this->migrationId)) {

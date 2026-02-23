@@ -25,6 +25,7 @@ class MigrateShopwareCommand extends Command
         {--dry-run : Run without writing to WooCommerce}
         {--mode=full : Migration mode: full or delta}
         {--conflict=shopware_wins : Conflict resolution strategy: shopware_wins, woo_wins, manual}
+        {--skip-tests : Skip connection tests before migration}
         {--sw-host= : Shopware DB host}
         {--sw-port=3306 : Shopware DB port}
         {--sw-database= : Shopware DB database}
@@ -33,6 +34,11 @@ class MigrateShopwareCommand extends Command
         {--sw-language-id= : Shopware language ID (hex)}
         {--sw-version-id= : Shopware live version ID (hex)}
         {--sw-base-url= : Shopware base URL}
+        {--ssh-host= : SSH tunnel host}
+        {--ssh-port=22 : SSH tunnel port}
+        {--ssh-username= : SSH username}
+        {--ssh-password= : SSH password}
+        {--ssh-key= : Path to SSH private key}
         {--wc-base-url= : WooCommerce base URL}
         {--wc-key= : WooCommerce consumer key}
         {--wc-secret= : WooCommerce consumer secret}
@@ -82,6 +88,29 @@ class MigrateShopwareCommand extends Command
                 'app_password' => $this->option('wp-app-password') ?: env('WP_APP_PASSWORD', ''),
             ],
         ];
+
+        // Add SSH configuration if provided
+        if ($this->option('ssh-host')) {
+            $settings['shopware']['ssh'] = [
+                'host' => $this->option('ssh-host'),
+                'port' => (int) ($this->option('ssh-port') ?: 22),
+                'username' => $this->option('ssh-username'),
+                'password' => $this->option('ssh-password'),
+                'key' => $this->option('ssh-key'),
+            ];
+        }
+
+        // Test connections before migration (unless skipped)
+        if (! $this->option('skip-tests')) {
+            $this->info('🔍 Testing connections...');
+            if (! $this->testConnections($settings)) {
+                $this->error('Connection tests failed. Migration aborted.');
+                $this->line('Use --skip-tests to bypass connection testing.');
+
+                return Command::FAILURE;
+            }
+            $this->newLine();
+        }
 
         $migration = MigrationRun::create([
             'name' => $this->option('name'),
@@ -149,5 +178,37 @@ class MigrateShopwareCommand extends Command
         $this->info('Or check status via: GET /api/migrations/'.$migration->id.'/status');
 
         return Command::SUCCESS;
+    }
+
+    /**
+     * Test connections before migration
+     */
+    protected function testConnections(array $settings): bool
+    {
+        $allPassed = true;
+
+        // Test Shopware DB
+        try {
+            $db = new \App\Services\ShopwareDB($settings['shopware']);
+            $result = $db->select('SELECT VERSION() as version');
+            $this->line('<fg=green>✓</> Shopware DB: Connected ('.$result[0]->version.')');
+        } catch (\Exception $e) {
+            $this->error('✗ Shopware DB: '.$e->getMessage());
+            $allPassed = false;
+        }
+
+        // Test WooCommerce API (unless dry-run)
+        if (! $this->option('dry-run')) {
+            try {
+                $woo = new \App\Services\WooCommerceClient($settings['woocommerce']);
+                $woo->get('system_status');
+                $this->line('<fg=green>✓</> WooCommerce API: Connected');
+            } catch (\Exception $e) {
+                $this->error('✗ WooCommerce API: '.$e->getMessage());
+                $allPassed = false;
+            }
+        }
+
+        return $allPassed;
     }
 }

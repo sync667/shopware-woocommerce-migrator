@@ -52,4 +52,6 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::post('/shopware/ping', [MigrationController::class, 'pingShopware']);
     Route::post('/woocommerce/ping', [MigrationController::class, 'pingWoocommerce']);
+    Route::post('/test-connections', [MigrationController::class, 'testConnections']);
+    Route::post('/cms-pages/list', [MigrationController::class, 'listCmsPages']);
 });

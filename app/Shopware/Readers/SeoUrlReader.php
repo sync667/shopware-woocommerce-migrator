@@ -82,4 +82,29 @@ class SeoUrlReader
             ORDER BY su.seo_path_info ASC
         ", [$this->db->languageIdBin()]);
     }
+
+    public function fetchUpdatedSince(\DateTimeInterface $since): array
+    {
+        return $this->db->select('
+            SELECT
+                LOWER(HEX(su.id)) AS id,
+                LOWER(HEX(su.foreign_key)) AS foreign_key,
+                su.route_name,
+                su.path_info,
+                su.seo_path_info,
+                su.is_canonical,
+                su.updated_at,
+                su.created_at
+            FROM seo_url su
+            WHERE su.is_deleted = 0
+              AND su.is_canonical = 1
+              AND su.language_id = ?
+              AND (su.updated_at > ? OR su.created_at > ?)
+            ORDER BY su.updated_at ASC, su.created_at ASC
+        ', [
+            $this->db->languageIdBin(),
+            $since->format('Y-m-d H:i:s'),
+            $since->format('Y-m-d H:i:s'),
+        ]);
+    }
 }

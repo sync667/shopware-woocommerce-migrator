@@ -10,6 +10,9 @@ const ENTITY_TYPES = [
     'order',
     'coupon',
     'review',
+    'shipping_method',
+    'payment_method',
+    'seo_url',
 ];
 
 const STATUS_COLORS = {

@@ -41,4 +41,29 @@ class ShippingMethodReader
             ORDER BY smp.quantity_start ASC
         ', [$shippingMethodId]);
     }
+
+    public function fetchUpdatedSince(\DateTimeInterface $since): array
+    {
+        return $this->db->select("
+            SELECT
+                LOWER(HEX(sm.id)) AS id,
+                COALESCE(smt.name, '') AS name,
+                COALESCE(smt.description, '') AS description,
+                sm.active,
+                sm.position,
+                LOWER(HEX(sm.tax_id)) AS tax_id,
+                sm.updated_at,
+                sm.created_at
+            FROM shipping_method sm
+            LEFT JOIN shipping_method_translation smt
+                ON smt.shipping_method_id = sm.id
+                AND smt.language_id = ?
+            WHERE (sm.updated_at > ? OR sm.created_at > ?)
+            ORDER BY sm.updated_at ASC, sm.created_at ASC
+        ", [
+            $this->db->languageIdBin(),
+            $since->format('Y-m-d H:i:s'),
+            $since->format('Y-m-d H:i:s'),
+        ]);
+    }
 }

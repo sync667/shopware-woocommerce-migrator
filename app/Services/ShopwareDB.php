@@ -12,6 +12,8 @@ class ShopwareDB
 
     protected ?Connection $connection = null;
 
+    protected ?SSHTunnel $sshTunnel = null;
+
     public function __construct(array $config)
     {
         $this->config = $config;
@@ -25,10 +27,20 @@ class ShopwareDB
     public function connection(): Connection
     {
         if ($this->connection === null) {
+            $host = $this->config['db_host'] ?? '127.0.0.1';
+            $port = $this->config['db_port'] ?? 3306;
+
+            // Create SSH tunnel if configured
+            if (! empty($this->config['ssh'])) {
+                $this->sshTunnel = new SSHTunnel($this->config['ssh']);
+                $port = $this->sshTunnel->connect($host, $port);
+                $host = '127.0.0.1'; // Connect to tunnel on localhost
+            }
+
             $connector = new MySqlConnector;
             $pdo = $connector->connect([
-                'host' => $this->config['db_host'] ?? '127.0.0.1',
-                'port' => $this->config['db_port'] ?? 3306,
+                'host' => $host,
+                'port' => $port,
                 'database' => $this->config['db_database'] ?? '',
                 'username' => $this->config['db_username'] ?? '',
                 'password' => $this->config['db_password'] ?? '',
@@ -79,6 +91,16 @@ class ShopwareDB
             return true;
         } catch (\Exception $e) {
             return false;
+        }
+    }
+
+    /**
+     * Close connections and SSH tunnel
+     */
+    public function __destruct()
+    {
+        if ($this->sshTunnel) {
+            $this->sshTunnel->disconnect();
         }
     }
 }

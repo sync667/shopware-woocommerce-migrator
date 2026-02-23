@@ -9,6 +9,10 @@ import {
     ShoppingCart,
     Ticket,
     Star,
+    Truck,
+    CreditCard,
+    Link,
+    FileText,
 } from 'lucide-react';
 
 const ICONS = {
@@ -21,6 +25,10 @@ const ICONS = {
     order: ShoppingCart,
     coupon: Ticket,
     review: Star,
+    shipping_method: Truck,
+    payment_method: CreditCard,
+    seo_url: Link,
+    cms_page: FileText,
 };
 
 const LABELS = {
@@ -33,6 +41,10 @@ const LABELS = {
     order: 'Orders',
     coupon: 'Coupons',
     review: 'Reviews',
+    shipping_method: 'Shipping Methods',
+    payment_method: 'Payment Methods',
+    seo_url: 'SEO URLs',
+    cms_page: 'CMS Pages',
 };
 
 export default function StepCard({ entityType, counts = {}, isActive = false }) {

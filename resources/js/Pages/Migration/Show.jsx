@@ -26,6 +26,10 @@ const ENTITY_TYPES = [
     'order',
     'coupon',
     'review',
+    'shipping_method',
+    'payment_method',
+    'seo_url',
+    'cms_page',
 ];
 
 function formatDuration(seconds) {
