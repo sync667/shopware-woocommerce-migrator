@@ -11,6 +11,7 @@ use App\Services\StateManager;
 use App\Services\WooCommerceClient;
 use App\Shopware\Readers\ProductReader;
 use App\Shopware\Transformers\ProductTransformer;
+use Illuminate\Bus\Batchable;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -19,7 +20,7 @@ use Illuminate\Queue\SerializesModels;
 
 class MigrateProductJob implements ShouldQueue
 {
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+    use Batchable, Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public int $tries = 3;
 
@@ -33,6 +34,12 @@ class MigrateProductJob implements ShouldQueue
     public function handle(StateManager $stateManager): void
     {
         if ($stateManager->alreadyMigrated('product', $this->shopwareProductId, $this->migrationId)) {
+            return;
+        }
+
+        if (app(\App\Services\CancellationService::class)->isCancelled($this->migrationId)) {
+            $this->batch()?->cancel();
+
             return;
         }
 

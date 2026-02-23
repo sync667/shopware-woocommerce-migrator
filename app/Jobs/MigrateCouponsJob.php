@@ -53,6 +53,10 @@ class MigrateCouponsJob implements ShouldQueue
         ]);
 
         foreach ($promotions as $promotion) {
+            if (app(\App\Services\CancellationService::class)->isCancelled($this->migrationId)) {
+                return;
+            }
+
             if ($stateManager->alreadyMigrated('coupon', $promotion->id, $this->migrationId)) {
                 continue;
             }

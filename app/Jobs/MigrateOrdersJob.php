@@ -53,6 +53,10 @@ class MigrateOrdersJob implements ShouldQueue
         ]);
 
         foreach ($orders as $order) {
+            if (app(\App\Services\CancellationService::class)->isCancelled($this->migrationId)) {
+                return;
+            }
+
             if ($stateManager->alreadyMigrated('order', $order->id, $this->migrationId)) {
                 continue;
             }

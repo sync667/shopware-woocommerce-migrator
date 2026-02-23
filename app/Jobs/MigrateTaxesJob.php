@@ -38,6 +38,10 @@ class MigrateTaxesJob implements ShouldQueue
         $taxes = $reader->fetchAll();
 
         foreach ($taxes as $tax) {
+            if (app(\App\Services\CancellationService::class)->isCancelled($this->migrationId)) {
+                return;
+            }
+
             if ($stateManager->alreadyMigrated('tax', $tax->id, $this->migrationId)) {
                 continue;
             }

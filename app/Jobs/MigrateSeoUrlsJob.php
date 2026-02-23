@@ -45,6 +45,10 @@ class MigrateSeoUrlsJob implements ShouldQueue
         // Migrate product SEO URLs
         $productSeoUrls = $reader->fetchAllForProducts();
         foreach ($productSeoUrls as $seoUrl) {
+            if (app(\App\Services\CancellationService::class)->isCancelled($this->migrationId)) {
+                return;
+            }
+
             if ($stateManager->alreadyMigrated('seo_url', $seoUrl->id, $this->migrationId)) {
                 continue;
             }
@@ -74,6 +78,10 @@ class MigrateSeoUrlsJob implements ShouldQueue
         // Migrate category SEO URLs
         $categorySeoUrls = $reader->fetchAllForCategories();
         foreach ($categorySeoUrls as $seoUrl) {
+            if (app(\App\Services\CancellationService::class)->isCancelled($this->migrationId)) {
+                return;
+            }
+
             if ($stateManager->alreadyMigrated('seo_url', $seoUrl->id, $this->migrationId)) {
                 continue;
             }
@@ -104,6 +112,10 @@ class MigrateSeoUrlsJob implements ShouldQueue
     protected function processSeoUrls(array $seoUrls, MigrationRun $migration, StateManager $stateManager, SeoUrlTransformer $transformer): void
     {
         foreach ($seoUrls as $seoUrl) {
+            if (app(\App\Services\CancellationService::class)->isCancelled($this->migrationId)) {
+                return;
+            }
+
             if ($stateManager->alreadyMigrated('seo_url', $seoUrl->id, $this->migrationId)) {
                 continue;
             }

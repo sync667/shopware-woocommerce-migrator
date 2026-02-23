@@ -56,6 +56,10 @@ class MigrateCategoriesJob implements ShouldQueue
         ]);
 
         foreach ($categories as $category) {
+            if (app(\App\Services\CancellationService::class)->isCancelled($this->migrationId)) {
+                return;
+            }
+
             if ($stateManager->alreadyMigrated('category', $category->id, $this->migrationId)) {
                 continue;
             }

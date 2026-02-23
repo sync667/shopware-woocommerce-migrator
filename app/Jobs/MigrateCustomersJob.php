@@ -4,17 +4,15 @@ namespace App\Jobs;
 
 use App\Models\MigrationLog;
 use App\Models\MigrationRun;
-use App\Services\PasswordMigrator;
 use App\Services\ShopwareDB;
 use App\Services\StateManager;
-use App\Services\WooCommerceClient;
 use App\Shopware\Readers\CustomerReader;
-use App\Shopware\Transformers\CustomerTransformer;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Bus;
 
 class MigrateCustomersJob implements ShouldQueue
 {
@@ -31,11 +29,13 @@ class MigrateCustomersJob implements ShouldQueue
     public function handle(StateManager $stateManager): void
     {
         $migration = MigrationRun::findOrFail($this->migrationId);
+
+        if (app(\App\Services\CancellationService::class)->isCancelled($this->migrationId)) {
+            return;
+        }
+
         $db = ShopwareDB::fromMigration($migration);
-        $woo = WooCommerceClient::fromMigration($migration);
         $reader = new CustomerReader($db);
-        $transformer = new CustomerTransformer;
-        $passwordMigrator = new PasswordMigrator;
 
         // Fetch customers based on sync mode
         if ($migration->sync_mode === 'delta' && $migration->last_sync_at) {
@@ -46,71 +46,76 @@ class MigrateCustomersJob implements ShouldQueue
             $mode = $migration->sync_mode === 'delta' ? 'delta (first run - all customers)' : 'full';
         }
 
+        $totalCount = count($customers);
+        $chunkSize = 200;
+        $customerIds = array_map(fn ($c) => $c->id, $customers);
+        $chunks = array_chunk($customerIds, $chunkSize);
+        $batchCount = count($chunks);
+
         MigrationLog::create([
             'migration_id' => $this->migrationId,
             'entity_type' => 'customer',
             'level' => 'info',
-            'message' => 'Processing '.count($customers)." customers (mode: {$mode})",
+            'message' => "Dispatching {$totalCount} customers in {$batchCount} batches of {$chunkSize} (mode: {$mode})",
             'created_at' => now(),
         ]);
 
-        foreach ($customers as $customer) {
-            if ($stateManager->alreadyMigrated('customer', $customer->id, $this->migrationId)) {
-                continue;
-            }
-
-            try {
-                $billingAddress = ! empty($customer->billing_address_id)
-                    ? $reader->fetchAddress($customer->billing_address_id)
-                    : null;
-
-                $shippingAddress = ! empty($customer->shipping_address_id)
-                    ? $reader->fetchAddress($customer->shipping_address_id)
-                    : null;
-
-                $data = $transformer->transform($customer, $billingAddress, $shippingAddress);
-
-                if ($migration->is_dry_run) {
-                    $stateManager->markPending('customer', $customer->id, $this->migrationId, $data);
-                    $this->log('info', "Dry run: customer '{$customer->email}'", $customer->id);
-
-                    continue;
-                }
-
-                $result = $woo->createOrFind('customers', $data, 'email', $customer->email);
-                $wooId = $result['id'] ?? null;
-
-                if ($wooId) {
-                    $stateManager->set('customer', $customer->id, $wooId, $this->migrationId);
-
-                    $passwordResult = $passwordMigrator->migrate($customer->password ?? '', 68);
-                    $metaData = [];
-                    if ($passwordResult['requires_reset']) {
-                        $metaData[] = ['key' => '_requires_password_reset', 'value' => '1'];
-                    } else {
-                        $metaData[] = ['key' => '_shopware_password_migrated', 'value' => '1'];
-                    }
-
-                    if (! empty($metaData)) {
-                        try {
-                            $woo->put("customers/{$wooId}", ['meta_data' => $metaData]);
-                        } catch (\Exception $e) {
-                            $this->log('warning', "Meta update failed: {$e->getMessage()}", $customer->id);
-                        }
-                    }
-
-                    $this->log('info', "Migrated customer '{$customer->email}' → WC #{$wooId}", $customer->id);
-                }
-            } catch (\Exception $e) {
-                $stateManager->markFailed('customer', $customer->id, $this->migrationId, $e->getMessage());
-                $this->log('error', "Failed: {$e->getMessage()}", $customer->id);
-            }
+        // Mark all customers as pending
+        foreach ($customerIds as $customerId) {
+            $stateManager->markPending('customer', $customerId, $this->migrationId);
         }
 
         // Update last_sync_at timestamp for delta migrations
         if ($migration->sync_mode === 'delta') {
             $migration->update(['last_sync_at' => now()]);
         }
+
+        $migrationId = $this->migrationId;
+        $cmsOptions = $migration->settings['cms_options'] ?? [];
+
+        if (empty($chunks)) {
+            $this->dispatchRemainingChain($migrationId, $cmsOptions);
+
+            return;
+        }
+
+        $batchJobs = array_map(
+            fn ($chunk) => new MigrateCustomerBatchJob($migrationId, $chunk),
+            $chunks
+        );
+
+        Bus::batch($batchJobs)
+            ->allowFailures()
+            ->then(function () use ($migrationId, $cmsOptions) {
+                MigrateCustomersJob::dispatchRemainingChain($migrationId, $cmsOptions);
+            })
+            ->onQueue('customers')
+            ->dispatch();
+    }
+
+    public static function dispatchRemainingChain(int $migrationId, array $cmsOptions): void
+    {
+        $jobs = [
+            new MigrateOrdersJob($migrationId),
+            new MigrateCouponsJob($migrationId),
+            new MigrateReviewsJob($migrationId),
+        ];
+
+        if (! empty($cmsOptions['migrate_all'])) {
+            $jobs[] = new MigrateCmsPagesJob($migrationId);
+        } elseif (! empty($cmsOptions['selected_ids'])) {
+            $jobs[] = new MigrateCmsPagesJob($migrationId, $cmsOptions['selected_ids']);
+        }
+
+        $jobs[] = function () use ($migrationId) {
+            $migration = MigrationRun::findOrFail($migrationId);
+            if ($migration->status === 'running') {
+                $migration->markCompleted();
+            }
+            app(\App\Services\CancellationService::class)->clear($migrationId);
+        };
+
+        Bus::chain($jobs)->dispatch();
     }
 
     protected function log(string $level, string $message, ?string $shopwareId = null): void

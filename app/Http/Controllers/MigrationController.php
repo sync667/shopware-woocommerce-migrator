@@ -3,13 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Jobs\MigrateCategoriesJob;
-use App\Jobs\MigrateCmsPagesJob;
-use App\Jobs\MigrateCouponsJob;
-use App\Jobs\MigrateCustomersJob;
 use App\Jobs\MigrateManufacturersJob;
-use App\Jobs\MigrateOrdersJob;
 use App\Jobs\MigrateProductsJob;
-use App\Jobs\MigrateReviewsJob;
 use App\Jobs\MigrateTaxesJob;
 use App\Models\MigrationRun;
 use App\Services\ShopwareDB;
@@ -63,7 +58,9 @@ class MigrationController extends Controller
 
         $migration = MigrationRun::create([
             'name' => $validated['name'],
-            'settings' => $validated['settings'],
+            'settings' => array_merge($validated['settings'], [
+                'cms_options' => $validated['cms_options'] ?? [],
+            ]),
             'is_dry_run' => $validated['is_dry_run'] ?? false,
             'clean_woocommerce' => $validated['clean_woocommerce'] ?? false,
             'sync_mode' => $validated['sync_mode'] ?? 'full',
@@ -92,32 +89,14 @@ class MigrationController extends Controller
             };
         }
 
+        // Products batch dispatches customers batch via then(),
+        // which in turn dispatches orders → coupons → reviews → [cms] → completion.
         $jobs = array_merge($jobs, [
             new MigrateManufacturersJob($migration->id),
             new MigrateTaxesJob($migration->id),
             new MigrateCategoriesJob($migration->id),
             new MigrateProductsJob($migration->id),
-            new MigrateCustomersJob($migration->id),
-            new MigrateOrdersJob($migration->id),
-            new MigrateCouponsJob($migration->id),
-            new MigrateReviewsJob($migration->id),
         ]);
-
-        // Add CMS pages migration if requested
-        $cmsOptions = $validated['cms_options'] ?? [];
-        if (! empty($cmsOptions['migrate_all'])) {
-            $jobs[] = new MigrateCmsPagesJob($migration->id);
-        } elseif (! empty($cmsOptions['selected_ids'])) {
-            $jobs[] = new MigrateCmsPagesJob($migration->id, $cmsOptions['selected_ids']);
-        }
-
-        // Add completion handler
-        $jobs[] = function () use ($migration) {
-            $migration->refresh();
-            if ($migration->status === 'running') {
-                $migration->markCompleted();
-            }
-        };
 
         Bus::chain($jobs)->catch(function (\Throwable $e) use ($migration) {
             $migration->markFailed();
@@ -211,6 +190,10 @@ class MigrationController extends Controller
                 'name' => $migration->name,
                 'status' => $migration->status,
                 'is_dry_run' => $migration->is_dry_run,
+                'settings' => $migration->settings,
+                'sync_mode' => $migration->sync_mode,
+                'conflict_strategy' => $migration->conflict_strategy,
+                'clean_woocommerce' => $migration->clean_woocommerce,
                 'started_at' => $migration->started_at?->toIso8601String(),
                 'finished_at' => $migration->finished_at?->toIso8601String(),
                 'created_at' => $migration->created_at->toIso8601String(),
@@ -295,6 +278,7 @@ class MigrationController extends Controller
     public function cancel(MigrationRun $migration): JsonResponse
     {
         $migration->markFailed();
+        app(\App\Services\CancellationService::class)->cancel($migration->id);
 
         return response()->json(['message' => 'Migration cancelled']);
     }
@@ -510,7 +494,6 @@ class MigrationController extends Controller
             // Method 1: Try root endpoint
             try {
                 $root = $woo->get('');
-                Log::debug('WooCommerce root response', ['data' => $root]);
                 $version = $root['store']['wc_version'] ?? $root['version'] ?? null;
 
                 if (! $version && isset($root['routes'])) {

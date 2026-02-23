@@ -223,6 +223,30 @@ return [
             'timeout' => 300,
             'nice' => 0,
         ],
+        'supervisor-products' => [
+            'connection' => 'redis',
+            'queue' => ['products'],
+            'balance' => 'simple',
+            'maxProcesses' => 5,
+            'maxTime' => 0,
+            'maxJobs' => 0,
+            'memory' => 256,
+            'tries' => 3,
+            'timeout' => 300,
+            'nice' => 0,
+        ],
+        'supervisor-customers' => [
+            'connection' => 'redis',
+            'queue' => ['customers'],
+            'balance' => 'simple',
+            'maxProcesses' => 3,
+            'maxTime' => 0,
+            'maxJobs' => 0,
+            'memory' => 256,
+            'tries' => 3,
+            'timeout' => 300,
+            'nice' => 0,
+        ],
     ],
 
     'environments' => [
@@ -237,6 +261,12 @@ return [
                 'balanceMaxShift' => 1,
                 'balanceCooldown' => 5,
             ],
+            'supervisor-products' => [
+                'maxProcesses' => 5,
+            ],
+            'supervisor-customers' => [
+                'maxProcesses' => 3,
+            ],
         ],
 
         'local' => [
@@ -244,6 +274,12 @@ return [
                 'maxProcesses' => 3,
             ],
             'supervisor-back' => [
+                'maxProcesses' => 2,
+            ],
+            'supervisor-products' => [
+                'maxProcesses' => 2,
+            ],
+            'supervisor-customers' => [
                 'maxProcesses' => 2,
             ],
         ],

@@ -53,6 +53,10 @@ class MigrateManufacturersJob implements ShouldQueue
         ]);
 
         foreach ($manufacturers as $manufacturer) {
+            if (app(\App\Services\CancellationService::class)->isCancelled($this->migrationId)) {
+                return;
+            }
+
             if ($stateManager->alreadyMigrated('manufacturer', $manufacturer->id, $this->migrationId)) {
                 continue;
             }

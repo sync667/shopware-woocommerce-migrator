@@ -41,6 +41,10 @@ class MigrateShippingMethodsJob implements ShouldQueue
         }
 
         foreach ($shippingMethods as $method) {
+            if (app(\App\Services\CancellationService::class)->isCancelled($this->migrationId)) {
+                return;
+            }
+
             if ($stateManager->alreadyMigrated('shipping_method', $method->id, $this->migrationId)) {
                 continue;
             }

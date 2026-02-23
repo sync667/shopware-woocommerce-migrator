@@ -11,6 +11,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Bus;
 
 class MigrateProductsJob implements ShouldQueue
 {
@@ -27,6 +28,11 @@ class MigrateProductsJob implements ShouldQueue
     public function handle(): void
     {
         $migration = MigrationRun::findOrFail($this->migrationId);
+
+        if (app(\App\Services\CancellationService::class)->isCancelled($this->migrationId)) {
+            return;
+        }
+
         $db = ShopwareDB::fromMigration($migration);
         $reader = new ProductReader($db);
 
@@ -39,22 +45,40 @@ class MigrateProductsJob implements ShouldQueue
             $mode = $migration->sync_mode === 'delta' ? 'delta (first run - all products)' : 'full';
         }
 
+        $totalCount = count($products);
+
         MigrationLog::create([
             'migration_id' => $this->migrationId,
             'entity_type' => 'product',
             'level' => 'info',
-            'message' => 'Dispatching '.count($products)." product migration jobs (mode: {$mode})",
+            'message' => "Dispatching {$totalCount} product migration jobs (mode: {$mode})",
             'created_at' => now(),
         ]);
-
-        foreach ($products as $product) {
-            MigrateProductJob::dispatch($this->migrationId, $product->id)
-                ->onQueue('products');
-        }
 
         // Update last_sync_at timestamp for delta migrations
         if ($migration->sync_mode === 'delta') {
             $migration->update(['last_sync_at' => now()]);
         }
+
+        $migrationId = $this->migrationId;
+
+        if (empty($products)) {
+            MigrateCustomersJob::dispatch($migrationId);
+
+            return;
+        }
+
+        $productJobs = array_map(
+            fn ($product) => new MigrateProductJob($migrationId, $product->id),
+            $products
+        );
+
+        Bus::batch($productJobs)
+            ->allowFailures()
+            ->then(function () use ($migrationId) {
+                MigrateCustomersJob::dispatch($migrationId);
+            })
+            ->onQueue('products')
+            ->dispatch();
     }
 }

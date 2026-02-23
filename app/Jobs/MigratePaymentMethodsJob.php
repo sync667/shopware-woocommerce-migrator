@@ -41,6 +41,10 @@ class MigratePaymentMethodsJob implements ShouldQueue
         }
 
         foreach ($paymentMethods as $method) {
+            if (app(\App\Services\CancellationService::class)->isCancelled($this->migrationId)) {
+                return;
+            }
+
             if ($stateManager->alreadyMigrated('payment_method', $method->id, $this->migrationId)) {
                 continue;
             }

@@ -102,6 +102,9 @@ export default function Settings() {
 
                         if (settings.wordpress) {
                             setWordpress(settings.wordpress);
+                            if (settings.wordpress.custom_headers && Object.keys(settings.wordpress.custom_headers).length > 0) {
+                                setCustomHeadersEnabled(true);
+                            }
                         }
 
                         // Load additional options
