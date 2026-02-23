@@ -20,6 +20,7 @@ class OrderTransformer
         ?object $billingAddress = null,
         ?object $shippingAddress = null,
         array $lineItems = [],
+        array $trackingCodes = [],
     ): array {
         $data = [
             'status' => self::STATUS_MAP[$order->status] ?? 'pending',
@@ -41,6 +42,20 @@ class OrderTransformer
 
         if (! empty($order->customer_comment)) {
             $data['customer_note'] = $order->customer_comment;
+        }
+
+        // Add tracking numbers if available
+        if (! empty($trackingCodes)) {
+            foreach ($trackingCodes as $index => $trackingCode) {
+                $data['meta_data'][] = [
+                    'key' => '_wc_shipment_tracking_items',
+                    'value' => [[
+                        'tracking_number' => $trackingCode,
+                        'tracking_provider' => 'Custom Provider',
+                        'date_shipped' => $order->order_date ?? '',
+                    ]],
+                ];
+            }
         }
 
         return $data;

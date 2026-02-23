@@ -47,8 +47,9 @@ class MigrateOrdersJob implements ShouldQueue
                     : null;
                 $shippingAddress = $reader->fetchShippingAddress($order->id);
                 $lineItems = $reader->fetchLineItems($order->id);
+                $trackingCodes = $reader->fetchDeliveryTracking($order->id);
 
-                $data = $transformer->transform($order, $customer, $billingAddress, $shippingAddress, $lineItems);
+                $data = $transformer->transform($order, $customer, $billingAddress, $shippingAddress, $lineItems, $trackingCodes);
 
                 if (! empty($customer->customer_id)) {
                     $wooCustomerId = $stateManager->get('customer', $customer->customer_id, $this->migrationId);

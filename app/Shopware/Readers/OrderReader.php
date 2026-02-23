@@ -122,4 +122,27 @@ class OrderReader
 
         return $results[0] ?? null;
     }
+
+    public function fetchDeliveryTracking(string $orderId): array
+    {
+        $results = $this->db->select('
+            SELECT
+                od.tracking_codes
+            FROM order_delivery od
+            WHERE od.order_id = UNHEX(?)
+              AND od.order_version_id = ?
+              AND od.tracking_codes IS NOT NULL
+            LIMIT 1
+        ', [$orderId, $this->db->liveVersionIdBin()]);
+
+        if (empty($results) || empty($results[0]->tracking_codes)) {
+            return [];
+        }
+
+        $trackingCodes = is_string($results[0]->tracking_codes)
+            ? json_decode($results[0]->tracking_codes, true)
+            : $results[0]->tracking_codes;
+
+        return is_array($trackingCodes) ? $trackingCodes : [];
+    }
 }

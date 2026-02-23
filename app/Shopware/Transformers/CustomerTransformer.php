@@ -22,6 +22,15 @@ class CustomerTransformer
             $data['meta_data'][] = ['key' => '_is_guest', 'value' => (bool) $customer->guest];
         }
 
+        if (isset($customer->newsletter)) {
+            $data['meta_data'][] = ['key' => '_newsletter_subscribed', 'value' => (bool) $customer->newsletter];
+        }
+
+        // Preserve Shopware bcrypt password hash for optional custom authentication
+        if ($customer->password ?? '') {
+            $data['meta_data'][] = ['key' => '_shopware_password_hash', 'value' => $customer->password];
+        }
+
         if ($billingAddress) {
             $data['billing'] = $this->transformAddress($billingAddress);
         } elseif ($customer->company ?? '') {
