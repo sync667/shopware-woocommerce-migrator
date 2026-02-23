@@ -80,7 +80,7 @@ class MigrateCmsPagesJob implements ShouldQueue
                 $data = $transformer->transform($page, $sections, $seoUrl);
 
                 if ($migration->is_dry_run) {
-                    $stateManager->markPending('cms_page', $page->id, $this->migrationId, $data);
+                    $stateManager->markSkipped('cms_page', $page->id, $this->migrationId, $data);
                     $this->log('info', "Dry run: CMS page '{$page->name}'", $page->id);
 
                     continue;

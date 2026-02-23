@@ -73,7 +73,7 @@ class MigrateCategoriesJob implements ShouldQueue
                 $data = $transformer->transform($category, $wooParentId);
 
                 if ($migration->is_dry_run) {
-                    $stateManager->markPending('category', $category->id, $this->migrationId, $data);
+                    $stateManager->markSkipped('category', $category->id, $this->migrationId, $data);
                     $this->log('info', "Dry run: category '{$data['name']}'", $category->id, 'category');
 
                     continue;

@@ -50,7 +50,7 @@ class MigrateTaxesJob implements ShouldQueue
                 $data = $transformer->transform($tax);
 
                 if ($migration->is_dry_run) {
-                    $stateManager->markPending('tax', $tax->id, $this->migrationId, $data);
+                    $stateManager->markSkipped('tax', $tax->id, $this->migrationId, $data);
                     $this->log('info', "Dry run: tax '{$data['name']}' ({$data['rate']}%)", $tax->id, 'tax');
 
                     continue;

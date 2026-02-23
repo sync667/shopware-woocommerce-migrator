@@ -7,18 +7,24 @@ use Carbon\Carbon;
 
 class StateManager
 {
-    public function set(string $entityType, string $shopwareId, int $wooId, int $migrationId): void
+    public function set(string $entityType, string $shopwareId, int $wooId, int $migrationId, ?array $payload = null): void
     {
+        $data = [
+            'woo_id' => $wooId,
+            'status' => 'success',
+        ];
+
+        if ($payload !== null) {
+            $data['payload'] = $payload;
+        }
+
         MigrationEntity::updateOrCreate(
             [
                 'migration_id' => $migrationId,
                 'entity_type' => $entityType,
                 'shopware_id' => $shopwareId,
             ],
-            [
-                'woo_id' => $wooId,
-                'status' => 'success',
-            ]
+            $data
         );
     }
 
@@ -76,6 +82,21 @@ class StateManager
             ],
             [
                 'status' => 'pending',
+                'payload' => $payload,
+            ]
+        );
+    }
+
+    public function markSkipped(string $entityType, string $shopwareId, int $migrationId, ?array $payload = null): void
+    {
+        MigrationEntity::updateOrCreate(
+            [
+                'migration_id' => $migrationId,
+                'entity_type' => $entityType,
+                'shopware_id' => $shopwareId,
+            ],
+            [
+                'status' => 'skipped',
                 'payload' => $payload,
             ]
         );

@@ -53,7 +53,7 @@ class MigratePaymentMethodsJob implements ShouldQueue
                 $data = $transformer->transform($method);
 
                 if ($migration->is_dry_run) {
-                    $stateManager->markPending('payment_method', $method->id, $this->migrationId, $data);
+                    $stateManager->markSkipped('payment_method', $method->id, $this->migrationId, $data);
                     $this->log('info', "Dry run: payment method '{$data['title']}'", $method->id, 'payment_method');
 
                     continue;

@@ -54,7 +54,7 @@ class MigrateShippingMethodsJob implements ShouldQueue
                 $data = $transformer->transform($method, $prices);
 
                 if ($migration->is_dry_run) {
-                    $stateManager->markPending('shipping_method', $method->id, $this->migrationId, $data);
+                    $stateManager->markSkipped('shipping_method', $method->id, $this->migrationId, $data);
                     $this->log('info', "Dry run: shipping method '{$data['method_title']}'", $method->id, 'shipping_method');
 
                     continue;

@@ -14,6 +14,10 @@ class MigrationRun extends Model
         'settings',
         'status',
         'is_dry_run',
+        'clean_woocommerce',
+        'sync_mode',
+        'conflict_strategy',
+        'last_sync_at',
         'started_at',
         'finished_at',
     ];
@@ -21,8 +25,10 @@ class MigrationRun extends Model
     protected $casts = [
         'settings' => 'encrypted:array',
         'is_dry_run' => 'boolean',
+        'clean_woocommerce' => 'boolean',
         'started_at' => 'datetime',
         'finished_at' => 'datetime',
+        'last_sync_at' => 'datetime',
     ];
 
     protected $hidden = [

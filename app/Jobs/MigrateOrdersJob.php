@@ -80,7 +80,7 @@ class MigrateOrdersJob implements ShouldQueue
                 }
 
                 if ($migration->is_dry_run) {
-                    $stateManager->markPending('order', $order->id, $this->migrationId, $data);
+                    $stateManager->markSkipped('order', $order->id, $this->migrationId, $data);
                     $this->log('info', "Dry run: order '{$order->order_number}'", $order->id);
 
                     continue;

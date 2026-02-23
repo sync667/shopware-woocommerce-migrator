@@ -129,7 +129,7 @@ class MigrateProductJob implements ShouldQueue
             }
 
             if ($migration->is_dry_run) {
-                $stateManager->markPending('product', $product->id, $this->migrationId, $data);
+                $stateManager->markSkipped('product', $product->id, $this->migrationId, $data);
                 $this->log('info', "Dry run: product '{$data['name']}'");
 
                 return;

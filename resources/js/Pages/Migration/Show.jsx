@@ -86,6 +86,8 @@ export default function Show({ migrationId }) {
     const recentErrors = data?.recent_errors || [];
     const recentWarnings = data?.recent_warnings || [];
 
+    const totalProcessed = (summary.success || 0) + (summary.skipped || 0);
+
     const isRunning = migration.status === 'running';
     const isPaused = migration.status === 'paused';
     const isFinished = migration.status === 'completed' || migration.status === 'failed';
@@ -239,15 +241,15 @@ export default function Show({ migrationId }) {
                 <div className="mb-2 flex justify-between text-sm">
                     <span className="text-gray-600">Overall Progress</span>
                     <span className="font-medium">
-                        {summary.success || 0} / {summary.total || '...'}
+                        {totalProcessed} / {summary.total || '...'}
                         {(summary.total || 0) > 0 && (
                             <span className="ml-1 text-gray-400">
-                                ({Math.round(((summary.success || 0) / summary.total) * 100)}%)
+                                ({Math.round((totalProcessed / summary.total) * 100)}%)
                             </span>
                         )}
                     </span>
                 </div>
-                <ProgressBar value={summary.success || 0} max={summary.total || 1} />
+                <ProgressBar value={totalProcessed} max={summary.total || 1} />
             </div>
 
             {/* Per-entity cards */}

@@ -170,10 +170,10 @@ class MigrationJobsTest extends TestCase
 
     // === Dry run behavior ===
 
-    public function test_dry_run_marks_entities_as_pending(): void
+    public function test_dry_run_marks_entities_as_skipped(): void
     {
         $stateManager = new \App\Services\StateManager;
-        $stateManager->markPending(
+        $stateManager->markSkipped(
             'product',
             'dry-run-product',
             $this->migration->id,
@@ -184,7 +184,7 @@ class MigrationJobsTest extends TestCase
             ->where('shopware_id', 'dry-run-product')
             ->first();
 
-        $this->assertEquals('pending', $entity->status);
+        $this->assertEquals('skipped', $entity->status);
         $this->assertNull($entity->woo_id);
         $this->assertNotNull($entity->payload);
     }

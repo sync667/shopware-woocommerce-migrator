@@ -65,7 +65,7 @@ class MigrateManufacturersJob implements ShouldQueue
                 $data = $transformer->transform($manufacturer);
 
                 if ($migration->is_dry_run) {
-                    $stateManager->markPending('manufacturer', $manufacturer->id, $this->migrationId, $data);
+                    $stateManager->markSkipped('manufacturer', $manufacturer->id, $this->migrationId, $data);
                     $this->log('info', "Dry run: manufacturer '{$data['name']}'", $manufacturer->id, 'manufacturer');
 
                     continue;

@@ -94,7 +94,7 @@ class MigrateCustomerBatchJob implements ShouldQueue
                 $data = $transformer->transform($customer, $billingAddress, $shippingAddress);
 
                 if ($migration->is_dry_run) {
-                    $stateManager->markPending('customer', $customer->id, $this->migrationId, $data);
+                    $stateManager->markSkipped('customer', $customer->id, $this->migrationId, $data);
                     $this->log('info', "Dry run: customer '{$customer->email}'", $customer->id);
 
                     continue;
