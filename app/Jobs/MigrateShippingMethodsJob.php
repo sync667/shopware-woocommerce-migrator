@@ -34,8 +34,8 @@ class MigrateShippingMethodsJob implements ShouldQueue
         $transformer = new ShippingMethodTransformer;
 
         // Delta migration: only fetch updated records
-        if ($migration->sync_mode === 'delta' && $migration->last_synced_at) {
-            $shippingMethods = $reader->fetchUpdatedSince($migration->last_synced_at);
+        if ($migration->sync_mode === 'delta' && $migration->last_sync_at) {
+            $shippingMethods = $reader->fetchUpdatedSince($migration->last_sync_at);
         } else {
             $shippingMethods = $reader->fetchAll();
         }
@@ -54,7 +54,7 @@ class MigrateShippingMethodsJob implements ShouldQueue
                 $data = $transformer->transform($method, $prices);
 
                 if ($migration->is_dry_run) {
-                    $stateManager->markPending('shipping_method', $method->id, $this->migrationId, $data);
+                    $stateManager->markSkipped('shipping_method', $method->id, $this->migrationId, $data);
                     $this->log('info', "Dry run: shipping method '{$data['method_title']}'", $method->id, 'shipping_method');
 
                     continue;

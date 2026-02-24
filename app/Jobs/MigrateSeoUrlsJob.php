@@ -34,8 +34,8 @@ class MigrateSeoUrlsJob implements ShouldQueue
         $transformer = new SeoUrlTransformer;
 
         // Delta migration: fetch updated SEO URLs
-        if ($migration->sync_mode === 'delta' && $migration->last_synced_at) {
-            $seoUrls = $reader->fetchUpdatedSince($migration->last_synced_at);
+        if ($migration->sync_mode === 'delta' && $migration->last_sync_at) {
+            $seoUrls = $reader->fetchUpdatedSince($migration->last_sync_at);
             $this->processSeoUrls($seoUrls, $migration, $stateManager, $transformer);
 
             return;
@@ -61,7 +61,7 @@ class MigrateSeoUrlsJob implements ShouldQueue
                 $data = $transformer->transform($seoUrl, $newUrl);
 
                 if ($migration->is_dry_run) {
-                    $stateManager->markPending('seo_url', $seoUrl->id, $this->migrationId, $data);
+                    $stateManager->markSkipped('seo_url', $seoUrl->id, $this->migrationId, $data);
                     $this->log('info', "Dry run: SEO URL '{$data['old_url']}' → '{$data['new_url']}'", $seoUrl->id, 'seo_url');
 
                     continue;
@@ -94,7 +94,7 @@ class MigrateSeoUrlsJob implements ShouldQueue
                 $data = $transformer->transform($seoUrl, $newUrl);
 
                 if ($migration->is_dry_run) {
-                    $stateManager->markPending('seo_url', $seoUrl->id, $this->migrationId, $data);
+                    $stateManager->markSkipped('seo_url', $seoUrl->id, $this->migrationId, $data);
                     $this->log('info', "Dry run: SEO URL '{$data['old_url']}' → '{$data['new_url']}'", $seoUrl->id, 'seo_url');
 
                     continue;
@@ -134,7 +134,7 @@ class MigrateSeoUrlsJob implements ShouldQueue
                 $data = $transformer->transform($seoUrl, $newUrl);
 
                 if ($migration->is_dry_run) {
-                    $stateManager->markPending('seo_url', $seoUrl->id, $this->migrationId, $data);
+                    $stateManager->markSkipped('seo_url', $seoUrl->id, $this->migrationId, $data);
                     $this->log('info', "Dry run: SEO URL '{$data['old_url']}' → '{$data['new_url']}'", $seoUrl->id, 'seo_url');
 
                     continue;

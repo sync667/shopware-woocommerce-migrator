@@ -158,8 +158,9 @@ class MigrationController extends Controller
             $endTime = $migration->finished_at ?? now();
             $elapsedSeconds = (int) $migration->started_at->diffInSeconds($endTime);
 
-            if ($totalSuccess > 0 && $totalPending + $totalRunning > 0 && $elapsedSeconds > 0) {
-                $rate = $totalSuccess / $elapsedSeconds;
+            $totalProcessed = $totalSuccess + $totalSkipped;
+            if ($totalProcessed > 0 && $totalPending + $totalRunning > 0 && $elapsedSeconds > 0) {
+                $rate = $totalProcessed / $elapsedSeconds;
                 $etaSeconds = $rate > 0 ? (int) ceil(($totalPending + $totalRunning) / $rate) : null;
             }
         }

@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import ConnectionStatus from '../Components/ConnectionStatus';
 import HelpModal from '../Components/HelpModal';
 import { guides } from '../Components/SetupGuides';
 import { ArrowLeft, Play, FlaskConical, Loader2, ChevronDown, ChevronUp, Check, X, AlertCircle, HelpCircle, LogOut } from 'lucide-react';
@@ -883,7 +882,7 @@ export default function Settings() {
                             <h3 className="text-sm font-medium text-yellow-900">Configuration Required</h3>
                             <p className="mt-1 text-sm text-yellow-800">
                                 You must load Shopware languages and configuration before testing connections or starting migration.
-                                Click the <strong>"Load Languages & Configuration"</strong> button in the Shopware Source Database section above.
+                                Click the <strong>&quot;Load Languages &amp; Configuration&quot;</strong> button in the Shopware Source Database section above.
                             </p>
                         </div>
                     </div>
@@ -904,7 +903,7 @@ export default function Settings() {
                 </div>
                 {(!shopware.language_id || !shopware.live_version_id) && (
                     <p className="text-sm text-gray-500 mb-4">
-                        ℹ️ Connect to Shopware first (using "Connect & Load Configuration" button above), then test WooCommerce and WordPress
+                        ℹ️ Connect to Shopware first (using &quot;Connect &amp; Load Configuration&quot; button above), then test WooCommerce and WordPress
                     </p>
                 )}
 

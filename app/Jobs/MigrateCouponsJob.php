@@ -81,7 +81,7 @@ class MigrateCouponsJob implements ShouldQueue
                     $data = $transformer->transform($promotion, $discounts);
 
                     if ($migration->is_dry_run) {
-                        $stateManager->markPending('coupon', $promotion->id, $this->migrationId, $data);
+                        $stateManager->markSkipped('coupon', $promotion->id, $this->migrationId, $data);
                         $this->log('info', "Dry run: coupon '{$data['code']}'", $promotion->id);
 
                         continue;

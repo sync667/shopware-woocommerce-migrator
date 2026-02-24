@@ -286,6 +286,36 @@ class MigrationControllerTest extends TestCase
         $this->assertEquals(1, $summary['pending']);
     }
 
+    public function test_status_counts_skipped_in_progress_for_dry_run(): void
+    {
+        $migration = MigrationRun::create([
+            'name' => 'Dry Run Progress Test',
+            'settings' => $this->validPayload()['settings'],
+            'status' => 'running',
+            'is_dry_run' => true,
+            'started_at' => now()->subMinutes(5),
+        ]);
+
+        MigrationEntity::create(['migration_id' => $migration->id, 'entity_type' => 'product', 'shopware_id' => 'p1', 'status' => 'skipped']);
+        MigrationEntity::create(['migration_id' => $migration->id, 'entity_type' => 'product', 'shopware_id' => 'p2', 'status' => 'skipped']);
+        MigrationEntity::create(['migration_id' => $migration->id, 'entity_type' => 'category', 'shopware_id' => 'c1', 'status' => 'skipped']);
+        MigrationEntity::create(['migration_id' => $migration->id, 'entity_type' => 'category', 'shopware_id' => 'c2', 'status' => 'pending']);
+
+        $response = $this->actingAs($this->user, 'sanctum')
+            ->getJson("/api/migrations/{$migration->id}/status");
+
+        $response->assertOk();
+        $summary = $response->json('summary');
+        $this->assertEquals(4, $summary['total']);
+        $this->assertEquals(3, $summary['skipped']);
+        $this->assertEquals(1, $summary['pending']);
+        $this->assertEquals(0, $summary['success']);
+
+        // ETA should be calculated based on skipped count
+        $timing = $response->json('timing');
+        $this->assertNotNull($timing['eta_seconds']);
+    }
+
     public function test_status_returns_elapsed_time(): void
     {
         $migration = MigrationRun::create([

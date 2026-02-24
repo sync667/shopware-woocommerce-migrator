@@ -105,4 +105,42 @@ class StateManagerTest extends TestCase
         $this->assertEquals(10, $this->stateManager->get('product', 'abc', $m1->id));
         $this->assertEquals(20, $this->stateManager->get('product', 'abc', $m2->id));
     }
+
+    public function test_mark_skipped(): void
+    {
+        $migration = MigrationRun::create([
+            'name' => 'Test',
+            'settings' => ['shopware' => [], 'woocommerce' => [], 'wordpress' => []],
+            'status' => 'running',
+        ]);
+
+        $this->stateManager->markSkipped('product', 'abc123', $migration->id, ['name' => 'Test Product']);
+
+        $entity = MigrationEntity::where('migration_id', $migration->id)
+            ->where('shopware_id', 'abc123')
+            ->first();
+
+        $this->assertEquals('skipped', $entity->status);
+        $this->assertNull($entity->woo_id);
+        $this->assertEquals(['name' => 'Test Product'], $entity->payload);
+    }
+
+    public function test_set_with_payload(): void
+    {
+        $migration = MigrationRun::create([
+            'name' => 'Test',
+            'settings' => ['shopware' => [], 'woocommerce' => [], 'wordpress' => []],
+            'status' => 'running',
+        ]);
+
+        $this->stateManager->set('product', 'abc123', 42, $migration->id, ['method_id' => 'flat_rate']);
+
+        $entity = MigrationEntity::where('migration_id', $migration->id)
+            ->where('shopware_id', 'abc123')
+            ->first();
+
+        $this->assertEquals('success', $entity->status);
+        $this->assertEquals(42, $entity->woo_id);
+        $this->assertEquals(['method_id' => 'flat_rate'], $entity->payload);
+    }
 }

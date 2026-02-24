@@ -74,7 +74,7 @@ export default function Login() {
                                 autoFocus
                             />
                             <p className="mt-2 text-xs text-gray-500">
-                                Token creates a 24-hour session. You won't need to enter it again during this time.
+                                Token creates a 24-hour session. You won&apos;t need to enter it again during this time.
                             </p>
                         </div>
 
@@ -114,7 +114,7 @@ export default function Login() {
                                 <p className="text-xs text-blue-900 font-medium mb-1">🔐 Token → 24-Hour Session</p>
                                 <p className="text-xs text-blue-700">
                                     Enter your token once to create a secure 24-hour session.
-                                    You'll stay logged in until the session expires.
+                                    You&apos;ll stay logged in until the session expires.
                                 </p>
                             </div>
 

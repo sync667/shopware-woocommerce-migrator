@@ -72,6 +72,13 @@ class WooCommerceClient
         return json_decode($response->getBody()->getContents(), true) ?? [];
     }
 
+    public function delete(string $endpoint, array $query = []): array
+    {
+        $response = $this->client->delete($endpoint, ['query' => $query]);
+
+        return json_decode($response->getBody()->getContents(), true) ?? [];
+    }
+
     public function findExisting(string $endpoint, array $query): ?array
     {
         try {

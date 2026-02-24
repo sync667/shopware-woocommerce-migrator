@@ -3,16 +3,8 @@
 namespace App\Console\Commands;
 
 use App\Jobs\MigrateCategoriesJob;
-use App\Jobs\MigrateCmsPagesJob;
-use App\Jobs\MigrateCouponsJob;
-use App\Jobs\MigrateCustomersJob;
 use App\Jobs\MigrateManufacturersJob;
-use App\Jobs\MigrateOrdersJob;
-use App\Jobs\MigratePaymentMethodsJob;
 use App\Jobs\MigrateProductsJob;
-use App\Jobs\MigrateReviewsJob;
-use App\Jobs\MigrateSeoUrlsJob;
-use App\Jobs\MigrateShippingMethodsJob;
 use App\Jobs\MigrateTaxesJob;
 use App\Models\MigrationRun;
 use Illuminate\Console\Command;
@@ -114,7 +106,9 @@ class MigrateShopwareCommand extends Command
 
         $migration = MigrationRun::create([
             'name' => $this->option('name'),
-            'settings' => $settings,
+            'settings' => array_merge($settings, [
+                'cms_options' => $this->buildCmsOptions(),
+            ]),
             'is_dry_run' => (bool) $this->option('dry-run'),
             'sync_mode' => $mode,
             'conflict_strategy' => $conflictStrategy,
@@ -137,38 +131,23 @@ class MigrateShopwareCommand extends Command
 
         $migration->markRunning();
 
-        // Build job chain
+        // Build job chain — ProductsJob dispatches CustomerJob batch,
+        // which then dispatches the remaining chain (orders, coupons, reviews,
+        // shipping, payment, SEO, CMS, completion) via dispatchRemainingChain().
         $jobs = [
             new MigrateManufacturersJob($migration->id),
             new MigrateTaxesJob($migration->id),
             new MigrateCategoriesJob($migration->id),
             new MigrateProductsJob($migration->id),
-            new MigrateCustomersJob($migration->id),
-            new MigrateOrdersJob($migration->id),
-            new MigrateCouponsJob($migration->id),
-            new MigrateReviewsJob($migration->id),
-            new MigrateShippingMethodsJob($migration->id),
-            new MigratePaymentMethodsJob($migration->id),
-            new MigrateSeoUrlsJob($migration->id),
         ];
 
-        // Add CMS pages migration if requested
+        // Log CMS pages migration if requested
         if ($this->option('cms-all')) {
-            $jobs[] = new MigrateCmsPagesJob($migration->id);
             $this->info('CMS pages: Migrating all pages');
         } elseif ($cmsIds = $this->option('cms-ids')) {
             $ids = array_map('trim', explode(',', $cmsIds));
-            $jobs[] = new MigrateCmsPagesJob($migration->id, $ids);
             $this->info('CMS pages: Migrating '.count($ids).' selected page(s)');
         }
-
-        // Add completion handler
-        $jobs[] = function () use ($migration) {
-            $migration->refresh();
-            if ($migration->status === 'running') {
-                $migration->markCompleted();
-            }
-        };
 
         Bus::chain($jobs)->catch(function (\Throwable $e) use ($migration) {
             $migration->markFailed();
@@ -210,5 +189,21 @@ class MigrateShopwareCommand extends Command
         }
 
         return $allPassed;
+    }
+
+    /**
+     * Build CMS options array from CLI flags
+     */
+    protected function buildCmsOptions(): array
+    {
+        if ($this->option('cms-all')) {
+            return ['migrate_all' => true];
+        }
+
+        if ($cmsIds = $this->option('cms-ids')) {
+            return ['selected_ids' => array_map('trim', explode(',', $cmsIds))];
+        }
+
+        return [];
     }
 }

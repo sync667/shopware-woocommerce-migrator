@@ -34,8 +34,8 @@ class MigratePaymentMethodsJob implements ShouldQueue
         $transformer = new PaymentMethodTransformer;
 
         // Delta migration: only fetch updated records
-        if ($migration->sync_mode === 'delta' && $migration->last_synced_at) {
-            $paymentMethods = $reader->fetchUpdatedSince($migration->last_synced_at);
+        if ($migration->sync_mode === 'delta' && $migration->last_sync_at) {
+            $paymentMethods = $reader->fetchUpdatedSince($migration->last_sync_at);
         } else {
             $paymentMethods = $reader->fetchAll();
         }
@@ -53,7 +53,7 @@ class MigratePaymentMethodsJob implements ShouldQueue
                 $data = $transformer->transform($method);
 
                 if ($migration->is_dry_run) {
-                    $stateManager->markPending('payment_method', $method->id, $this->migrationId, $data);
+                    $stateManager->markSkipped('payment_method', $method->id, $this->migrationId, $data);
                     $this->log('info', "Dry run: payment method '{$data['title']}'", $method->id, 'payment_method');
 
                     continue;

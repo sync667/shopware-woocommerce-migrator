@@ -76,7 +76,7 @@ export default function StepCard({ entityType, counts = {}, isActive = false }) 
                     <span className="text-xs text-gray-400">{total}</span>
                 )}
             </div>
-            <ProgressBar value={success} max={total || 1} className="mb-2" />
+            <ProgressBar value={success + skipped} max={total || 1} className="mb-2" />
             <div className="flex flex-wrap justify-between gap-1 text-xs text-gray-500">
                 <span className="text-green-600">{success} OK</span>
                 {failed > 0 && <span className="text-red-600">{failed} failed</span>}

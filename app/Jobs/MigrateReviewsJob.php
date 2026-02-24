@@ -74,7 +74,7 @@ class MigrateReviewsJob implements ShouldQueue
                 $data = $transformer->transform($review, $wooProductId);
 
                 if ($migration->is_dry_run) {
-                    $stateManager->markPending('review', $review->id, $this->migrationId, $data);
+                    $stateManager->markSkipped('review', $review->id, $this->migrationId, $data);
                     $this->log('info', "Dry run: review for product WC #{$wooProductId}", $review->id);
 
                     continue;
