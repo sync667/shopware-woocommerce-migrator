@@ -205,9 +205,10 @@ class DatabaseDumpServiceTest extends TestCase
 
     public function test_cleanup_files_handles_nonexistent_directory(): void
     {
+        $this->expectNotToPerformAssertions();
+
         // Should not throw
         $this->service->cleanupFiles('/nonexistent/path/'.uniqid());
-        $this->assertTrue(true);
     }
 
     private function cleanupDirectory(string $dir): void

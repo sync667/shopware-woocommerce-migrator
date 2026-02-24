@@ -477,7 +477,9 @@ class DatabaseDumpService
             }
 
             if ($part === '..') {
-                array_pop($absolutes);
+                if (! empty($absolutes)) {
+                    array_pop($absolutes);
+                }
 
                 continue;
             }
@@ -590,13 +592,15 @@ class DatabaseDumpService
             throw new \RuntimeException('Failed to open SQL dump file for reading: '.$sqlPath);
         }
 
-        $result = Process::timeout(600)
-            ->input($handle)
-            ->run([
-                'docker', 'exec', '-i', $containerName, 'mysql', '-uroot', '-p'.$password, $dbName,
-            ]);
-
-        fclose($handle);
+        try {
+            $result = Process::timeout(600)
+                ->input($handle)
+                ->run([
+                    'docker', 'exec', '-i', $containerName, 'mysql', '-uroot', '-p'.$password, $dbName,
+                ]);
+        } finally {
+            fclose($handle);
+        }
 
         if (! $result->successful()) {
             Log::error('Dump import failed', ['error' => $result->errorOutput()]);
