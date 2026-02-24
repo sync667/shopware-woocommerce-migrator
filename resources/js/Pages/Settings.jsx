@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import HelpModal from '../Components/HelpModal';
 import { guides } from '../Components/SetupGuides';
-import { ArrowLeft, Play, FlaskConical, Loader2, ChevronDown, ChevronUp, Check, X, AlertCircle, HelpCircle, LogOut } from 'lucide-react';
+import { ArrowLeft, Play, FlaskConical, Loader2, ChevronDown, ChevronUp, Check, X, AlertCircle, HelpCircle, LogOut, Upload, Database, FileUp } from 'lucide-react';
 import { logout } from '../utils/auth';
 
 export default function Settings() {
@@ -58,6 +58,13 @@ export default function Settings() {
     const [availableLanguages, setAvailableLanguages] = useState([]);
     const [loadingLanguages, setLoadingLanguages] = useState(false);
 
+    // Database dump upload mode
+    const [dbSourceMode, setDbSourceMode] = useState('direct'); // 'direct' or 'dump'
+    const [dumpFile, setDumpFile] = useState(null);
+    const [dumpUploading, setDumpUploading] = useState(false);
+    const [dumpResult, setDumpResult] = useState(null);
+    const [dumpContainerName, setDumpContainerName] = useState(null);
+
     const [testResults, setTestResults] = useState(null);
     const [submitting, setSubmitting] = useState(false);
     const [testing, setTesting] = useState(false);
@@ -71,6 +78,76 @@ export default function Settings() {
         setWordpress((prev) => ({ ...prev, [key]: value }));
     const updateSsh = (key, value) =>
         setSshConfig((prev) => ({ ...prev, [key]: value }));
+
+    const handleDumpUpload = async () => {
+        if (!dumpFile) return;
+
+        setDumpUploading(true);
+        setDumpResult(null);
+
+        try {
+            const formData = new FormData();
+            formData.append('dump_file', dumpFile);
+
+            const res = await fetch('/api/dump/upload', {
+                method: 'POST',
+                headers: { Accept: 'application/json' },
+                body: formData,
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                setDumpResult(data);
+                setDumpContainerName(data.container_name);
+
+                // Auto-fill Shopware connection details
+                setShopware((prev) => ({
+                    ...prev,
+                    db_host: data.connection.db_host,
+                    db_port: data.connection.db_port,
+                    db_database: data.connection.db_database,
+                    db_username: data.connection.db_username,
+                    db_password: data.connection.db_password,
+                }));
+
+                // Auto-populate test results for Shopware
+                setTestResults((prev) => ({
+                    ...prev,
+                    shopware: {
+                        success: true,
+                        details: {
+                            database: data.connection.db_database,
+                            version: data.validation?.mysql_version || 'MySQL 8.0',
+                            tables_found: data.validation?.tables_found?.length || 0,
+                        }
+                    }
+                }));
+            } else {
+                setDumpResult({ success: false, error: data.error, validation: data.validation });
+            }
+        } catch (err) {
+            setDumpResult({ success: false, error: err.message });
+        }
+
+        setDumpUploading(false);
+    };
+
+    const handleDumpCleanup = async () => {
+        if (!dumpContainerName) return;
+
+        try {
+            await fetch('/api/dump/cleanup', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+                body: JSON.stringify({ container_name: dumpContainerName }),
+            });
+            setDumpContainerName(null);
+            setDumpResult(null);
+            setDumpFile(null);
+        } catch (err) {
+            console.error('Cleanup failed:', err);
+        }
+    };
 
     // Load settings from existing migration if cloning
     useEffect(() => {
@@ -523,34 +600,262 @@ export default function Settings() {
                     Shopware Source Database
                     <HelpButton guideKey="database_connection" />
                 </h2>
-                <div className="grid grid-cols-2 gap-4 mb-4">
-                    <div>
-                        <label className={labelClass}>Host</label>
-                        <input type="text" value={shopware.db_host} onChange={(e) => updateShopware('db_host', e.target.value)} className={inputClass} placeholder="127.0.0.1" />
-                    </div>
-                    <div>
-                        <label className={labelClass}>Port</label>
-                        <input type="number" value={shopware.db_port} onChange={(e) => updateShopware('db_port', parseInt(e.target.value) || 3306)} className={inputClass} />
-                    </div>
-                    <div>
-                        <label className={labelClass}>Database</label>
-                        <input type="text" value={shopware.db_database} onChange={(e) => updateShopware('db_database', e.target.value)} className={inputClass} />
-                    </div>
-                    <div>
-                        <label className={labelClass}>Username</label>
-                        <input type="text" value={shopware.db_username} onChange={(e) => updateShopware('db_username', e.target.value)} className={inputClass} />
-                    </div>
-                    <div>
-                        <label className={labelClass}>Password</label>
-                        <input type="password" value={shopware.db_password} onChange={(e) => updateShopware('db_password', e.target.value)} className={inputClass} />
-                    </div>
-                    <div>
-                        <label className={labelClass}>Base URL</label>
-                        <input type="text" value={shopware.base_url} onChange={(e) => updateShopware('base_url', e.target.value)} className={inputClass} placeholder="https://shop.example.com" />
-                    </div>
+
+                {/* Source Mode Toggle */}
+                <div className="flex gap-3 mb-4">
+                    <button
+                        type="button"
+                        onClick={() => setDbSourceMode('direct')}
+                        className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium border ${
+                            dbSourceMode === 'direct'
+                                ? 'border-blue-500 bg-blue-50 text-blue-700'
+                                : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-50'
+                        }`}
+                    >
+                        <Database className="h-4 w-4" />
+                        Direct Connection
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setDbSourceMode('dump')}
+                        className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium border ${
+                            dbSourceMode === 'dump'
+                                ? 'border-blue-500 bg-blue-50 text-blue-700'
+                                : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-50'
+                        }`}
+                    >
+                        <FileUp className="h-4 w-4" />
+                        Upload SQL Dump
+                    </button>
                 </div>
 
-                {/* Load Configuration Button */}
+                {dbSourceMode === 'dump' ? (
+                    /* Dump Upload Mode */
+                    <div>
+                        <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg mb-4">
+                            <p className="text-sm text-blue-800">
+                                <strong>How it works:</strong> Upload a database dump from your Shopware instance. A local Docker MySQL container will be
+                                spawned to load the dump and serve as the data source for migration. Requires Docker to be installed.
+                            </p>
+                            <p className="mt-2 text-xs text-blue-700">
+                                Supported formats: <code>.sql</code>, <code>.sql.gz</code>, <code>.tar.gz</code>, <code>.zip</code>
+                            </p>
+                        </div>
+
+                        {/* File Upload */}
+                        <div className="mb-4">
+                            <label className={labelClass}>Database Dump File</label>
+                            <div className="flex items-center gap-3">
+                                <label className="flex-1 cursor-pointer">
+                                    <div className={`flex items-center justify-center gap-2 rounded-lg border-2 border-dashed px-4 py-6 text-center ${
+                                        dumpFile ? 'border-green-300 bg-green-50' : 'border-gray-300 hover:border-blue-400 hover:bg-gray-50'
+                                    }`}>
+                                        {dumpFile ? (
+                                            <>
+                                                <Check className="h-5 w-5 text-green-600" />
+                                                <span className="text-sm text-green-700">{dumpFile.name} ({
+                                                    dumpFile.size >= 1024 * 1024 * 1024
+                                                        ? (dumpFile.size / (1024 * 1024 * 1024)).toFixed(1) + ' GB'
+                                                        : dumpFile.size >= 1024 * 1024
+                                                            ? (dumpFile.size / (1024 * 1024)).toFixed(1) + ' MB'
+                                                            : (dumpFile.size / 1024).toFixed(0) + ' KB'
+                                                })</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Upload className="h-5 w-5 text-gray-400" />
+                                                <span className="text-sm text-gray-500">Click to select dump file</span>
+                                            </>
+                                        )}
+                                    </div>
+                                    <input
+                                        type="file"
+                                        accept=".sql,.gz,.zip,.tgz"
+                                        onChange={(e) => {
+                                            setDumpFile(e.target.files[0] || null);
+                                            setDumpResult(null);
+                                        }}
+                                        className="hidden"
+                                    />
+                                </label>
+                            </div>
+                        </div>
+
+                        {/* Upload Button */}
+                        <div className="mb-4">
+                            <button
+                                onClick={handleDumpUpload}
+                                disabled={!dumpFile || dumpUploading}
+                                className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
+                            >
+                                {dumpUploading ? (
+                                    <>
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                        Uploading &amp; Importing...
+                                    </>
+                                ) : (
+                                    <>
+                                        <Upload className="h-4 w-4" />
+                                        Upload &amp; Import Dump
+                                    </>
+                                )}
+                            </button>
+                            {dumpUploading && (
+                                <p className="mt-2 text-xs text-gray-500">
+                                    This may take several minutes depending on the dump size. A Docker MySQL container is being created and the dump is being imported.
+                                </p>
+                            )}
+                        </div>
+
+                        {/* Dump Result */}
+                        {dumpResult && (
+                            <div className={`p-4 rounded-lg mb-4 ${dumpResult.success ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
+                                <div className="flex items-center gap-2 mb-2">
+                                    {dumpResult.success ? (
+                                        <Check className="h-5 w-5 text-green-600" />
+                                    ) : (
+                                        <X className="h-5 w-5 text-red-600" />
+                                    )}
+                                    <span className="font-medium text-sm">
+                                        {dumpResult.success ? 'Dump imported successfully' : 'Import failed'}
+                                    </span>
+                                </div>
+                                {dumpResult.success && dumpResult.validation && (
+                                    <div className="text-sm text-gray-700 space-y-1 ml-7">
+                                        {dumpResult.validation.mysql_version && (
+                                            <div>✓ MySQL Version: {dumpResult.validation.mysql_version}</div>
+                                        )}
+                                        <div>✓ Tables found: {dumpResult.validation.tables_found?.join(', ')}</div>
+                                        <div>✓ Container: {dumpResult.container_name}</div>
+                                        <div>✓ Connection: {dumpResult.connection?.db_host}:{dumpResult.connection?.db_port}</div>
+                                        {dumpResult.validation.warnings?.length > 0 && (
+                                            <div className="mt-2">
+                                                {dumpResult.validation.warnings.map((w, i) => (
+                                                    <div key={i} className="text-yellow-700">⚠ {w}</div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                                {dumpResult.error && (
+                                    <div className="text-sm text-red-700 ml-7">{dumpResult.error}</div>
+                                )}
+                                {dumpResult.validation && !dumpResult.success && dumpResult.validation.tables_missing?.length > 0 && (
+                                    <div className="text-sm text-red-700 ml-7 mt-1">
+                                        Missing tables: {dumpResult.validation.tables_missing.join(', ')}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Cleanup Button */}
+                        {dumpContainerName && (
+                            <div className="flex items-center gap-2 text-sm text-gray-600">
+                                <span>Docker container: <code className="text-xs bg-gray-100 px-1 rounded">{dumpContainerName}</code></span>
+                                <button
+                                    onClick={handleDumpCleanup}
+                                    className="text-red-600 hover:text-red-800 underline text-xs"
+                                >
+                                    Remove Container
+                                </button>
+                            </div>
+                        )}
+
+                        {/* Base URL - always needed for media migration */}
+                        <div className="mt-4 border-t border-gray-200 pt-4">
+                            <div>
+                                <label className={labelClass}>Shopware Base URL (for media/image migration)</label>
+                                <input type="text" value={shopware.base_url} onChange={(e) => updateShopware('base_url', e.target.value)} className={inputClass} placeholder="https://shop.example.com" />
+                                <p className="mt-1 text-xs text-gray-500">
+                                    Required to download product images from your Shopware instance during migration
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                ) : (
+                    /* Direct Connection Mode */
+                    <div>
+                        <div className="grid grid-cols-2 gap-4 mb-4">
+                            <div>
+                                <label className={labelClass}>Host</label>
+                                <input type="text" value={shopware.db_host} onChange={(e) => updateShopware('db_host', e.target.value)} className={inputClass} placeholder="127.0.0.1" />
+                            </div>
+                            <div>
+                                <label className={labelClass}>Port</label>
+                                <input type="number" value={shopware.db_port} onChange={(e) => updateShopware('db_port', parseInt(e.target.value) || 3306)} className={inputClass} />
+                            </div>
+                            <div>
+                                <label className={labelClass}>Database</label>
+                                <input type="text" value={shopware.db_database} onChange={(e) => updateShopware('db_database', e.target.value)} className={inputClass} />
+                            </div>
+                            <div>
+                                <label className={labelClass}>Username</label>
+                                <input type="text" value={shopware.db_username} onChange={(e) => updateShopware('db_username', e.target.value)} className={inputClass} />
+                            </div>
+                            <div>
+                                <label className={labelClass}>Password</label>
+                                <input type="password" value={shopware.db_password} onChange={(e) => updateShopware('db_password', e.target.value)} className={inputClass} />
+                            </div>
+                            <div>
+                                <label className={labelClass}>Base URL</label>
+                                <input type="text" value={shopware.base_url} onChange={(e) => updateShopware('base_url', e.target.value)} className={inputClass} placeholder="https://shop.example.com" />
+                            </div>
+                        </div>
+
+                        {/* SSH Tunnel Section */}
+                        <div className="border-t border-gray-200 pt-4 mb-4">
+                            <div className="flex items-center justify-between mb-3">
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        checked={sshEnabled}
+                                        onChange={(e) => setSshEnabled(e.target.checked)}
+                                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                    />
+                                    <span className="text-sm font-medium text-gray-700">Use SSH Tunnel</span>
+                                    <HelpButton guideKey="ssh_keys" />
+                                </label>
+                            </div>
+
+                            {sshEnabled && (
+                                <div className="grid grid-cols-2 gap-4 p-4 bg-blue-50 rounded-md border border-blue-200">
+                                    <div className="col-span-2">
+                                        <label className={labelClass}>SSH Host</label>
+                                        <input type="text" value={sshConfig.host} onChange={(e) => updateSsh('host', e.target.value)} className={inputClass} placeholder="server.example.com" />
+                                    </div>
+                                    <div>
+                                        <label className={labelClass}>SSH Port</label>
+                                        <input type="number" value={sshConfig.port} onChange={(e) => updateSsh('port', parseInt(e.target.value) || 22)} className={inputClass} />
+                                    </div>
+                                    <div>
+                                        <label className={labelClass}>SSH Username</label>
+                                        <input type="text" value={sshConfig.username} onChange={(e) => updateSsh('username', e.target.value)} className={inputClass} />
+                                    </div>
+                                    <div className="col-span-2">
+                                        <label className={labelClass}>Authentication Method</label>
+                                        <select value={sshConfig.auth_method} onChange={(e) => updateSsh('auth_method', e.target.value)} className={inputClass}>
+                                            <option value="key">SSH Key (Recommended)</option>
+                                            <option value="password">Password</option>
+                                        </select>
+                                    </div>
+                                    {sshConfig.auth_method === 'key' ? (
+                                        <div className="col-span-2">
+                                            <label className={labelClass}>Private Key Path</label>
+                                            <input type="text" value={sshConfig.key} onChange={(e) => updateSsh('key', e.target.value)} className={inputClass} placeholder="/path/to/private_key" />
+                                        </div>
+                                    ) : (
+                                        <div className="col-span-2">
+                                            <label className={labelClass}>SSH Password</label>
+                                            <input type="password" value={sshConfig.password} onChange={(e) => updateSsh('password', e.target.value)} className={inputClass} />
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                {/* Load Configuration Button - shared between modes */}
                 <div className="mb-4">
                     <button
                         onClick={loadShopwareConfig}
@@ -560,7 +865,9 @@ export default function Settings() {
                         {loadingLanguages ? 'Connecting...' : 'Connect & Load Configuration'}
                     </button>
                     <p className="mt-2 text-xs text-gray-500">
-                        This will connect to your Shopware database, test the connection, and load available languages
+                        {dbSourceMode === 'dump'
+                            ? 'Connect to the imported database to load available languages and version info'
+                            : 'This will connect to your Shopware database, test the connection, and load available languages'}
                     </p>
                 </div>
 
@@ -600,57 +907,6 @@ export default function Settings() {
                         </div>
                     </div>
                 )}
-
-                {/* SSH Tunnel Section */}
-                <div className="border-t border-gray-200 pt-4">
-                    <div className="flex items-center justify-between mb-3">
-                        <label className="flex items-center gap-2 cursor-pointer">
-                            <input
-                                type="checkbox"
-                                checked={sshEnabled}
-                                onChange={(e) => setSshEnabled(e.target.checked)}
-                                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                            />
-                            <span className="text-sm font-medium text-gray-700">Use SSH Tunnel</span>
-                            <HelpButton guideKey="ssh_keys" />
-                        </label>
-                    </div>
-
-                    {sshEnabled && (
-                        <div className="grid grid-cols-2 gap-4 p-4 bg-blue-50 rounded-md border border-blue-200">
-                            <div className="col-span-2">
-                                <label className={labelClass}>SSH Host</label>
-                                <input type="text" value={sshConfig.host} onChange={(e) => updateSsh('host', e.target.value)} className={inputClass} placeholder="server.example.com" />
-                            </div>
-                            <div>
-                                <label className={labelClass}>SSH Port</label>
-                                <input type="number" value={sshConfig.port} onChange={(e) => updateSsh('port', parseInt(e.target.value) || 22)} className={inputClass} />
-                            </div>
-                            <div>
-                                <label className={labelClass}>SSH Username</label>
-                                <input type="text" value={sshConfig.username} onChange={(e) => updateSsh('username', e.target.value)} className={inputClass} />
-                            </div>
-                            <div className="col-span-2">
-                                <label className={labelClass}>Authentication Method</label>
-                                <select value={sshConfig.auth_method} onChange={(e) => updateSsh('auth_method', e.target.value)} className={inputClass}>
-                                    <option value="key">SSH Key (Recommended)</option>
-                                    <option value="password">Password</option>
-                                </select>
-                            </div>
-                            {sshConfig.auth_method === 'key' ? (
-                                <div className="col-span-2">
-                                    <label className={labelClass}>Private Key Path</label>
-                                    <input type="text" value={sshConfig.key} onChange={(e) => updateSsh('key', e.target.value)} className={inputClass} placeholder="/path/to/private_key" />
-                                </div>
-                            ) : (
-                                <div className="col-span-2">
-                                    <label className={labelClass}>SSH Password</label>
-                                    <input type="password" value={sshConfig.password} onChange={(e) => updateSsh('password', e.target.value)} className={inputClass} />
-                                </div>
-                            )}
-                        </div>
-                    )}
-                </div>
             </div>
 
             {/* WooCommerce Target */}
