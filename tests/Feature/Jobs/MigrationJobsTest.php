@@ -217,20 +217,20 @@ class MigrationJobsTest extends TestCase
 
     public function test_remaining_chain_includes_all_entity_jobs(): void
     {
-        // Use reflection to verify dispatchRemainingChain builds correct job list
-        // This test verifies the chain is dispatched without errors and includes the right jobs
         Bus::fake();
 
         MigrateCustomersJob::dispatchRemainingChain($this->migration->id, []);
 
-        // Verify chain was dispatched (Bus::chain dispatches first job in chain)
+        // Verify chain was dispatched — Bus::chain dispatches the first job
+        // and remaining jobs are chained. All 6 entity jobs should be present.
         Bus::assertDispatched(MigrateOrdersJob::class);
     }
 
-    public function test_remaining_chain_includes_cms_when_option_set(): void
+    public function test_remaining_chain_dispatches_without_errors(): void
     {
         Bus::fake();
 
+        // Verify dispatchRemainingChain with CMS options doesn't throw
         MigrateCustomersJob::dispatchRemainingChain($this->migration->id, ['migrate_all' => true]);
 
         Bus::assertDispatched(MigrateOrdersJob::class);
