@@ -170,6 +170,46 @@ class DatabaseDumpServiceTest extends TestCase
         $this->cleanupDirectory($tmpDir);
     }
 
+    public function test_extract_zip_rejects_path_traversal(): void
+    {
+        $tmpDir = sys_get_temp_dir().'/dump_test_'.uniqid();
+        mkdir($tmpDir, 0755, true);
+
+        $zipPath = $tmpDir.'/malicious.zip';
+        $zip = new \ZipArchive;
+        $zip->open($zipPath, \ZipArchive::CREATE);
+        $zip->addFromString('../../evil.sql', 'DROP TABLE users;');
+        $zip->close();
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Zip entry attempts to escape extraction directory');
+
+        try {
+            $this->service->extractSqlFile($zipPath);
+        } finally {
+            $this->cleanupDirectory($tmpDir);
+        }
+    }
+
+    public function test_cleanup_files_removes_directory(): void
+    {
+        $tmpDir = sys_get_temp_dir().'/dump_test_'.uniqid();
+        mkdir($tmpDir.'/subdir', 0755, true);
+        file_put_contents($tmpDir.'/test.sql', 'test');
+        file_put_contents($tmpDir.'/subdir/nested.sql', 'test');
+
+        $this->service->cleanupFiles($tmpDir);
+
+        $this->assertDirectoryDoesNotExist($tmpDir);
+    }
+
+    public function test_cleanup_files_handles_nonexistent_directory(): void
+    {
+        // Should not throw
+        $this->service->cleanupFiles('/nonexistent/path/'.uniqid());
+        $this->assertTrue(true);
+    }
+
     private function cleanupDirectory(string $dir): void
     {
         $items = glob($dir.'/{,.}[!.,!..]*', GLOB_BRACE);

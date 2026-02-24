@@ -22,6 +22,8 @@ class DumpUploadController extends Controller
             'dump_file' => 'required|file|max:2097152', // 2GB in KB
         ]);
 
+        $storedDirectory = null;
+
         try {
             // Check Docker availability first
             if (! $this->dumpService->isDockerAvailable()) {
@@ -35,6 +37,7 @@ class DumpUploadController extends Controller
 
             // Store the file
             $stored = $this->dumpService->store($file);
+            $storedDirectory = $stored['directory'];
 
             // Extract SQL if compressed
             $sqlPath = $this->dumpService->extractSqlFile($stored['path']);
@@ -43,6 +46,8 @@ class DumpUploadController extends Controller
             $validation = $this->dumpService->validateDump($sqlPath);
 
             if (! $validation['valid']) {
+                $this->dumpService->cleanupFiles($storedDirectory);
+
                 return response()->json([
                     'success' => false,
                     'error' => 'Invalid Shopware database dump',
@@ -72,11 +77,19 @@ class DumpUploadController extends Controller
                 'validation' => $validation,
             ]);
         } catch (\InvalidArgumentException $e) {
+            if ($storedDirectory) {
+                $this->dumpService->cleanupFiles($storedDirectory);
+            }
+
             return response()->json([
                 'success' => false,
                 'error' => $e->getMessage(),
             ], 422);
         } catch (\Exception $e) {
+            if ($storedDirectory) {
+                $this->dumpService->cleanupFiles($storedDirectory);
+            }
+
             Log::error('Dump upload failed', ['error' => $e->getMessage()]);
 
             return response()->json([
@@ -129,12 +142,18 @@ class DumpUploadController extends Controller
             'dump_file' => 'required|file|max:2097152',
         ]);
 
+        $storedDirectory = null;
+
         try {
             $file = $request->file('dump_file');
 
             $stored = $this->dumpService->store($file);
+            $storedDirectory = $stored['directory'];
             $sqlPath = $this->dumpService->extractSqlFile($stored['path']);
             $validation = $this->dumpService->validateDump($sqlPath);
+
+            // Clean up files after validation-only (no import needed)
+            $this->dumpService->cleanupFiles($storedDirectory);
 
             return response()->json([
                 'success' => true,
@@ -142,6 +161,10 @@ class DumpUploadController extends Controller
                 'docker_available' => $this->dumpService->isDockerAvailable(),
             ]);
         } catch (\Exception $e) {
+            if ($storedDirectory) {
+                $this->dumpService->cleanupFiles($storedDirectory);
+            }
+
             return response()->json([
                 'success' => false,
                 'error' => $e->getMessage(),

@@ -32,7 +32,7 @@ class DatabaseDumpService
     /**
      * Store and process the uploaded dump file.
      *
-     * @return array{path: string, database_name: string}
+     * @return array{path: string, database_name: string, directory: string}
      */
     public function store(UploadedFile $file): array
     {
@@ -48,7 +48,29 @@ class DatabaseDumpService
         return [
             'path' => $storedPath,
             'database_name' => $databaseName,
+            'directory' => storage_path('app/'.$directory),
         ];
+    }
+
+    /**
+     * Clean up stored dump files from disk.
+     */
+    public function cleanupFiles(string $directory): void
+    {
+        if (! is_dir($directory)) {
+            return;
+        }
+
+        $items = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($directory, \RecursiveDirectoryIterator::SKIP_DOTS),
+            \RecursiveIteratorIterator::CHILD_FIRST
+        );
+
+        foreach ($items as $item) {
+            $item->isDir() ? rmdir($item->getRealPath()) : unlink($item->getRealPath());
+        }
+
+        rmdir($directory);
     }
 
     /**
@@ -164,7 +186,7 @@ class DatabaseDumpService
      */
     public function isDockerAvailable(): bool
     {
-        $result = Process::timeout(10)->run('docker info');
+        $result = Process::timeout(10)->run(['docker', 'info']);
 
         return $result->successful();
     }
@@ -201,11 +223,17 @@ class DatabaseDumpService
             throw new \RuntimeException('Failed to start MySQL container: '.$result->errorOutput());
         }
 
-        // Wait for MySQL to be ready
-        $this->waitForMysql($containerName, $password);
+        // Wait for MySQL to be ready and import the dump
+        try {
+            $this->waitForMysql($containerName, $password);
 
-        // Import the dump
-        $this->importDump($containerName, $sqlPath, $password, $dbName);
+            $this->importDump($containerName, $sqlPath, $password, $dbName);
+        } catch (\Throwable $e) {
+            // Cleanup container on failure
+            Process::timeout(10)->run(['docker', 'rm', '-f', $containerName]);
+
+            throw $e;
+        }
 
         // Determine host - if running inside Docker, use host.docker.internal or gateway
         $host = $this->determineHost();
@@ -297,6 +325,9 @@ class DatabaseDumpService
                 throw new \RuntimeException('Failed to extract tar.gz file: '.$result->errorOutput());
             }
 
+            // Validate no files escaped the extraction directory
+            $this->validateExtractedPaths($extractDir);
+
             return $this->findSqlFile($extractDir);
         }
 
@@ -320,10 +351,22 @@ class DatabaseDumpService
     }
 
     /**
-     * Extract a .zip file.
+     * Extract a .zip file with path traversal protection.
      */
     private function extractZip(string $filePath, string $extractDir): string
     {
+        if (! is_dir($extractDir)) {
+            if (! mkdir($extractDir, 0775, true) && ! is_dir($extractDir)) {
+                throw new \RuntimeException('Failed to create extract directory');
+            }
+        }
+
+        $extractDirReal = realpath($extractDir);
+
+        if ($extractDirReal === false) {
+            throw new \RuntimeException('Failed to resolve extract directory path');
+        }
+
         $zip = new \ZipArchive;
         $res = $zip->open($filePath);
 
@@ -331,10 +374,143 @@ class DatabaseDumpService
             throw new \RuntimeException('Failed to open zip file');
         }
 
-        $zip->extractTo($extractDir);
+        $fileCount = $zip->numFiles;
+
+        for ($i = 0; $i < $fileCount; $i++) {
+            $entryName = $zip->getNameIndex($i);
+
+            if ($entryName === false || $entryName === '') {
+                continue;
+            }
+
+            // Reject null bytes
+            if (str_contains($entryName, "\0")) {
+                $zip->close();
+
+                throw new \RuntimeException('Invalid entry name in zip file');
+            }
+
+            $targetPath = $extractDirReal.DIRECTORY_SEPARATOR.$entryName;
+            $normalizedTargetPath = $this->normalizePath($targetPath);
+            $extractDirPrefix = rtrim($extractDirReal, DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR;
+
+            // Ensure the path stays within extraction directory
+            if (
+                $normalizedTargetPath !== $extractDirReal
+                && ! str_starts_with($normalizedTargetPath, $extractDirPrefix)
+            ) {
+                $zip->close();
+
+                throw new \RuntimeException('Zip entry attempts to escape extraction directory');
+            }
+
+            // Directory entry
+            if (str_ends_with($entryName, '/')) {
+                if (! is_dir($normalizedTargetPath) && ! mkdir($normalizedTargetPath, 0775, true) && ! is_dir($normalizedTargetPath)) {
+                    $zip->close();
+
+                    throw new \RuntimeException('Failed to create directory from zip entry');
+                }
+
+                continue;
+            }
+
+            $targetDir = dirname($normalizedTargetPath);
+
+            if (! is_dir($targetDir) && ! mkdir($targetDir, 0775, true) && ! is_dir($targetDir)) {
+                $zip->close();
+
+                throw new \RuntimeException('Failed to create directory for zip entry');
+            }
+
+            $stream = $zip->getStream($entryName);
+
+            if ($stream === false) {
+                $zip->close();
+
+                throw new \RuntimeException('Failed to read entry from zip file');
+            }
+
+            $outputHandle = fopen($normalizedTargetPath, 'wb');
+
+            if ($outputHandle === false) {
+                fclose($stream);
+                $zip->close();
+
+                throw new \RuntimeException('Failed to create file from zip entry');
+            }
+
+            while (! feof($stream)) {
+                $buffer = fread($stream, 8192);
+
+                if ($buffer === false) {
+                    fclose($stream);
+                    fclose($outputHandle);
+                    $zip->close();
+
+                    throw new \RuntimeException('Failed while extracting zip entry');
+                }
+
+                fwrite($outputHandle, $buffer);
+            }
+
+            fclose($stream);
+            fclose($outputHandle);
+        }
+
         $zip->close();
 
         return $this->findSqlFile($extractDir);
+    }
+
+    /**
+     * Normalize a filesystem path by resolving "." and ".." segments.
+     */
+    private function normalizePath(string $path): string
+    {
+        $parts = preg_split('#[\\\\/]#', $path);
+        $absolutes = [];
+
+        foreach ($parts as $part) {
+            if ($part === '' || $part === '.') {
+                continue;
+            }
+
+            if ($part === '..') {
+                array_pop($absolutes);
+
+                continue;
+            }
+
+            $absolutes[] = $part;
+        }
+
+        $prefix = str_starts_with($path, DIRECTORY_SEPARATOR) ? DIRECTORY_SEPARATOR : '';
+
+        return $prefix.implode(DIRECTORY_SEPARATOR, $absolutes);
+    }
+
+    /**
+     * Validate that extracted tar files haven't escaped the extraction directory.
+     */
+    private function validateExtractedPaths(string $extractDir): void
+    {
+        $extractDirReal = realpath($extractDir);
+
+        if ($extractDirReal === false) {
+            return;
+        }
+
+        $iterator = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($extractDirReal, \RecursiveDirectoryIterator::SKIP_DOTS)
+        );
+
+        foreach ($iterator as $file) {
+            $filePath = $file->getRealPath();
+            if (! str_starts_with($filePath, $extractDirReal)) {
+                throw new \RuntimeException('Archive entry attempts to escape extraction directory');
+            }
+        }
     }
 
     /**
@@ -408,11 +584,19 @@ class DatabaseDumpService
      */
     private function importDump(string $containerName, string $sqlPath, string $password, string $dbName): void
     {
+        $handle = fopen($sqlPath, 'r');
+
+        if ($handle === false) {
+            throw new \RuntimeException('Failed to open SQL dump file for reading: '.$sqlPath);
+        }
+
         $result = Process::timeout(600)
-            ->input(file_get_contents($sqlPath))
+            ->input($handle)
             ->run([
                 'docker', 'exec', '-i', $containerName, 'mysql', '-uroot', '-p'.$password, $dbName,
             ]);
+
+        fclose($handle);
 
         if (! $result->successful()) {
             Log::error('Dump import failed', ['error' => $result->errorOutput()]);

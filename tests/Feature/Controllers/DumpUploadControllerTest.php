@@ -62,6 +62,7 @@ class DumpUploadControllerTest extends TestCase
         $mockService->shouldReceive('store')->once()->andReturn([
             'path' => '/tmp/test/dump.sql',
             'database_name' => 'shopware_dump_test',
+            'directory' => '/tmp/test',
         ]);
         $mockService->shouldReceive('extractSqlFile')->once()->andReturn('/tmp/test/dump.sql');
         $mockService->shouldReceive('validateDump')->once()->andReturn([
@@ -132,6 +133,7 @@ class DumpUploadControllerTest extends TestCase
         $mockService->shouldReceive('store')->once()->andReturn([
             'path' => '/tmp/test/dump.sql',
             'database_name' => 'shopware_dump_test',
+            'directory' => '/tmp/test',
         ]);
         $mockService->shouldReceive('extractSqlFile')->once()->andReturn('/tmp/test/dump.sql');
         $mockService->shouldReceive('validateDump')->once()->andReturn([
@@ -141,6 +143,7 @@ class DumpUploadControllerTest extends TestCase
             'tables_missing' => ['product', 'category', 'customer', 'order', 'language', 'version'],
             'warnings' => ['Missing required Shopware tables'],
         ]);
+        $mockService->shouldReceive('cleanupFiles')->once()->with('/tmp/test');
 
         $this->app->instance(DatabaseDumpService::class, $mockService);
 
@@ -251,6 +254,7 @@ class DumpUploadControllerTest extends TestCase
         $mockService->shouldReceive('store')->once()->andReturn([
             'path' => '/tmp/test/dump.sql',
             'database_name' => 'shopware_dump_test',
+            'directory' => '/tmp/test',
         ]);
         $mockService->shouldReceive('extractSqlFile')->once()->andReturn('/tmp/test/dump.sql');
         $mockService->shouldReceive('validateDump')->once()->andReturn([
@@ -260,6 +264,7 @@ class DumpUploadControllerTest extends TestCase
             'tables_missing' => [],
             'warnings' => [],
         ]);
+        $mockService->shouldReceive('cleanupFiles')->once()->with('/tmp/test');
         $mockService->shouldReceive('isDockerAvailable')->once()->andReturn(true);
 
         $this->app->instance(DatabaseDumpService::class, $mockService);
