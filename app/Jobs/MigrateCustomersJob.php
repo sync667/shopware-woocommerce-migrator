@@ -99,6 +99,9 @@ class MigrateCustomersJob implements ShouldQueue
             new MigrateOrdersJob($migrationId),
             new MigrateCouponsJob($migrationId),
             new MigrateReviewsJob($migrationId),
+            new MigrateShippingMethodsJob($migrationId),
+            new MigratePaymentMethodsJob($migrationId),
+            new MigrateSeoUrlsJob($migrationId),
         ];
 
         if (! empty($cmsOptions['migrate_all'])) {

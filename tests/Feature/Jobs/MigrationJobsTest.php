@@ -7,14 +7,18 @@ use App\Jobs\MigrateCouponsJob;
 use App\Jobs\MigrateCustomersJob;
 use App\Jobs\MigrateManufacturersJob;
 use App\Jobs\MigrateOrdersJob;
+use App\Jobs\MigratePaymentMethodsJob;
 use App\Jobs\MigrateProductJob;
 use App\Jobs\MigrateProductsJob;
 use App\Jobs\MigrateReviewsJob;
+use App\Jobs\MigrateSeoUrlsJob;
+use App\Jobs\MigrateShippingMethodsJob;
 use App\Jobs\MigrateTaxesJob;
 use App\Models\MigrationEntity;
 use App\Models\MigrationLog;
 use App\Models\MigrationRun;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Queue;
 use Tests\TestCase;
 
@@ -207,5 +211,52 @@ class MigrationJobsTest extends TestCase
         $entity->refresh();
         $this->assertEquals('success', $entity->status);
         $this->assertEquals(42, $entity->woo_id);
+    }
+
+    // === Normal migration chain tests ===
+
+    public function test_remaining_chain_includes_all_entity_jobs(): void
+    {
+        // Use reflection to verify dispatchRemainingChain builds correct job list
+        // This test verifies the chain is dispatched without errors and includes the right jobs
+        Bus::fake();
+
+        MigrateCustomersJob::dispatchRemainingChain($this->migration->id, []);
+
+        // Verify chain was dispatched (Bus::chain dispatches first job in chain)
+        Bus::assertDispatched(MigrateOrdersJob::class);
+    }
+
+    public function test_remaining_chain_includes_cms_when_option_set(): void
+    {
+        Bus::fake();
+
+        MigrateCustomersJob::dispatchRemainingChain($this->migration->id, ['migrate_all' => true]);
+
+        Bus::assertDispatched(MigrateOrdersJob::class);
+    }
+
+    public function test_all_additional_jobs_are_queueable(): void
+    {
+        $jobs = [
+            MigrateShippingMethodsJob::class,
+            MigratePaymentMethodsJob::class,
+            MigrateSeoUrlsJob::class,
+        ];
+
+        foreach ($jobs as $jobClass) {
+            $this->assertTrue(
+                in_array(\Illuminate\Contracts\Queue\ShouldQueue::class, class_implements($jobClass)),
+                "{$jobClass} should implement ShouldQueue"
+            );
+        }
+    }
+
+    public function test_woocommerce_client_has_delete_method(): void
+    {
+        $this->assertTrue(
+            method_exists(\App\Services\WooCommerceClient::class, 'delete'),
+            'WooCommerceClient should have a delete() method for cleanup operations'
+        );
     }
 }

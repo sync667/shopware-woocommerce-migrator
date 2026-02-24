@@ -34,8 +34,8 @@ class MigratePaymentMethodsJob implements ShouldQueue
         $transformer = new PaymentMethodTransformer;
 
         // Delta migration: only fetch updated records
-        if ($migration->sync_mode === 'delta' && $migration->last_synced_at) {
-            $paymentMethods = $reader->fetchUpdatedSince($migration->last_synced_at);
+        if ($migration->sync_mode === 'delta' && $migration->last_sync_at) {
+            $paymentMethods = $reader->fetchUpdatedSince($migration->last_sync_at);
         } else {
             $paymentMethods = $reader->fetchAll();
         }

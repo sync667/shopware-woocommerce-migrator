@@ -34,8 +34,8 @@ class MigrateSeoUrlsJob implements ShouldQueue
         $transformer = new SeoUrlTransformer;
 
         // Delta migration: fetch updated SEO URLs
-        if ($migration->sync_mode === 'delta' && $migration->last_synced_at) {
-            $seoUrls = $reader->fetchUpdatedSince($migration->last_synced_at);
+        if ($migration->sync_mode === 'delta' && $migration->last_sync_at) {
+            $seoUrls = $reader->fetchUpdatedSince($migration->last_sync_at);
             $this->processSeoUrls($seoUrls, $migration, $stateManager, $transformer);
 
             return;
