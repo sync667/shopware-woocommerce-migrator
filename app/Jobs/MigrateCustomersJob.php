@@ -71,10 +71,9 @@ class MigrateCustomersJob implements ShouldQueue
         }
 
         $migrationId = $this->migrationId;
-        $cmsOptions = $migration->settings['cms_options'] ?? [];
 
         if (empty($chunks)) {
-            $this->dispatchRemainingChain($migrationId, $cmsOptions);
+            self::dispatchRemainingChain($migrationId);
 
             return;
         }
@@ -86,14 +85,14 @@ class MigrateCustomersJob implements ShouldQueue
 
         Bus::batch($batchJobs)
             ->allowFailures()
-            ->then(function () use ($migrationId, $cmsOptions) {
-                MigrateCustomersJob::dispatchRemainingChain($migrationId, $cmsOptions);
+            ->then(function () use ($migrationId) {
+                MigrateCustomersJob::dispatchRemainingChain($migrationId);
             })
             ->onQueue('customers')
             ->dispatch();
     }
 
-    public static function dispatchRemainingChain(int $migrationId, array $cmsOptions): void
+    public static function dispatchRemainingChain(int $migrationId): void
     {
         // Each batched entity dispatches the next via its then() callback:
         // Orders → Coupons → Reviews → final chain (Shipping, Payment, SEO, [CMS], completion)

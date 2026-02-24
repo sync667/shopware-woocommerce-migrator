@@ -263,7 +263,7 @@ class MigrationJobsTest extends TestCase
     {
         Bus::fake();
 
-        MigrateCustomersJob::dispatchRemainingChain($this->migration->id, []);
+        MigrateCustomersJob::dispatchRemainingChain($this->migration->id);
 
         // dispatchRemainingChain now dispatches MigrateOrdersJob which cascades
         Bus::assertDispatched(MigrateOrdersJob::class);
@@ -274,7 +274,7 @@ class MigrationJobsTest extends TestCase
         Bus::fake();
 
         // Verify dispatchRemainingChain with CMS options doesn't throw
-        MigrateCustomersJob::dispatchRemainingChain($this->migration->id, ['migrate_all' => true]);
+        MigrateCustomersJob::dispatchRemainingChain($this->migration->id);
 
         Bus::assertDispatched(MigrateOrdersJob::class);
     }
