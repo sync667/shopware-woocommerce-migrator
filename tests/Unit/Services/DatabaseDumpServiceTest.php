@@ -167,7 +167,15 @@ class DatabaseDumpServiceTest extends TestCase
         $this->assertFileExists($result);
 
         // Cleanup
-        array_map('unlink', glob($tmpDir.'/*'));
-        rmdir($tmpDir);
+        $this->cleanupDirectory($tmpDir);
+    }
+
+    private function cleanupDirectory(string $dir): void
+    {
+        $items = glob($dir.'/{,.}[!.,!..]*', GLOB_BRACE);
+        foreach ($items as $item) {
+            is_dir($item) ? $this->cleanupDirectory($item) : unlink($item);
+        }
+        rmdir($dir);
     }
 }

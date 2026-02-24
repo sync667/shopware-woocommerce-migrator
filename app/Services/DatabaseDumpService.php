@@ -17,7 +17,7 @@ class DatabaseDumpService
     /**
      * Required Shopware tables to validate the dump
      */
-    private const REQUIRED_TABLES = ['product', 'category', 'customer', '`order`', 'language', 'version'];
+    private const REQUIRED_TABLES = ['product', 'category', 'customer', 'order', 'language', 'version'];
 
     /**
      * Allowed file extensions
@@ -129,10 +129,9 @@ class DatabaseDumpService
 
             // Check for required tables in accumulated content
             foreach (self::REQUIRED_TABLES as $table) {
-                $cleanTable = str_replace('`', '', $table);
-                if (! in_array($cleanTable, $tablesFound)) {
-                    if (preg_match('/CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?`?'.$cleanTable.'`?\s/i', $fullContent)) {
-                        $tablesFound[] = $cleanTable;
+                if (! in_array($table, $tablesFound)) {
+                    if (preg_match('/CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?`?'.$table.'`?\s/i', $fullContent)) {
+                        $tablesFound[] = $table;
                     }
                 }
             }
@@ -145,8 +144,7 @@ class DatabaseDumpService
 
         fclose($handle);
 
-        $requiredClean = array_map(fn ($t) => str_replace('`', '', $t), self::REQUIRED_TABLES);
-        $tablesMissing = array_values(array_diff($requiredClean, $tablesFound));
+        $tablesMissing = array_values(array_diff(self::REQUIRED_TABLES, $tablesFound));
 
         if (! empty($tablesMissing)) {
             $warnings[] = 'Missing required Shopware tables: '.implode(', ', $tablesMissing);
@@ -188,7 +186,7 @@ class DatabaseDumpService
         $dbName = 'shopware';
 
         // Spawn MySQL container
-        $result = Process::timeout(30)->run(implode(' ', [
+        $result = Process::timeout(30)->run([
             'docker', 'run', '-d',
             '--name', $containerName,
             '-e', 'MYSQL_ROOT_PASSWORD='.$password,
@@ -197,7 +195,7 @@ class DatabaseDumpService
             'mysql:8.0',
             '--default-authentication-plugin=mysql_native_password',
             '--innodb-flush-log-at-trx-commit=0',
-        ]));
+        ]);
 
         if (! $result->successful()) {
             throw new \RuntimeException('Failed to start MySQL container: '.$result->errorOutput());
@@ -227,7 +225,7 @@ class DatabaseDumpService
      */
     public function cleanup(string $containerName): bool
     {
-        $result = Process::timeout(30)->run("docker rm -f {$containerName}");
+        $result = Process::timeout(30)->run(['docker', 'rm', '-f', $containerName]);
 
         return $result->successful();
     }
@@ -239,9 +237,9 @@ class DatabaseDumpService
      */
     public function containerStatus(string $containerName): array
     {
-        $result = Process::timeout(10)->run(
-            "docker inspect --format='{{.State.Status}}' {$containerName}"
-        );
+        $result = Process::timeout(10)->run([
+            'docker', 'inspect', '--format={{.State.Status}}', $containerName,
+        ]);
 
         if (! $result->successful()) {
             return ['running' => false, 'status' => 'not_found'];
@@ -293,7 +291,7 @@ class DatabaseDumpService
         $extension = $this->getFullExtension($filePath);
 
         if ($extension === 'tar.gz' || $extension === 'tgz') {
-            $result = Process::timeout(300)->path($extractDir)->run("tar -xzf {$filePath}");
+            $result = Process::timeout(300)->path($extractDir)->run(['tar', '-xzf', $filePath]);
 
             if (! $result->successful()) {
                 throw new \RuntimeException('Failed to extract tar.gz file: '.$result->errorOutput());
@@ -302,14 +300,21 @@ class DatabaseDumpService
             return $this->findSqlFile($extractDir);
         }
 
-        // Plain .gz file
-        $outputPath = $extractDir.'/'.pathinfo(basename($filePath, '.gz'), PATHINFO_FILENAME).'.sql';
+        // Plain .gz file - decompress using gunzip and write output to file
+        $outputPath = $extractDir.'/'.preg_replace('/\.gz$/i', '', basename($filePath));
 
-        $result = Process::timeout(300)->run("gunzip -c {$filePath} > {$outputPath}");
+        // If no .sql extension after removing .gz, add it
+        if (! str_ends_with($outputPath, '.sql')) {
+            $outputPath .= '.sql';
+        }
+
+        $result = Process::timeout(300)->run(['gunzip', '-c', $filePath]);
 
         if (! $result->successful()) {
             throw new \RuntimeException('Failed to extract gz file: '.$result->errorOutput());
         }
+
+        file_put_contents($outputPath, $result->output());
 
         return $outputPath;
     }
@@ -381,9 +386,9 @@ class DatabaseDumpService
         for ($i = 0; $i < $maxAttempts; $i++) {
             sleep(2);
 
-            $result = Process::timeout(10)->run(
-                "docker exec {$containerName} mysqladmin ping -uroot -p{$password} --silent"
-            );
+            $result = Process::timeout(10)->run([
+                'docker', 'exec', $containerName, 'mysqladmin', 'ping', '-uroot', '-p'.$password, '--silent',
+            ]);
 
             if ($result->successful()) {
                 Log::info("MySQL container {$containerName} is ready after ".($i + 1).' attempts');
@@ -393,7 +398,7 @@ class DatabaseDumpService
         }
 
         // Clean up on failure
-        Process::timeout(10)->run("docker rm -f {$containerName}");
+        Process::timeout(10)->run(['docker', 'rm', '-f', $containerName]);
 
         throw new \RuntimeException('MySQL container failed to start within '.$maxAttempts.' attempts');
     }
@@ -403,9 +408,11 @@ class DatabaseDumpService
      */
     private function importDump(string $containerName, string $sqlPath, string $password, string $dbName): void
     {
-        $result = Process::timeout(600)->run(
-            "docker exec -i {$containerName} mysql -uroot -p{$password} {$dbName} < {$sqlPath}"
-        );
+        $result = Process::timeout(600)
+            ->input(file_get_contents($sqlPath))
+            ->run([
+                'docker', 'exec', '-i', $containerName, 'mysql', '-uroot', '-p'.$password, $dbName,
+            ]);
 
         if (! $result->successful()) {
             Log::error('Dump import failed', ['error' => $result->errorOutput()]);
@@ -423,15 +430,15 @@ class DatabaseDumpService
         // Check if we're running inside Docker
         if (file_exists('/.dockerenv')) {
             // Try host.docker.internal first (Docker Desktop)
-            $result = Process::timeout(5)->run('getent hosts host.docker.internal');
+            $result = Process::timeout(5)->run(['getent', 'hosts', 'host.docker.internal']);
             if ($result->successful()) {
                 return 'host.docker.internal';
             }
 
             // Fall back to Docker gateway
-            $result = Process::timeout(5)->run(
-                "docker network inspect bridge --format='{{range .IPAM.Config}}{{.Gateway}}{{end}}'"
-            );
+            $result = Process::timeout(5)->run([
+                'docker', 'network', 'inspect', 'bridge', '--format={{range .IPAM.Config}}{{.Gateway}}{{end}}',
+            ]);
             if ($result->successful() && trim($result->output())) {
                 return trim($result->output());
             }

@@ -653,7 +653,13 @@ export default function Settings() {
                                         {dumpFile ? (
                                             <>
                                                 <Check className="h-5 w-5 text-green-600" />
-                                                <span className="text-sm text-green-700">{dumpFile.name} ({(dumpFile.size / (1024 * 1024)).toFixed(1)} MB)</span>
+                                                <span className="text-sm text-green-700">{dumpFile.name} ({
+                                                    dumpFile.size >= 1024 * 1024 * 1024
+                                                        ? (dumpFile.size / (1024 * 1024 * 1024)).toFixed(1) + ' GB'
+                                                        : dumpFile.size >= 1024 * 1024
+                                                            ? (dumpFile.size / (1024 * 1024)).toFixed(1) + ' MB'
+                                                            : (dumpFile.size / 1024).toFixed(0) + ' KB'
+                                                })</span>
                                             </>
                                         ) : (
                                             <>
