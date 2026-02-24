@@ -3,13 +3,17 @@
 namespace Tests\Feature\Jobs;
 
 use App\Jobs\MigrateCategoriesJob;
+use App\Jobs\MigrateCouponBatchJob;
 use App\Jobs\MigrateCouponsJob;
 use App\Jobs\MigrateCustomersJob;
 use App\Jobs\MigrateManufacturersJob;
+use App\Jobs\MigrateOrderBatchJob;
 use App\Jobs\MigrateOrdersJob;
 use App\Jobs\MigratePaymentMethodsJob;
+use App\Jobs\MigrateProductBatchJob;
 use App\Jobs\MigrateProductJob;
 use App\Jobs\MigrateProductsJob;
+use App\Jobs\MigrateReviewBatchJob;
 use App\Jobs\MigrateReviewsJob;
 use App\Jobs\MigrateSeoUrlsJob;
 use App\Jobs\MigrateShippingMethodsJob;
@@ -83,6 +87,23 @@ class MigrationJobsTest extends TestCase
         }
     }
 
+    public function test_all_batch_jobs_are_queueable(): void
+    {
+        $jobs = [
+            MigrateProductBatchJob::class,
+            MigrateOrderBatchJob::class,
+            MigrateCouponBatchJob::class,
+            MigrateReviewBatchJob::class,
+        ];
+
+        foreach ($jobs as $jobClass) {
+            $this->assertTrue(
+                in_array(\Illuminate\Contracts\Queue\ShouldQueue::class, class_implements($jobClass)),
+                "{$jobClass} should implement ShouldQueue"
+            );
+        }
+    }
+
     public function test_product_job_dispatches_to_products_queue(): void
     {
         Queue::fake();
@@ -91,6 +112,29 @@ class MigrationJobsTest extends TestCase
             ->onQueue('products');
 
         Queue::assertPushedOn('products', MigrateProductJob::class);
+    }
+
+    public function test_batch_jobs_have_retry_configuration(): void
+    {
+        $productBatch = new MigrateProductBatchJob($this->migration->id, ['id1', 'id2']);
+        $this->assertEquals(3, $productBatch->tries);
+        $this->assertEquals(5, $productBatch->backoff);
+        $this->assertEquals(1800, $productBatch->timeout);
+
+        $orderBatch = new MigrateOrderBatchJob($this->migration->id, ['id1']);
+        $this->assertEquals(3, $orderBatch->tries);
+        $this->assertEquals(5, $orderBatch->backoff);
+        $this->assertEquals(600, $orderBatch->timeout);
+
+        $couponBatch = new MigrateCouponBatchJob($this->migration->id, ['id1']);
+        $this->assertEquals(3, $couponBatch->tries);
+        $this->assertEquals(5, $couponBatch->backoff);
+        $this->assertEquals(600, $couponBatch->timeout);
+
+        $reviewBatch = new MigrateReviewBatchJob($this->migration->id, ['id1']);
+        $this->assertEquals(3, $reviewBatch->tries);
+        $this->assertEquals(5, $reviewBatch->backoff);
+        $this->assertEquals(600, $reviewBatch->timeout);
     }
 
     public function test_jobs_have_retry_configuration(): void
@@ -219,10 +263,9 @@ class MigrationJobsTest extends TestCase
     {
         Bus::fake();
 
-        MigrateCustomersJob::dispatchRemainingChain($this->migration->id, []);
+        MigrateCustomersJob::dispatchRemainingChain($this->migration->id);
 
-        // Verify chain was dispatched — Bus::chain dispatches the first job
-        // and remaining jobs are chained. All 6 entity jobs should be present.
+        // dispatchRemainingChain now dispatches MigrateOrdersJob which cascades
         Bus::assertDispatched(MigrateOrdersJob::class);
     }
 
@@ -231,9 +274,19 @@ class MigrationJobsTest extends TestCase
         Bus::fake();
 
         // Verify dispatchRemainingChain with CMS options doesn't throw
-        MigrateCustomersJob::dispatchRemainingChain($this->migration->id, ['migrate_all' => true]);
+        MigrateCustomersJob::dispatchRemainingChain($this->migration->id);
 
         Bus::assertDispatched(MigrateOrdersJob::class);
+    }
+
+    public function test_final_chain_includes_shipping_payment_seo(): void
+    {
+        Bus::fake();
+
+        MigrateReviewsJob::dispatchFinalChain($this->migration->id);
+
+        // dispatchFinalChain creates a Bus::chain starting with ShippingMethodsJob
+        Bus::assertDispatched(MigrateShippingMethodsJob::class);
     }
 
     public function test_all_additional_jobs_are_queueable(): void

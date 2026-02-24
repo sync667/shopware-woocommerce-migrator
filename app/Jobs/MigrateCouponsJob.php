@@ -6,14 +6,13 @@ use App\Models\MigrationLog;
 use App\Models\MigrationRun;
 use App\Services\ShopwareDB;
 use App\Services\StateManager;
-use App\Services\WooCommerceClient;
 use App\Shopware\Readers\CouponReader;
-use App\Shopware\Transformers\CouponTransformer;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Bus;
 
 class MigrateCouponsJob implements ShouldQueue
 {
@@ -30,10 +29,13 @@ class MigrateCouponsJob implements ShouldQueue
     public function handle(StateManager $stateManager): void
     {
         $migration = MigrationRun::findOrFail($this->migrationId);
+
+        if (app(\App\Services\CancellationService::class)->isCancelled($this->migrationId)) {
+            return;
+        }
+
         $db = ShopwareDB::fromMigration($migration);
-        $woo = WooCommerceClient::fromMigration($migration);
         $reader = new CouponReader($db);
-        $transformer = new CouponTransformer;
 
         // Fetch coupons based on sync mode
         if ($migration->sync_mode === 'delta' && $migration->last_sync_at) {
@@ -44,67 +46,50 @@ class MigrateCouponsJob implements ShouldQueue
             $mode = $migration->sync_mode === 'delta' ? 'delta (first run - all coupons)' : 'full';
         }
 
+        $totalCount = count($promotions);
+        $chunkSize = 100;
+        $couponIds = array_map(fn ($p) => $p->id, $promotions);
+        $chunks = array_chunk($couponIds, $chunkSize);
+        $batchCount = count($chunks);
+
         MigrationLog::create([
             'migration_id' => $this->migrationId,
             'entity_type' => 'coupon',
             'level' => 'info',
-            'message' => 'Processing '.count($promotions)." coupons (mode: {$mode})",
+            'message' => "Dispatching {$totalCount} coupons in {$batchCount} batches of {$chunkSize} (mode: {$mode})",
             'created_at' => now(),
         ]);
 
-        foreach ($promotions as $promotion) {
-            if (app(\App\Services\CancellationService::class)->isCancelled($this->migrationId)) {
-                return;
-            }
-
-            if ($stateManager->alreadyMigrated('coupon', $promotion->id, $this->migrationId)) {
-                continue;
-            }
-
-            try {
-                $discounts = $reader->fetchDiscounts($promotion->id);
-
-                if ($promotion->use_individual_codes ?? false) {
-                    $codes = $reader->fetchIndividualCodes($promotion->id);
-                    foreach ($codes as $codeRow) {
-                        $data = $transformer->transform($promotion, $discounts, $codeRow->code);
-
-                        if ($migration->is_dry_run) {
-                            $this->log('info', "Dry run: coupon '{$codeRow->code}'", $promotion->id);
-
-                            continue;
-                        }
-
-                        $woo->post('coupons', $data);
-                    }
-                } else {
-                    $data = $transformer->transform($promotion, $discounts);
-
-                    if ($migration->is_dry_run) {
-                        $stateManager->markSkipped('coupon', $promotion->id, $this->migrationId, $data);
-                        $this->log('info', "Dry run: coupon '{$data['code']}'", $promotion->id);
-
-                        continue;
-                    }
-
-                    $result = $woo->post('coupons', $data);
-                    $wooId = $result['id'] ?? null;
-
-                    if ($wooId) {
-                        $stateManager->set('coupon', $promotion->id, $wooId, $this->migrationId);
-                        $this->log('info', "Migrated coupon '{$data['code']}' → WC #{$wooId}", $promotion->id);
-                    }
-                }
-            } catch (\Exception $e) {
-                $stateManager->markFailed('coupon', $promotion->id, $this->migrationId, $e->getMessage());
-                $this->log('error', "Failed: {$e->getMessage()}", $promotion->id);
-            }
+        // Mark all coupons as pending
+        foreach ($couponIds as $couponId) {
+            $stateManager->markPending('coupon', $couponId, $this->migrationId);
         }
 
         // Update last_sync_at timestamp for delta migrations
         if ($migration->sync_mode === 'delta') {
             $migration->update(['last_sync_at' => now()]);
         }
+
+        $migrationId = $this->migrationId;
+
+        if (empty($chunks)) {
+            MigrateReviewsJob::dispatch($migrationId);
+
+            return;
+        }
+
+        $batchJobs = array_map(
+            fn ($chunk) => new MigrateCouponBatchJob($migrationId, $chunk),
+            $chunks
+        );
+
+        Bus::batch($batchJobs)
+            ->allowFailures()
+            ->then(function () use ($migrationId) {
+                MigrateReviewsJob::dispatch($migrationId);
+            })
+            ->onQueue('coupons')
+            ->dispatch();
     }
 
     protected function log(string $level, string $message, ?string $shopwareId = null): void

@@ -6,14 +6,13 @@ use App\Models\MigrationLog;
 use App\Models\MigrationRun;
 use App\Services\ShopwareDB;
 use App\Services\StateManager;
-use App\Services\WooCommerceClient;
 use App\Shopware\Readers\ReviewReader;
-use App\Shopware\Transformers\ReviewTransformer;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Bus;
 
 class MigrateReviewsJob implements ShouldQueue
 {
@@ -30,10 +29,13 @@ class MigrateReviewsJob implements ShouldQueue
     public function handle(StateManager $stateManager): void
     {
         $migration = MigrationRun::findOrFail($this->migrationId);
+
+        if (app(\App\Services\CancellationService::class)->isCancelled($this->migrationId)) {
+            return;
+        }
+
         $db = ShopwareDB::fromMigration($migration);
-        $woo = WooCommerceClient::fromMigration($migration);
         $reader = new ReviewReader($db);
-        $transformer = new ReviewTransformer;
 
         // Fetch reviews based on sync mode
         if ($migration->sync_mode === 'delta' && $migration->last_sync_at) {
@@ -44,59 +46,78 @@ class MigrateReviewsJob implements ShouldQueue
             $mode = $migration->sync_mode === 'delta' ? 'delta (first run - all reviews)' : 'full';
         }
 
+        $totalCount = count($reviews);
+        $chunkSize = 100;
+        $reviewIds = array_map(fn ($r) => $r->id, $reviews);
+        $chunks = array_chunk($reviewIds, $chunkSize);
+        $batchCount = count($chunks);
+
         MigrationLog::create([
             'migration_id' => $this->migrationId,
             'entity_type' => 'review',
             'level' => 'info',
-            'message' => 'Processing '.count($reviews)." reviews (mode: {$mode})",
+            'message' => "Dispatching {$totalCount} reviews in {$batchCount} batches of {$chunkSize} (mode: {$mode})",
             'created_at' => now(),
         ]);
 
-        foreach ($reviews as $review) {
-            if (app(\App\Services\CancellationService::class)->isCancelled($this->migrationId)) {
-                return;
-            }
-
-            if ($stateManager->alreadyMigrated('review', $review->id, $this->migrationId)) {
-                continue;
-            }
-
-            try {
-                $wooProductId = $stateManager->get('product', $review->product_id, $this->migrationId);
-
-                if (! $wooProductId) {
-                    $this->log('warning', 'Skipping review: product not yet migrated', $review->id);
-                    $stateManager->markFailed('review', $review->id, $this->migrationId, 'Product not migrated');
-
-                    continue;
-                }
-
-                $data = $transformer->transform($review, $wooProductId);
-
-                if ($migration->is_dry_run) {
-                    $stateManager->markSkipped('review', $review->id, $this->migrationId, $data);
-                    $this->log('info', "Dry run: review for product WC #{$wooProductId}", $review->id);
-
-                    continue;
-                }
-
-                $result = $woo->post('products/reviews', $data);
-                $wooId = $result['id'] ?? null;
-
-                if ($wooId) {
-                    $stateManager->set('review', $review->id, $wooId, $this->migrationId);
-                    $this->log('info', "Migrated review → WC #{$wooId}", $review->id);
-                }
-            } catch (\Exception $e) {
-                $stateManager->markFailed('review', $review->id, $this->migrationId, $e->getMessage());
-                $this->log('error', "Failed: {$e->getMessage()}", $review->id);
-            }
+        // Mark all reviews as pending
+        foreach ($reviewIds as $reviewId) {
+            $stateManager->markPending('review', $reviewId, $this->migrationId);
         }
 
         // Update last_sync_at timestamp for delta migrations
         if ($migration->sync_mode === 'delta') {
             $migration->update(['last_sync_at' => now()]);
         }
+
+        $migrationId = $this->migrationId;
+
+        if (empty($chunks)) {
+            self::dispatchFinalChain($migrationId);
+
+            return;
+        }
+
+        $batchJobs = array_map(
+            fn ($chunk) => new MigrateReviewBatchJob($migrationId, $chunk),
+            $chunks
+        );
+
+        Bus::batch($batchJobs)
+            ->allowFailures()
+            ->then(function () use ($migrationId) {
+                MigrateReviewsJob::dispatchFinalChain($migrationId);
+            })
+            ->onQueue('reviews')
+            ->dispatch();
+    }
+
+    public static function dispatchFinalChain(int $migrationId): void
+    {
+        $migration = MigrationRun::findOrFail($migrationId);
+        $cmsOptions = $migration->settings['cms_options'] ?? [];
+
+        $jobs = [
+            new MigrateShippingMethodsJob($migrationId),
+            new MigratePaymentMethodsJob($migrationId),
+            new MigrateSeoUrlsJob($migrationId),
+        ];
+
+        if (! empty($cmsOptions['migrate_all'])) {
+            $jobs[] = new MigrateCmsPagesJob($migrationId);
+        } elseif (! empty($cmsOptions['selected_ids'])) {
+            $jobs[] = new MigrateCmsPagesJob($migrationId, $cmsOptions['selected_ids']);
+        }
+
+        $jobs[] = function () use ($migrationId) {
+            $migration = MigrationRun::findOrFail($migrationId);
+            if ($migration->status === 'running') {
+                $migration->markCompleted();
+            }
+            app(\App\Services\CancellationService::class)->clear($migrationId);
+        };
+
+        Bus::chain($jobs)->dispatch();
     }
 
     protected function log(string $level, string $message, ?string $shopwareId = null): void

@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Models\MigrationLog;
 use App\Models\MigrationRun;
 use App\Services\ShopwareDB;
+use App\Services\StateManager;
 use App\Shopware\Readers\ProductReader;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -25,7 +26,7 @@ class MigrateProductsJob implements ShouldQueue
 
     public function __construct(protected int $migrationId) {}
 
-    public function handle(): void
+    public function handle(StateManager $stateManager): void
     {
         $migration = MigrationRun::findOrFail($this->migrationId);
 
@@ -46,14 +47,23 @@ class MigrateProductsJob implements ShouldQueue
         }
 
         $totalCount = count($products);
+        $chunkSize = 50;
+        $productIds = array_map(fn ($p) => $p->id, $products);
+        $chunks = array_chunk($productIds, $chunkSize);
+        $batchCount = count($chunks);
 
         MigrationLog::create([
             'migration_id' => $this->migrationId,
             'entity_type' => 'product',
             'level' => 'info',
-            'message' => "Dispatching {$totalCount} product migration jobs (mode: {$mode})",
+            'message' => "Dispatching {$totalCount} products in {$batchCount} batches of {$chunkSize} (mode: {$mode})",
             'created_at' => now(),
         ]);
+
+        // Mark all products as pending
+        foreach ($productIds as $productId) {
+            $stateManager->markPending('product', $productId, $this->migrationId);
+        }
 
         // Update last_sync_at timestamp for delta migrations
         if ($migration->sync_mode === 'delta') {
@@ -62,18 +72,18 @@ class MigrateProductsJob implements ShouldQueue
 
         $migrationId = $this->migrationId;
 
-        if (empty($products)) {
+        if (empty($chunks)) {
             MigrateCustomersJob::dispatch($migrationId);
 
             return;
         }
 
-        $productJobs = array_map(
-            fn ($product) => new MigrateProductJob($migrationId, $product->id),
-            $products
+        $batchJobs = array_map(
+            fn ($chunk) => new MigrateProductBatchJob($migrationId, $chunk),
+            $chunks
         );
 
-        Bus::batch($productJobs)
+        Bus::batch($batchJobs)
             ->allowFailures()
             ->then(function () use ($migrationId) {
                 MigrateCustomersJob::dispatch($migrationId);
