@@ -51,20 +51,24 @@ class MigrateProductBatchJob implements ShouldQueue
         $reader = new ProductReader($db);
         $transformer = new ProductTransformer($contentMigrator);
 
-        foreach ($this->productIds as $productId) {
-            if (app(\App\Services\CancellationService::class)->isCancelled($this->migrationId)) {
-                $this->batch()?->cancel();
+        try {
+            foreach ($this->productIds as $productId) {
+                if (app(\App\Services\CancellationService::class)->isCancelled($this->migrationId)) {
+                    $this->batch()?->cancel();
 
-                return;
+                    return;
+                }
+
+                if ($stateManager->alreadyMigrated('product', $productId, $this->migrationId)) {
+                    continue;
+                }
+
+                $this->migrateProduct(
+                    $productId, $migration, $db, $woo, $imageMigrator, $reader, $transformer, $stateManager
+                );
             }
-
-            if ($stateManager->alreadyMigrated('product', $productId, $this->migrationId)) {
-                continue;
-            }
-
-            $this->migrateProduct(
-                $productId, $migration, $db, $woo, $imageMigrator, $reader, $transformer, $stateManager
-            );
+        } finally {
+            $db->disconnect();
         }
     }
 

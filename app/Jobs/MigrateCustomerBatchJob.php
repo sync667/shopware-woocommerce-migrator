@@ -49,14 +49,15 @@ class MigrateCustomerBatchJob implements ShouldQueue
         $transformer = new CustomerTransformer;
         $passwordMigrator = new PasswordMigrator;
 
-        foreach ($this->customerIds as $customerId) {
-            if ($stateManager->alreadyMigrated('customer', $customerId, $this->migrationId)) {
-                continue;
-            }
+        try {
+            foreach ($this->customerIds as $customerId) {
+                if ($stateManager->alreadyMigrated('customer', $customerId, $this->migrationId)) {
+                    continue;
+                }
 
-            try {
-                // Fetch single customer by ID
-                $customers = $db->select('
+                try {
+                    // Fetch single customer by ID
+                    $customers = $db->select('
                     SELECT
                         LOWER(HEX(c.id)) AS id,
                         c.first_name,
@@ -74,63 +75,66 @@ class MigrateCustomerBatchJob implements ShouldQueue
                     WHERE LOWER(HEX(c.id)) = ?
                 ', [$customerId]);
 
-                if (empty($customers)) {
-                    $stateManager->markFailed('customer', $customerId, $this->migrationId, 'Customer not found in Shopware DB');
-                    $this->log('warning', 'Customer not found in Shopware DB', $customerId);
+                    if (empty($customers)) {
+                        $stateManager->markFailed('customer', $customerId, $this->migrationId, 'Customer not found in Shopware DB');
+                        $this->log('warning', 'Customer not found in Shopware DB', $customerId);
 
-                    continue;
-                }
-
-                $customer = (object) $customers[0];
-
-                $billingAddress = ! empty($customer->billing_address_id)
-                    ? $reader->fetchAddress($customer->billing_address_id)
-                    : null;
-
-                $shippingAddress = ! empty($customer->shipping_address_id)
-                    ? $reader->fetchAddress($customer->shipping_address_id)
-                    : null;
-
-                $data = $transformer->transform($customer, $billingAddress, $shippingAddress);
-
-                if ($migration->is_dry_run) {
-                    $stateManager->markSkipped('customer', $customer->id, $this->migrationId, $data);
-                    $this->log('info', "Dry run: customer '{$customer->email}'", $customer->id);
-
-                    continue;
-                }
-
-                $result = $woo->createOrFind('customers', $data, 'email', $customer->email);
-                $wooId = $result['id'] ?? null;
-
-                if ($wooId) {
-                    $stateManager->set('customer', $customer->id, $wooId, $this->migrationId);
-
-                    $passwordResult = $passwordMigrator->migrate($customer->password ?? '', 68);
-                    $metaData = [];
-                    if ($passwordResult['requires_reset']) {
-                        $metaData[] = ['key' => '_requires_password_reset', 'value' => '1'];
-                    } else {
-                        $metaData[] = ['key' => '_shopware_password_migrated', 'value' => '1'];
+                        continue;
                     }
 
-                    if (! empty($metaData)) {
-                        try {
-                            $woo->put("customers/{$wooId}", ['meta_data' => $metaData]);
-                        } catch (\Exception $e) {
-                            $this->log('warning', "Meta update failed: {$e->getMessage()}", $customer->id);
+                    $customer = (object) $customers[0];
+
+                    $billingAddress = ! empty($customer->billing_address_id)
+                        ? $reader->fetchAddress($customer->billing_address_id)
+                        : null;
+
+                    $shippingAddress = ! empty($customer->shipping_address_id)
+                        ? $reader->fetchAddress($customer->shipping_address_id)
+                        : null;
+
+                    $data = $transformer->transform($customer, $billingAddress, $shippingAddress);
+
+                    if ($migration->is_dry_run) {
+                        $stateManager->markSkipped('customer', $customer->id, $this->migrationId, $data);
+                        $this->log('info', "Dry run: customer '{$customer->email}'", $customer->id);
+
+                        continue;
+                    }
+
+                    $result = $woo->createOrFind('customers', $data, 'email', $customer->email);
+                    $wooId = $result['id'] ?? null;
+
+                    if ($wooId) {
+                        $stateManager->set('customer', $customer->id, $wooId, $this->migrationId);
+
+                        $passwordResult = $passwordMigrator->migrate($customer->password ?? '', 68);
+                        $metaData = [];
+                        if ($passwordResult['requires_reset']) {
+                            $metaData[] = ['key' => '_requires_password_reset', 'value' => '1'];
+                        } else {
+                            $metaData[] = ['key' => '_shopware_password_migrated', 'value' => '1'];
                         }
-                    }
 
-                    $this->log('info', "Migrated customer '{$customer->email}' → WC #{$wooId}", $customer->id);
-                } else {
-                    $stateManager->markFailed('customer', $customer->id, $this->migrationId, 'WooCommerce returned no ID for customer');
-                    $this->log('error', "WooCommerce returned no ID for customer '{$customer->email}'", $customer->id);
+                        if (! empty($metaData)) {
+                            try {
+                                $woo->put("customers/{$wooId}", ['meta_data' => $metaData]);
+                            } catch (\Exception $e) {
+                                $this->log('warning', "Meta update failed: {$e->getMessage()}", $customer->id);
+                            }
+                        }
+
+                        $this->log('info', "Migrated customer '{$customer->email}' → WC #{$wooId}", $customer->id);
+                    } else {
+                        $stateManager->markFailed('customer', $customer->id, $this->migrationId, 'WooCommerce returned no ID for customer');
+                        $this->log('error', "WooCommerce returned no ID for customer '{$customer->email}'", $customer->id);
+                    }
+                } catch (\Exception $e) {
+                    $stateManager->markFailed('customer', $customerId, $this->migrationId, $e->getMessage());
+                    $this->log('error', "Failed: {$e->getMessage()}", $customerId);
                 }
-            } catch (\Exception $e) {
-                $stateManager->markFailed('customer', $customerId, $this->migrationId, $e->getMessage());
-                $this->log('error', "Failed: {$e->getMessage()}", $customerId);
             }
+        } finally {
+            $db->disconnect();
         }
     }
 

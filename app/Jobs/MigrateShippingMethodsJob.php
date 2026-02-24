@@ -68,6 +68,8 @@ class MigrateShippingMethodsJob implements ShouldQueue
                 $this->log('error', "Failed: {$e->getMessage()}", $method->id, 'shipping_method');
             }
         }
+
+        $db->disconnect();
     }
 
     protected function log(string $level, string $message, ?string $shopwareId = null, ?string $entityType = null): void

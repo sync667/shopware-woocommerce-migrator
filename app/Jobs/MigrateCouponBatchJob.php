@@ -47,19 +47,20 @@ class MigrateCouponBatchJob implements ShouldQueue
         $reader = new CouponReader($db);
         $transformer = new CouponTransformer;
 
-        foreach ($this->couponIds as $couponId) {
-            if (app(\App\Services\CancellationService::class)->isCancelled($this->migrationId)) {
-                $this->batch()?->cancel();
+        try {
+            foreach ($this->couponIds as $couponId) {
+                if (app(\App\Services\CancellationService::class)->isCancelled($this->migrationId)) {
+                    $this->batch()?->cancel();
 
-                return;
-            }
+                    return;
+                }
 
-            if ($stateManager->alreadyMigrated('coupon', $couponId, $this->migrationId)) {
-                continue;
-            }
+                if ($stateManager->alreadyMigrated('coupon', $couponId, $this->migrationId)) {
+                    continue;
+                }
 
-            try {
-                $promotions = $db->select('
+                try {
+                    $promotions = $db->select('
                     SELECT
                         LOWER(HEX(p.id)) AS id,
                         p.name,
@@ -78,51 +79,54 @@ class MigrateCouponBatchJob implements ShouldQueue
                     WHERE LOWER(HEX(p.id)) = ?
                 ', [$couponId]);
 
-                if (empty($promotions)) {
-                    $stateManager->markFailed('coupon', $couponId, $this->migrationId, 'Coupon not found in Shopware DB');
-                    $this->log('warning', 'Coupon not found in Shopware DB', $couponId);
-
-                    continue;
-                }
-
-                $promotion = $promotions[0];
-                $discounts = $reader->fetchDiscounts($promotion->id);
-
-                if ($promotion->use_individual_codes ?? false) {
-                    $codes = $reader->fetchIndividualCodes($promotion->id);
-                    foreach ($codes as $codeRow) {
-                        $data = $transformer->transform($promotion, $discounts, $codeRow->code);
-
-                        if ($migration->is_dry_run) {
-                            $this->log('info', "Dry run: coupon '{$codeRow->code}'", $promotion->id);
-
-                            continue;
-                        }
-
-                        $woo->post('coupons', $data);
-                    }
-                } else {
-                    $data = $transformer->transform($promotion, $discounts);
-
-                    if ($migration->is_dry_run) {
-                        $stateManager->markSkipped('coupon', $promotion->id, $this->migrationId, $data);
-                        $this->log('info', "Dry run: coupon '{$data['code']}'", $promotion->id);
+                    if (empty($promotions)) {
+                        $stateManager->markFailed('coupon', $couponId, $this->migrationId, 'Coupon not found in Shopware DB');
+                        $this->log('warning', 'Coupon not found in Shopware DB', $couponId);
 
                         continue;
                     }
 
-                    $result = $woo->post('coupons', $data);
-                    $wooId = $result['id'] ?? null;
+                    $promotion = $promotions[0];
+                    $discounts = $reader->fetchDiscounts($promotion->id);
 
-                    if ($wooId) {
-                        $stateManager->set('coupon', $promotion->id, $wooId, $this->migrationId);
-                        $this->log('info', "Migrated coupon '{$data['code']}' → WC #{$wooId}", $promotion->id);
+                    if ($promotion->use_individual_codes ?? false) {
+                        $codes = $reader->fetchIndividualCodes($promotion->id);
+                        foreach ($codes as $codeRow) {
+                            $data = $transformer->transform($promotion, $discounts, $codeRow->code);
+
+                            if ($migration->is_dry_run) {
+                                $this->log('info', "Dry run: coupon '{$codeRow->code}'", $promotion->id);
+
+                                continue;
+                            }
+
+                            $woo->post('coupons', $data);
+                        }
+                    } else {
+                        $data = $transformer->transform($promotion, $discounts);
+
+                        if ($migration->is_dry_run) {
+                            $stateManager->markSkipped('coupon', $promotion->id, $this->migrationId, $data);
+                            $this->log('info', "Dry run: coupon '{$data['code']}'", $promotion->id);
+
+                            continue;
+                        }
+
+                        $result = $woo->post('coupons', $data);
+                        $wooId = $result['id'] ?? null;
+
+                        if ($wooId) {
+                            $stateManager->set('coupon', $promotion->id, $wooId, $this->migrationId);
+                            $this->log('info', "Migrated coupon '{$data['code']}' → WC #{$wooId}", $promotion->id);
+                        }
                     }
+                } catch (\Exception $e) {
+                    $stateManager->markFailed('coupon', $couponId, $this->migrationId, $e->getMessage());
+                    $this->log('error', "Failed: {$e->getMessage()}", $couponId);
                 }
-            } catch (\Exception $e) {
-                $stateManager->markFailed('coupon', $couponId, $this->migrationId, $e->getMessage());
-                $this->log('error', "Failed: {$e->getMessage()}", $couponId);
             }
+        } finally {
+            $db->disconnect();
         }
     }
 

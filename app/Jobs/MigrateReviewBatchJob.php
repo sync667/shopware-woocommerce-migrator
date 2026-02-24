@@ -47,19 +47,20 @@ class MigrateReviewBatchJob implements ShouldQueue
         $reader = new ReviewReader($db);
         $transformer = new ReviewTransformer;
 
-        foreach ($this->reviewIds as $reviewId) {
-            if (app(\App\Services\CancellationService::class)->isCancelled($this->migrationId)) {
-                $this->batch()?->cancel();
+        try {
+            foreach ($this->reviewIds as $reviewId) {
+                if (app(\App\Services\CancellationService::class)->isCancelled($this->migrationId)) {
+                    $this->batch()?->cancel();
 
-                return;
-            }
+                    return;
+                }
 
-            if ($stateManager->alreadyMigrated('review', $reviewId, $this->migrationId)) {
-                continue;
-            }
+                if ($stateManager->alreadyMigrated('review', $reviewId, $this->migrationId)) {
+                    continue;
+                }
 
-            try {
-                $reviews = $db->select("
+                try {
+                    $reviews = $db->select("
                     SELECT
                         LOWER(HEX(r.id)) AS id,
                         LOWER(HEX(r.product_id)) AS product_id,
@@ -78,44 +79,47 @@ class MigrateReviewBatchJob implements ShouldQueue
                     WHERE LOWER(HEX(r.id)) = ?
                 ", [$reviewId]);
 
-                if (empty($reviews)) {
-                    $stateManager->markFailed('review', $reviewId, $this->migrationId, 'Review not found in Shopware DB');
-                    $this->log('warning', 'Review not found in Shopware DB', $reviewId);
+                    if (empty($reviews)) {
+                        $stateManager->markFailed('review', $reviewId, $this->migrationId, 'Review not found in Shopware DB');
+                        $this->log('warning', 'Review not found in Shopware DB', $reviewId);
 
-                    continue;
+                        continue;
+                    }
+
+                    $review = $reviews[0];
+
+                    $wooProductId = $stateManager->get('product', $review->product_id, $this->migrationId);
+
+                    if (! $wooProductId) {
+                        $this->log('warning', 'Skipping review: product not yet migrated', $review->id);
+                        $stateManager->markFailed('review', $review->id, $this->migrationId, 'Product not migrated');
+
+                        continue;
+                    }
+
+                    $data = $transformer->transform($review, $wooProductId);
+
+                    if ($migration->is_dry_run) {
+                        $stateManager->markSkipped('review', $review->id, $this->migrationId, $data);
+                        $this->log('info', "Dry run: review for product WC #{$wooProductId}", $review->id);
+
+                        continue;
+                    }
+
+                    $result = $woo->post('products/reviews', $data);
+                    $wooId = $result['id'] ?? null;
+
+                    if ($wooId) {
+                        $stateManager->set('review', $review->id, $wooId, $this->migrationId);
+                        $this->log('info', "Migrated review → WC #{$wooId}", $review->id);
+                    }
+                } catch (\Exception $e) {
+                    $stateManager->markFailed('review', $reviewId, $this->migrationId, $e->getMessage());
+                    $this->log('error', "Failed: {$e->getMessage()}", $reviewId);
                 }
-
-                $review = $reviews[0];
-
-                $wooProductId = $stateManager->get('product', $review->product_id, $this->migrationId);
-
-                if (! $wooProductId) {
-                    $this->log('warning', 'Skipping review: product not yet migrated', $review->id);
-                    $stateManager->markFailed('review', $review->id, $this->migrationId, 'Product not migrated');
-
-                    continue;
-                }
-
-                $data = $transformer->transform($review, $wooProductId);
-
-                if ($migration->is_dry_run) {
-                    $stateManager->markSkipped('review', $review->id, $this->migrationId, $data);
-                    $this->log('info', "Dry run: review for product WC #{$wooProductId}", $review->id);
-
-                    continue;
-                }
-
-                $result = $woo->post('products/reviews', $data);
-                $wooId = $result['id'] ?? null;
-
-                if ($wooId) {
-                    $stateManager->set('review', $review->id, $wooId, $this->migrationId);
-                    $this->log('info', "Migrated review → WC #{$wooId}", $review->id);
-                }
-            } catch (\Exception $e) {
-                $stateManager->markFailed('review', $reviewId, $this->migrationId, $e->getMessage());
-                $this->log('error', "Failed: {$e->getMessage()}", $reviewId);
             }
+        } finally {
+            $db->disconnect();
         }
     }
 

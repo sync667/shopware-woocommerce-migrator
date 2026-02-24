@@ -37,6 +37,7 @@ class MigrateSeoUrlsJob implements ShouldQueue
         if ($migration->sync_mode === 'delta' && $migration->last_sync_at) {
             $seoUrls = $reader->fetchUpdatedSince($migration->last_sync_at);
             $this->processSeoUrls($seoUrls, $migration, $stateManager, $transformer);
+            $db->disconnect();
 
             return;
         }
@@ -107,6 +108,8 @@ class MigrateSeoUrlsJob implements ShouldQueue
                 $this->log('error', "Failed: {$e->getMessage()}", $seoUrl->id, 'seo_url');
             }
         }
+
+        $db->disconnect();
     }
 
     protected function processSeoUrls(array $seoUrls, MigrationRun $migration, StateManager $stateManager, SeoUrlTransformer $transformer): void

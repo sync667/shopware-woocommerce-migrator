@@ -65,6 +65,8 @@ class MigrateCouponsJob implements ShouldQueue
             $stateManager->markPending('coupon', $couponId, $this->migrationId);
         }
 
+        $db->disconnect();
+
         // Update last_sync_at timestamp for delta migrations
         if ($migration->sync_mode === 'delta') {
             $migration->update(['last_sync_at' => now()]);

@@ -21,6 +21,7 @@ RUN apk add --no-cache \
     libxpm-dev \
     libavif-dev \
     linux-headers \
+    docker-cli \
     $PHPIZE_DEPS
 
 # Install PHP extensions

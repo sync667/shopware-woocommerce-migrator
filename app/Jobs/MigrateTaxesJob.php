@@ -69,6 +69,8 @@ class MigrateTaxesJob implements ShouldQueue
                 $this->log('error', "Failed: {$e->getMessage()}", $tax->id, 'tax');
             }
         }
+
+        $db->disconnect();
     }
 
     protected function log(string $level, string $message, ?string $shopwareId = null, ?string $entityType = null): void

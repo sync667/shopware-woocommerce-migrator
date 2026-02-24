@@ -217,6 +217,7 @@ class DatabaseDumpService
             'mysql:8.0',
             '--default-authentication-plugin=mysql_native_password',
             '--innodb-flush-log-at-trx-commit=0',
+            '--max-connections=300',
         ]);
 
         if (! $result->successful()) {
@@ -227,7 +228,8 @@ class DatabaseDumpService
         try {
             $this->waitForMysql($containerName, $password);
 
-            $this->importDump($containerName, $sqlPath, $password, $dbName);
+            $processedSqlPath = $this->stripGeneratedColumns($sqlPath);
+            $this->importDump($containerName, $processedSqlPath, $password, $dbName);
         } catch (\Throwable $e) {
             // Cleanup container on failure
             Process::timeout(10)->run(['docker', 'rm', '-f', $containerName]);
@@ -279,6 +281,40 @@ class DatabaseDumpService
             'running' => $status === 'running',
             'status' => $status,
         ];
+    }
+
+    /**
+     * Stream the SQL file, stripping GENERATED ALWAYS AS definitions so MySQL 8.0
+     * accepts explicit INSERT values for those columns during import.
+     */
+    private function stripGeneratedColumns(string $sqlPath): string
+    {
+        $processedPath = $sqlPath.'.processed.sql';
+        $input = fopen($sqlPath, 'r');
+        $output = fopen($processedPath, 'w');
+
+        if ($input === false || $output === false) {
+            throw new \RuntimeException('Cannot open SQL file for preprocessing');
+        }
+
+        try {
+            while (($line = fgets($input)) !== false) {
+                // Remove GENERATED ALWAYS AS (...) VIRTUAL/STORED — greedy .* handles
+                // any nesting depth (e.g. json_unquote(json_extract(...)) STORED).
+                // Safe to be greedy because VIRTUAL/STORED always ends the expression on the same line.
+                $line = preg_replace(
+                    '/ GENERATED ALWAYS AS \(.*\) (?:VIRTUAL|STORED)/i',
+                    '',
+                    $line
+                );
+                fwrite($output, $line);
+            }
+        } finally {
+            fclose($input);
+            fclose($output);
+        }
+
+        return $processedPath;
     }
 
     /**
@@ -565,7 +601,7 @@ class DatabaseDumpService
             sleep(2);
 
             $result = Process::timeout(10)->run([
-                'docker', 'exec', $containerName, 'mysqladmin', 'ping', '-uroot', '-p'.$password, '--silent',
+                'docker', 'exec', $containerName, 'mysqladmin', 'ping', '-h', '127.0.0.1', '-uroot', '-p'.$password, '--silent',
             ]);
 
             if ($result->successful()) {
@@ -596,7 +632,7 @@ class DatabaseDumpService
             $result = Process::timeout(600)
                 ->input($handle)
                 ->run([
-                    'docker', 'exec', '-i', $containerName, 'mysql', '-uroot', '-p'.$password, $dbName,
+                    'docker', 'exec', '-i', $containerName, 'mysql', '-h', '127.0.0.1', '-uroot', '-p'.$password, $dbName,
                 ]);
         } finally {
             fclose($handle);

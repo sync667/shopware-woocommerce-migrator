@@ -95,12 +95,29 @@ class ShopwareDB
     }
 
     /**
-     * Close connections and SSH tunnel
+     * Explicitly close the PDO connection and SSH tunnel.
+     * Call this at the end of queue jobs to release the connection slot immediately
+     * rather than waiting for PHP garbage collection.
      */
-    public function __destruct()
+    public function disconnect(): void
     {
+        if ($this->connection !== null) {
+            // Explicitly release the PDO resource before nulling the connection.
+            // Simply setting $this->connection = null is not sufficient in long-running
+            // workers because Laravel's Connection object has internal closures/listeners
+            // that create reference cycles, preventing PHP from GC-ing the PDO immediately.
+            $this->connection->setPdo(null)->setReadPdo(null);
+            $this->connection = null;
+        }
+
         if ($this->sshTunnel) {
             $this->sshTunnel->disconnect();
+            $this->sshTunnel = null;
         }
+    }
+
+    public function __destruct()
+    {
+        $this->disconnect();
     }
 }

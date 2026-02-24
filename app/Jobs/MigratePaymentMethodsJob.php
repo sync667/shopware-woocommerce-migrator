@@ -67,6 +67,8 @@ class MigratePaymentMethodsJob implements ShouldQueue
                 $this->log('error', "Failed: {$e->getMessage()}", $method->id, 'payment_method');
             }
         }
+
+        $db->disconnect();
     }
 
     protected function log(string $level, string $message, ?string $shopwareId = null, ?string $entityType = null): void

@@ -14,6 +14,9 @@ services:
       - ../../:/var/www/html
       - ./php/php.ini:/usr/local/etc/php/conf.d/custom.ini
       - ./php/php-fpm.conf:/usr/local/etc/php-fpm.d/zzz-custom.conf
+      - /var/run/docker.sock:/var/run/docker.sock
+    group_add:
+      - "${DOCKER_GID:-1001}"
     env_file:
       - .env.docker
     networks:
@@ -64,7 +67,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
-    command: --default-authentication-plugin=mysql_native_password
+    command: --default-authentication-plugin=mysql_native_password --max-connections=500
 
   # MySQL 8 - Testing Database (PHPUnit)
   mysql-test:
@@ -131,21 +134,21 @@ services:
     networks:
       - app-network
 
-  # Queue Worker
-  queue-worker:
+  # Horizon Queue Manager (handles all queues via config/horizon.php)
+  horizon:
     build:
       context: .
       dockerfile: php/Dockerfile
       args:
         USER_ID: ${USER_ID:-1000}
         GROUP_ID: ${GROUP_ID:-1000}
-    container_name: ${APP_NAME:-laravel}_queue_worker
+    container_name: ${APP_NAME:-laravel}_horizon
     restart: unless-stopped
     working_dir: /var/www/html
     volumes:
       - ../../:/var/www/html
       - ./php/php.ini:/usr/local/etc/php/conf.d/custom.ini
-    command: php artisan queue:work --tries=3 --timeout=90 --sleep=3 --max-jobs=1000
+    command: php artisan horizon
     env_file:
       - .env.docker
     networks:

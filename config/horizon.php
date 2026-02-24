@@ -232,7 +232,7 @@ return [
             'maxJobs' => 0,
             'memory' => 256,
             'tries' => 3,
-            'timeout' => 300,
+            'timeout' => 1800,
             'nice' => 0,
         ],
         'supervisor-customers' => [
@@ -244,7 +244,7 @@ return [
             'maxJobs' => 0,
             'memory' => 256,
             'tries' => 3,
-            'timeout' => 300,
+            'timeout' => 1800,
             'nice' => 0,
         ],
     ],
@@ -271,16 +271,16 @@ return [
 
         'local' => [
             'supervisor-main' => [
-                'maxProcesses' => 3,
+                'maxProcesses' => 1,
             ],
             'supervisor-back' => [
-                'maxProcesses' => 2,
+                'maxProcesses' => 1,
             ],
             'supervisor-products' => [
-                'maxProcesses' => 2,
+                'maxProcesses' => 1,
             ],
             'supervisor-customers' => [
-                'maxProcesses' => 2,
+                'maxProcesses' => 1,
             ],
         ],
     ],

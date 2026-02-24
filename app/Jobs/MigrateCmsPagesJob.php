@@ -97,6 +97,8 @@ class MigrateCmsPagesJob implements ShouldQueue
                 $this->log('error', "Failed: {$e->getMessage()}", $page->id);
             }
         }
+
+        $db->disconnect();
     }
 
     protected function log(string $level, string $message, ?string $shopwareId = null): void
