@@ -38,5 +38,12 @@ Route::middleware(\App\Http\Middleware\ValidateAccessToken::class)->group(functi
         Route::post('/cms-pages/list', [\App\Http\Controllers\MigrationController::class, 'listCmsPages']);
         Route::post('/shopware/languages', [\App\Http\Controllers\ShopwareConfigController::class, 'getLanguages']);
         Route::post('/shopware/live-version', [\App\Http\Controllers\ShopwareConfigController::class, 'getLiveVersionId']);
+
+        Route::prefix('dump')->group(function () {
+            Route::post('/upload', [\App\Http\Controllers\DumpUploadController::class, 'upload']);
+            Route::post('/validate', [\App\Http\Controllers\DumpUploadController::class, 'validateDump']);
+            Route::post('/status', [\App\Http\Controllers\DumpUploadController::class, 'status']);
+            Route::post('/cleanup', [\App\Http\Controllers\DumpUploadController::class, 'cleanup']);
+        });
     });
 });
