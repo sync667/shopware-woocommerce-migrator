@@ -95,30 +95,9 @@ class MigrateCustomersJob implements ShouldQueue
 
     public static function dispatchRemainingChain(int $migrationId, array $cmsOptions): void
     {
-        $jobs = [
-            new MigrateOrdersJob($migrationId),
-            new MigrateCouponsJob($migrationId),
-            new MigrateReviewsJob($migrationId),
-            new MigrateShippingMethodsJob($migrationId),
-            new MigratePaymentMethodsJob($migrationId),
-            new MigrateSeoUrlsJob($migrationId),
-        ];
-
-        if (! empty($cmsOptions['migrate_all'])) {
-            $jobs[] = new MigrateCmsPagesJob($migrationId);
-        } elseif (! empty($cmsOptions['selected_ids'])) {
-            $jobs[] = new MigrateCmsPagesJob($migrationId, $cmsOptions['selected_ids']);
-        }
-
-        $jobs[] = function () use ($migrationId) {
-            $migration = MigrationRun::findOrFail($migrationId);
-            if ($migration->status === 'running') {
-                $migration->markCompleted();
-            }
-            app(\App\Services\CancellationService::class)->clear($migrationId);
-        };
-
-        Bus::chain($jobs)->dispatch();
+        // Each batched entity dispatches the next via its then() callback:
+        // Orders → Coupons → Reviews → final chain (Shipping, Payment, SEO, [CMS], completion)
+        MigrateOrdersJob::dispatch($migrationId);
     }
 
     protected function log(string $level, string $message, ?string $shopwareId = null): void
