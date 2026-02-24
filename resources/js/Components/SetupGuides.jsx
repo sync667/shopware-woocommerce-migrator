@@ -12,15 +12,15 @@ export const guides = {
                     <ol className="list-decimal list-inside space-y-2 text-sm text-blue-800">
                         <li>Log into your WordPress admin panel</li>
                         <li>Go to <code className="bg-blue-100 px-1 py-0.5 rounded">WooCommerce → Settings → Advanced → REST API</code></li>
-                        <li>Click <strong>"Add Key"</strong></li>
+                        <li>Click <strong>&quot;Add Key&quot;</strong></li>
                         <li>Fill in the form:
                             <ul className="list-disc list-inside ml-4 mt-1 space-y-1">
-                                <li><strong>Description:</strong> "Shopware Migration Tool"</li>
+                                <li><strong>Description:</strong> &quot;Shopware Migration Tool&quot;</li>
                                 <li><strong>User:</strong> Select an admin user</li>
-                                <li><strong>Permissions:</strong> Select <strong>"Read/Write"</strong></li>
+                                <li><strong>Permissions:</strong> Select <strong>&quot;Read/Write&quot;</strong></li>
                             </ul>
                         </li>
-                        <li>Click <strong>"Generate API Key"</strong></li>
+                        <li>Click <strong>&quot;Generate API Key&quot;</strong></li>
                         <li>Copy the <strong>Consumer Key</strong> and <strong>Consumer Secret</strong></li>
                     </ol>
                 </div>
@@ -61,16 +61,16 @@ export const guides = {
                     <ol className="list-decimal list-inside space-y-2 text-sm text-blue-800">
                         <li>Log into your WordPress admin panel</li>
                         <li>Go to <code className="bg-blue-100 px-1 py-0.5 rounded">Users → Profile</code></li>
-                        <li>Scroll down to the <strong>"Application Passwords"</strong> section</li>
-                        <li>In the <strong>"New Application Password Name"</strong> field, enter: <code className="bg-blue-100 px-1 py-0.5 rounded">Shopware Migration</code></li>
-                        <li>Click <strong>"Add New Application Password"</strong></li>
+                        <li>Scroll down to the <strong>&quot;Application Passwords&quot;</strong> section</li>
+                        <li>In the <strong>&quot;New Application Password Name&quot;</strong> field, enter: <code className="bg-blue-100 px-1 py-0.5 rounded">Shopware Migration</code></li>
+                        <li>Click <strong>&quot;Add New Application Password&quot;</strong></li>
                         <li>Copy the generated password (it will have spaces, keep them!)</li>
                     </ol>
                 </div>
 
                 <div className="rounded-lg bg-yellow-50 border border-yellow-200 p-4">
                     <p className="text-sm text-yellow-800">
-                        <strong>⚠️ Note:</strong> Application passwords are only shown once. If you lose it, you'll need to generate a new one.
+                        <strong>⚠️ Note:</strong> Application passwords are only shown once. If you lose it, you&apos;ll need to generate a new one.
                     </p>
                 </div>
 
@@ -92,7 +92,7 @@ export const guides = {
                 <div className="rounded-lg bg-red-50 border border-red-200 p-4">
                     <h4 className="font-medium text-red-900 mb-2">Troubleshooting:</h4>
                     <p className="text-sm text-red-800">
-                        If you don't see "Application Passwords" section, your site might need HTTPS enabled or the REST API might be disabled.
+                        If you don&apos;t see &quot;Application Passwords&quot; section, your site might need HTTPS enabled or the REST API might be disabled.
                     </p>
                 </div>
             </div>
@@ -111,7 +111,7 @@ export const guides = {
                     <h4 className="font-medium text-green-900 mb-2">✨ Automatic Method (Easiest)</h4>
                     <ol className="list-decimal list-inside space-y-2 text-sm text-green-800">
                         <li>Fill in your Shopware database connection details above</li>
-                        <li>Click the <strong>"Connect & Load Configuration"</strong> button</li>
+                        <li>Click the <strong>&quot;Connect &amp; Load Configuration&quot;</strong> button</li>
                         <li>Select your desired language from the dropdown</li>
                     </ol>
                     <p className="text-xs text-green-700 mt-2">
@@ -141,8 +141,8 @@ WHERE name LIKE '%English%' OR name LIKE '%Deutsch%';`}
                     <ol className="list-decimal list-inside space-y-2 text-sm text-purple-800">
                         <li>Log into Shopware admin</li>
                         <li>Go to <code className="bg-purple-100 px-1 py-0.5 rounded">Settings → Shop → Languages</code></li>
-                        <li>Click on your language (e.g., "English")</li>
-                        <li>Check the browser's URL - the ID is in the URL</li>
+                        <li>Click on your language (e.g., &quot;English&quot;)</li>
+                        <li>Check the browser&apos;s URL - the ID is in the URL</li>
                         <li>Note: This might be a short ID, not the hex format needed</li>
                     </ol>
                 </div>
@@ -173,7 +173,7 @@ WHERE name LIKE '%English%' OR name LIKE '%Deutsch%';`}
                 <div className="rounded-lg bg-green-50 p-4 border border-green-200">
                     <h4 className="font-medium text-green-900 mb-2">✨ Automatic Detection (Recommended)</h4>
                     <p className="text-sm text-green-800 mb-2">
-                        When you click <strong>"Connect & Load Configuration"</strong>, the Live Version ID is automatically detected from your database.
+                        When you click <strong>&quot;Connect &amp; Load Configuration&quot;</strong>, the Live Version ID is automatically detected from your database.
                     </p>
                     <p className="text-xs text-green-700">
                         No manual configuration needed!
@@ -261,10 +261,10 @@ ssh-copy-id -i ~/.ssh/shopware_migration.pub user@server.com
                 <div className="rounded-lg bg-orange-50 p-4">
                     <h4 className="font-medium text-orange-900 mb-2">Using Password</h4>
                     <p className="text-sm text-orange-800 mb-2">
-                        If you don't have SSH keys set up, you can use password authentication:
+                        If you don&apos;t have SSH keys set up, you can use password authentication:
                     </p>
                     <ul className="list-disc list-inside space-y-1 text-sm text-orange-800">
-                        <li>Select "Password" as authentication method</li>
+                        <li>Select &quot;Password&quot; as authentication method</li>
                         <li>Enter your SSH password</li>
                         <li>Note: Requires <code className="bg-orange-100 px-1 py-0.5 rounded">sshpass</code> to be installed on the server</li>
                     </ul>
