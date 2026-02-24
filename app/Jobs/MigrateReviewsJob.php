@@ -90,6 +90,15 @@ class MigrateReviewsJob implements ShouldQueue
             ->then(function () use ($migrationId) {
                 MigrateReviewsJob::dispatchFinalChain($migrationId);
             })
+            ->catch(function (\Illuminate\Bus\Batch $batch, \Throwable $e) use ($migrationId) {
+                MigrationLog::create([
+                    'migration_id' => $migrationId,
+                    'entity_type' => 'review',
+                    'level' => 'error',
+                    'message' => 'Review batch error: '.$e->getMessage(),
+                    'created_at' => now(),
+                ]);
+            })
             ->onQueue('reviews')
             ->dispatch();
     }

@@ -90,6 +90,15 @@ class MigrateOrdersJob implements ShouldQueue
             ->then(function () use ($migrationId) {
                 MigrateCouponsJob::dispatch($migrationId);
             })
+            ->catch(function (\Illuminate\Bus\Batch $batch, \Throwable $e) use ($migrationId) {
+                MigrationLog::create([
+                    'migration_id' => $migrationId,
+                    'entity_type' => 'order',
+                    'level' => 'error',
+                    'message' => 'Order batch error: '.$e->getMessage(),
+                    'created_at' => now(),
+                ]);
+            })
             ->onQueue('orders')
             ->dispatch();
     }

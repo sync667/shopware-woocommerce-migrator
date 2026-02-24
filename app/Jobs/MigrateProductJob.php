@@ -76,6 +76,7 @@ class MigrateProductJob implements ShouldQueue
         ", [$db->languageIdBin(), $this->shopwareProductId, $db->liveVersionIdBin()]);
 
         if (empty($products)) {
+            $stateManager->markFailed('product', $this->shopwareProductId, $this->migrationId, 'Product not found in Shopware');
             $this->log('warning', 'Product not found in Shopware');
 
             return;
@@ -182,7 +183,7 @@ class MigrateProductJob implements ShouldQueue
             if (! empty($crossSells)) {
                 $this->migrateCrossSells($crossSells, $wooProductId, $woo, $stateManager);
             }
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             $stateManager->markFailed('product', $product->id, $this->migrationId, $e->getMessage());
             $this->log('error', "Failed: {$e->getMessage()}");
         }
@@ -225,7 +226,7 @@ class MigrateProductJob implements ShouldQueue
                 $stateManager->set('variation', $variant->id, $wooVariationId, $this->migrationId);
                 $this->log('info', "Migrated variant '{$variant->sku}' → WC #{$wooVariationId}", $variant->id, 'variation');
             }
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             $stateManager->markFailed('variation', $variant->id, $this->migrationId, $e->getMessage());
             $this->log('error', "Variant failed: {$e->getMessage()}", $variant->id, 'variation');
         }

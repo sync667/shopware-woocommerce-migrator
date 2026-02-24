@@ -63,9 +63,14 @@ class MigrateProductBatchJob implements ShouldQueue
                     continue;
                 }
 
-                $this->migrateProduct(
-                    $productId, $migration, $db, $woo, $imageMigrator, $reader, $transformer, $stateManager
-                );
+                try {
+                    $this->migrateProduct(
+                        $productId, $migration, $db, $woo, $imageMigrator, $reader, $transformer, $stateManager
+                    );
+                } catch (\Throwable $e) {
+                    $stateManager->markFailed('product', $productId, $this->migrationId, $e->getMessage());
+                    $this->log('error', "Failed to migrate product: {$e->getMessage()}", $productId);
+                }
             }
         } finally {
             $db->disconnect();
@@ -107,6 +112,7 @@ class MigrateProductBatchJob implements ShouldQueue
         ", [$db->languageIdBin(), $productId, $db->liveVersionIdBin()]);
 
         if (empty($products)) {
+            $stateManager->markFailed('product', $productId, $this->migrationId, 'Product not found in Shopware');
             $this->log('warning', 'Product not found in Shopware', $productId);
 
             return;
@@ -213,7 +219,7 @@ class MigrateProductBatchJob implements ShouldQueue
             if (! empty($crossSells)) {
                 $this->migrateCrossSells($crossSells, $wooProductId, $woo, $stateManager);
             }
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             $stateManager->markFailed('product', $product->id, $this->migrationId, $e->getMessage());
             $this->log('error', "Failed: {$e->getMessage()}", $product->id);
         }
@@ -256,7 +262,7 @@ class MigrateProductBatchJob implements ShouldQueue
                 $stateManager->set('variation', $variant->id, $wooVariationId, $this->migrationId);
                 $this->log('info', "Migrated variant '{$variant->sku}' → WC #{$wooVariationId}", $variant->id, 'variation');
             }
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             $stateManager->markFailed('variation', $variant->id, $this->migrationId, $e->getMessage());
             $this->log('error', "Variant failed: {$e->getMessage()}", $variant->id, 'variation');
         }

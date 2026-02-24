@@ -122,7 +122,7 @@ class MigrateOrderBatchJob implements ShouldQueue
                         $stateManager->set('order', $order->id, $wooId, $this->migrationId);
                         $this->log('info', "Migrated order '{$order->order_number}' → WC #{$wooId}", $order->id);
                     }
-                } catch (\Exception $e) {
+                } catch (\Throwable $e) {
                     $stateManager->markFailed('order', $orderId, $this->migrationId, $e->getMessage());
                     $this->log('error', "Failed: {$e->getMessage()}", $orderId);
                 }
