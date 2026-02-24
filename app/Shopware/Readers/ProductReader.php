@@ -80,6 +80,7 @@ class ProductReader
                 pm.position,
                 COALESCE(m.file_name, '') AS file_name,
                 COALESCE(m.file_extension, '') AS file_extension,
+                COALESCE(m.path, '') AS path,
                 COALESCE(mt.alt, '') AS alt,
                 COALESCE(mt.title, '') AS title
             FROM product_media pm

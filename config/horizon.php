@@ -247,6 +247,42 @@ return [
             'timeout' => 1800,
             'nice' => 0,
         ],
+        'supervisor-orders' => [
+            'connection' => 'redis',
+            'queue' => ['orders'],
+            'balance' => 'simple',
+            'maxProcesses' => 3,
+            'maxTime' => 0,
+            'maxJobs' => 0,
+            'memory' => 256,
+            'tries' => 3,
+            'timeout' => 600,
+            'nice' => 0,
+        ],
+        'supervisor-coupons' => [
+            'connection' => 'redis',
+            'queue' => ['coupons'],
+            'balance' => 'simple',
+            'maxProcesses' => 2,
+            'maxTime' => 0,
+            'maxJobs' => 0,
+            'memory' => 256,
+            'tries' => 3,
+            'timeout' => 600,
+            'nice' => 0,
+        ],
+        'supervisor-reviews' => [
+            'connection' => 'redis',
+            'queue' => ['reviews'],
+            'balance' => 'simple',
+            'maxProcesses' => 2,
+            'maxTime' => 0,
+            'maxJobs' => 0,
+            'memory' => 256,
+            'tries' => 3,
+            'timeout' => 600,
+            'nice' => 0,
+        ],
     ],
 
     'environments' => [
@@ -267,6 +303,15 @@ return [
             'supervisor-customers' => [
                 'maxProcesses' => 3,
             ],
+            'supervisor-orders' => [
+                'maxProcesses' => 3,
+            ],
+            'supervisor-coupons' => [
+                'maxProcesses' => 2,
+            ],
+            'supervisor-reviews' => [
+                'maxProcesses' => 2,
+            ],
         ],
 
         'local' => [
@@ -280,6 +325,15 @@ return [
                 'maxProcesses' => 1,
             ],
             'supervisor-customers' => [
+                'maxProcesses' => 1,
+            ],
+            'supervisor-orders' => [
+                'maxProcesses' => 1,
+            ],
+            'supervisor-coupons' => [
+                'maxProcesses' => 1,
+            ],
+            'supervisor-reviews' => [
                 'maxProcesses' => 1,
             ],
         ],

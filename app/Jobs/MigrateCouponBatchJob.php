@@ -120,7 +120,7 @@ class MigrateCouponBatchJob implements ShouldQueue
                             $this->log('info', "Migrated coupon '{$data['code']}' → WC #{$wooId}", $promotion->id);
                         }
                     }
-                } catch (\Exception $e) {
+                } catch (\Throwable $e) {
                     $stateManager->markFailed('coupon', $couponId, $this->migrationId, $e->getMessage());
                     $this->log('error', "Failed: {$e->getMessage()}", $couponId);
                 }

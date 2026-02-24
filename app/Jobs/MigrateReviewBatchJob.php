@@ -113,7 +113,7 @@ class MigrateReviewBatchJob implements ShouldQueue
                         $stateManager->set('review', $review->id, $wooId, $this->migrationId);
                         $this->log('info', "Migrated review → WC #{$wooId}", $review->id);
                     }
-                } catch (\Exception $e) {
+                } catch (\Throwable $e) {
                     $stateManager->markFailed('review', $reviewId, $this->migrationId, $e->getMessage());
                     $this->log('error', "Failed: {$e->getMessage()}", $reviewId);
                 }

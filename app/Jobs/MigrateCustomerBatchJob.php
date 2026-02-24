@@ -128,7 +128,7 @@ class MigrateCustomerBatchJob implements ShouldQueue
                         $stateManager->markFailed('customer', $customer->id, $this->migrationId, 'WooCommerce returned no ID for customer');
                         $this->log('error', "WooCommerce returned no ID for customer '{$customer->email}'", $customer->id);
                     }
-                } catch (\Exception $e) {
+                } catch (\Throwable $e) {
                     $stateManager->markFailed('customer', $customerId, $this->migrationId, $e->getMessage());
                     $this->log('error', "Failed: {$e->getMessage()}", $customerId);
                 }
