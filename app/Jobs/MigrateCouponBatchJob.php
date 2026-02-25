@@ -60,33 +60,14 @@ class MigrateCouponBatchJob implements ShouldQueue
                 }
 
                 try {
-                    $promotions = $db->select('
-                    SELECT
-                        LOWER(HEX(p.id)) AS id,
-                        p.name,
-                        p.active,
-                        p.valid_from,
-                        p.valid_until,
-                        p.max_redemptions_global,
-                        p.max_redemptions_per_customer,
-                        p.exclusive,
-                        p.use_codes,
-                        p.use_individual_codes,
-                        p.code,
-                        p.use_setgroups,
-                        p.customer_restriction
-                    FROM promotion p
-                    WHERE LOWER(HEX(p.id)) = ?
-                ', [$couponId]);
+                    $promotion = $reader->fetchOne($couponId);
 
-                    if (empty($promotions)) {
+                    if ($promotion === null) {
                         $stateManager->markFailed('coupon', $couponId, $this->migrationId, 'Coupon not found in Shopware DB');
                         $this->log('warning', 'Coupon not found in Shopware DB', $couponId);
 
                         continue;
                     }
-
-                    $promotion = $promotions[0];
                     $discounts = $reader->fetchDiscounts($promotion->id);
 
                     if ($promotion->use_individual_codes ?? false) {

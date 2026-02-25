@@ -24,6 +24,11 @@ class MigrationLog extends Model
         'created_at' => 'datetime',
     ];
 
+    public function setMessageAttribute(string $value): void
+    {
+        $this->attributes['message'] = mb_scrub(substr($value, 0, 2000), 'UTF-8');
+    }
+
     public function migration(): BelongsTo
     {
         return $this->belongsTo(MigrationRun::class, 'migration_id');

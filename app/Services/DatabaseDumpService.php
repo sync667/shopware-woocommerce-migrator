@@ -202,6 +202,9 @@ class DatabaseDumpService
             throw new \RuntimeException('Docker is not available. Please install Docker to use the dump import feature.');
         }
 
+        // Remove any previously running dump containers before spawning a new one
+        $this->cleanupStaleDumpContainers();
+
         $containerName = 'sw_dump_'.Str::random(8);
         $port = $this->findAvailablePort();
         $password = Str::random(16);
@@ -574,19 +577,48 @@ class DatabaseDumpService
     }
 
     /**
-     * Find an available port for the MySQL container.
+     * Remove all previously spawned dump containers (sw_dump_*).
+     * Called before spawning a new one so ports are freed.
+     */
+    private function cleanupStaleDumpContainers(): void
+    {
+        $result = Process::timeout(10)->run([
+            'docker', 'ps', '-a', '--filter', 'name=sw_dump_', '--format', '{{.Names}}',
+        ]);
+
+        if (! $result->successful()) {
+            return;
+        }
+
+        foreach (array_filter(explode("\n", trim($result->output()))) as $name) {
+            Process::timeout(15)->run(['docker', 'rm', '-f', $name]);
+        }
+    }
+
+    /**
+     * Find an available host port for the MySQL container by asking Docker
+     * which ports are already bound — fsockopen() cannot see host-level
+     * port bindings from inside a Docker container.
      */
     private function findAvailablePort(): int
     {
         $startPort = 33060;
         $endPort = 33999;
 
+        $usedPorts = [];
+        $result = Process::timeout(10)->run([
+            'docker', 'ps', '--format', '{{.Ports}}',
+        ]);
+
+        if ($result->successful()) {
+            preg_match_all('/0\.0\.0\.0:(\d+)->/', $result->output(), $matches);
+            $usedPorts = array_map('intval', $matches[1]);
+        }
+
         for ($port = $startPort; $port <= $endPort; $port++) {
-            $socket = @fsockopen('127.0.0.1', $port, $errno, $errstr, 1);
-            if ($socket === false) {
+            if (! in_array($port, $usedPorts, true)) {
                 return $port;
             }
-            fclose($socket);
         }
 
         throw new \RuntimeException('No available port found in range '.$startPort.'-'.$endPort);

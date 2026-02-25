@@ -136,12 +136,12 @@ class ProductReader
     {
         return $this->db->select("
             SELECT
-                LOWER(HEX(pp.option_id)) AS option_id,
+                LOWER(HEX(pp.property_group_option_id)) AS option_id,
                 COALESCE(pgot.name, '') AS option_name,
                 COALESCE(pgt.name, '') AS group_name,
                 LOWER(HEX(pgo.property_group_id)) AS group_id
             FROM product_property pp
-            INNER JOIN property_group_option pgo ON pgo.id = pp.option_id
+            INNER JOIN property_group_option pgo ON pgo.id = pp.property_group_option_id
             INNER JOIN property_group pg ON pg.id = pgo.property_group_id
             LEFT JOIN property_group_option_translation pgot
                 ON pgot.property_group_option_id = pgo.id
@@ -162,15 +162,12 @@ class ProductReader
     public function fetchTags(string $productId): array
     {
         return $this->db->select('
-            SELECT COALESCE(tt.name, t.name) AS name
+            SELECT t.name AS name
             FROM product_tag ptag
             INNER JOIN tag t ON t.id = ptag.tag_id
-            LEFT JOIN tag_translation tt
-                ON tt.tag_id = t.id
-                AND tt.language_id = ?
             WHERE ptag.product_id = UNHEX(?)
               AND ptag.product_version_id = ?
-        ', [$this->db->languageIdBin(), $productId, $this->db->liveVersionIdBin()]);
+        ', [$productId, $this->db->liveVersionIdBin()]);
     }
 
     public function fetchCrossSells(string $productId): array
@@ -191,12 +188,12 @@ class ProductReader
     {
         return $this->db->select("
             SELECT
-                LOWER(HEX(po.option_id)) AS option_id,
+                LOWER(HEX(po.property_group_option_id)) AS option_id,
                 COALESCE(pgot.name, '') AS option_name,
                 COALESCE(pgt.name, '') AS group_name,
                 LOWER(HEX(pgo.property_group_id)) AS group_id
             FROM product_option po
-            INNER JOIN property_group_option pgo ON pgo.id = po.option_id
+            INNER JOIN property_group_option pgo ON pgo.id = po.property_group_option_id
             INNER JOIN property_group pg ON pg.id = pgo.property_group_id
             LEFT JOIN property_group_option_translation pgot
                 ON pgot.property_group_option_id = pgo.id

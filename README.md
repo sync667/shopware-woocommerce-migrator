@@ -40,9 +40,9 @@ cp .env.example .env
 ./local.sh setup
 ```
 
-Once running, visit **http://localhost:8080**.
+Once running, visit **http://localhost:8780**.
 
-> The Vite hot-reload dev server is available at **http://localhost:5173** (started automatically by the `node` container).
+> The Vite hot-reload dev server is available at **http://localhost:8773** (started automatically by the `node` container).
 
 For all Docker helper commands, run:
 
@@ -117,7 +117,7 @@ php artisan horizon
 
 ### Web Dashboard
 
-1. Visit `http://localhost:8000` to see the dashboard
+1. Visit `http://localhost:8780` to see the dashboard
 2. Click **New Migration** to configure source/target connections
 3. Fill in Shopware DB, WooCommerce API, and WordPress Media credentials
 4. Use **Test Connection** buttons to verify connectivity

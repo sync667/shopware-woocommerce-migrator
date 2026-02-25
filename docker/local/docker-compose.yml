@@ -35,7 +35,7 @@ services:
     container_name: ${APP_NAME:-laravel}_nginx
     restart: unless-stopped
     ports:
-      - "${APP_PORT:-8000}:80"
+      - "${APP_PORT:-8780}:80"
     volumes:
       - ../../:/var/www/html:ro
       - ./nginx/api.conf:/etc/nginx/conf.d/default.conf:ro
@@ -51,7 +51,7 @@ services:
     container_name: ${APP_NAME:-laravel}_mysql
     restart: unless-stopped
     ports:
-      - "3306:3306"
+      - "${FORWARD_MYSQL_PORT:-8706}:3306"
     environment:
       MYSQL_ROOT_PASSWORD: root
       MYSQL_DATABASE: migrator_app
@@ -75,7 +75,7 @@ services:
     container_name: ${APP_NAME:-laravel}_mysql_test
     restart: unless-stopped
     ports:
-      - "3307:3306"
+      - "${FORWARD_MYSQL_TEST_PORT:-8707}:3306"
     environment:
       MYSQL_ROOT_PASSWORD: root
       MYSQL_DATABASE: migrator_test
@@ -98,7 +98,7 @@ services:
     container_name: ${APP_NAME:-laravel}_redis
     restart: unless-stopped
     ports:
-      - "${FORWARD_REDIS_PORT:-6379}:6379"
+      - "${FORWARD_REDIS_PORT:-8679}:6379"
     volumes:
       - redis-data:/data
     networks:
@@ -115,8 +115,8 @@ services:
     container_name: ${APP_NAME:-laravel}_mailpit
     restart: unless-stopped
     ports:
-      - "${FORWARD_MAILPIT_PORT:-1025}:1025"
-      - "${FORWARD_MAILPIT_DASHBOARD_PORT:-8025}:8025"
+      - "${FORWARD_MAILPIT_PORT:-8725}:1025"
+      - "${FORWARD_MAILPIT_DASHBOARD_PORT:-8726}:8025"
     networks:
       - app-network
 
@@ -129,7 +129,7 @@ services:
     volumes:
       - ../../:/var/www/html
     ports:
-      - "${FORWARD_VITE_PORT:-5173}:5173"
+      - "${FORWARD_VITE_PORT:-8773}:5173"
     command: sh -c "npm install --silent && npm run dev -- --host 0.0.0.0"
     networks:
       - app-network

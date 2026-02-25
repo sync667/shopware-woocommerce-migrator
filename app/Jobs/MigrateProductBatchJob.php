@@ -169,6 +169,18 @@ class MigrateProductBatchJob implements ShouldQueue
                 $stateManager->markSkipped('product', $product->id, $this->migrationId, $data);
                 $this->log('info', "Dry run: product '{$data['name']}'", $product->id);
 
+                foreach ($variants as $variant) {
+                    try {
+                        $variantOptions = $reader->fetchVariantOptions($variant->id);
+                        $optionAttributes = $transformer->buildVariantOptionAttributes($variantOptions);
+                        $variantData = $transformer->transformVariant($variant, $optionAttributes);
+                        $stateManager->markSkipped('variation', $variant->id, $this->migrationId, $variantData);
+                    } catch (\Throwable $e) {
+                        $stateManager->markFailed('variation', $variant->id, $this->migrationId, $e->getMessage());
+                        $this->log('error', "Dry run variant failed: {$e->getMessage()}", $variant->id, 'variation');
+                    }
+                }
+
                 return;
             }
 

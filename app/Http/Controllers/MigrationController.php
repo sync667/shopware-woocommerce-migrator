@@ -54,6 +54,8 @@ class MigrationController extends Controller
             'settings.wordpress' => 'required|array',
             'settings.wordpress.username' => 'required|string',
             'settings.wordpress.app_password' => 'required|string',
+            'settings.wordpress.custom_headers' => 'nullable|array',
+            'settings.wordpress.custom_headers.*' => 'nullable|string',
         ]);
 
         $migration = MigrationRun::create([

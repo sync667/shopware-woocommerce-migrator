@@ -67,7 +67,7 @@ class StateManager
             ],
             [
                 'status' => 'failed',
-                'error_message' => $error,
+                'error_message' => mb_scrub(substr($error, 0, 1000), 'UTF-8'),
             ]
         );
     }

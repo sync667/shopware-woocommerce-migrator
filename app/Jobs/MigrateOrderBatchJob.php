@@ -75,7 +75,7 @@ class MigrateOrderBatchJob implements ShouldQueue
                         o.created_at,
                         o.updated_at,
                         LOWER(HEX(sm.id)) AS state_id,
-                        sm.technical_name AS order_state
+                        sm.technical_name AS status
                     FROM `order` o
                     LEFT JOIN state_machine_state sm ON sm.id = o.state_id
                     WHERE LOWER(HEX(o.id)) = ?

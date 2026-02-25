@@ -4,16 +4,19 @@ Docker setup for the Shopware → WooCommerce Migrator with PHP 8.4, PostgreSQL 
 
 ## Services
 
-| Service | Version | Port | Description |
-|---------|---------|------|-------------|
-| PHP-FPM | 8.4 | 9000 | Application runtime (includes pdo_mysql for Shopware) |
-| Nginx | Alpine | 8080 | Web server |
-| PostgreSQL | 17 | 5432 | Application database |
-| Redis | 7 | 6379 | Cache & queues |
-| Node.js | 20 | 5173 | Vite dev server (frontend hot-reload) |
-| Mailpit | Latest | 1025/8025 | Email testing |
-| Queue Worker | PHP 8.4 | — | Laravel queue worker |
+| Service | Version | Host Port | Description |
+|---------|---------|-----------|-------------|
+| PHP-FPM | 8.4 | 9000 (internal) | Application runtime (includes pdo_mysql for Shopware) |
+| Nginx | Alpine | **8780** | Web server |
+| MySQL | 8.0 | **8706** | Application database |
+| MySQL (test) | 8.0 | **8707** | PHPUnit test database |
+| Redis | 7 | **8679** | Cache & queues |
+| Node.js | 20 | **8773** | Vite dev server (frontend hot-reload) |
+| Mailpit | Latest | **8725** / **8726** | Email testing (SMTP / UI) |
+| Horizon | PHP 8.4 | — | Laravel Horizon queue manager |
 | Scheduler | PHP 8.4 | — | Laravel task scheduler |
+
+All host ports use the `87xx` prefix to avoid conflicts with other Docker projects running on the same machine. Override any port in `docker/local/.env`.
 
 ## Quick Start
 
@@ -97,9 +100,9 @@ SESSION_DRIVER=redis
 
 ## Access Points
 
-- **Application**: http://localhost:8080
-- **Vite Dev**: http://localhost:5173
-- **Mailpit UI**: http://localhost:8025
+- **Application**: http://localhost:8780
+- **Vite Dev**: http://localhost:8773
+- **Mailpit UI**: http://localhost:8726
 
 ## PHP Extensions
 
