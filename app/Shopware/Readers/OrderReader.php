@@ -177,7 +177,7 @@ class OrderReader
     {
         $results = $this->db->select("
             SELECT
-                COALESCE(smt.name, sm.technical_name, 'Shipping') AS method_name,
+                COALESCE(smt.name, 'Shipping') AS method_name,
                 LOWER(HEX(od.shipping_method_id)) AS method_id
             FROM order_delivery od
             LEFT JOIN shipping_method sm ON sm.id = od.shipping_method_id
