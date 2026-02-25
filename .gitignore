@@ -21,3 +21,4 @@ yarn-error.log
 /test-results
 /test-dump/
 public/build/
+/.worktrees
