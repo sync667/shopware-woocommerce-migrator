@@ -23,7 +23,8 @@ class CategoryReader
                 COALESCE(ct.meta_title, '') AS meta_title,
                 COALESCE(ct.meta_description, '') AS meta_description,
                 COALESCE(m.file_name, '') AS media_file_name,
-                COALESCE(m.file_extension, '') AS media_file_extension
+                COALESCE(m.file_extension, '') AS media_file_extension,
+                COALESCE(m.path, '') AS media_path
             FROM category c
             LEFT JOIN category_translation ct
                 ON ct.category_id = c.id
@@ -50,6 +51,7 @@ class CategoryReader
                 COALESCE(ct.meta_description, '') AS meta_description,
                 COALESCE(m.file_name, '') AS media_file_name,
                 COALESCE(m.file_extension, '') AS media_file_extension,
+                COALESCE(m.path, '') AS media_path,
                 c.updated_at,
                 c.created_at
             FROM category c
