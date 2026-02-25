@@ -78,12 +78,12 @@ All commands are available through the `mc.sh` helper script:
 Update your main `.env` file:
 
 ```env
-DB_CONNECTION=pgsql
-DB_HOST=pgsql
-DB_PORT=5432
-DB_DATABASE=laravel
-DB_USERNAME=laravel
-DB_PASSWORD=secret
+DB_CONNECTION=mysql
+DB_HOST=mysql
+DB_PORT=3306
+DB_DATABASE=migrator_app
+DB_USERNAME=root
+DB_PASSWORD=root
 
 REDIS_HOST=redis
 REDIS_PASSWORD=null

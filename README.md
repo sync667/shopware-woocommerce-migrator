@@ -1,27 +1,33 @@
-# Shopware 6.4 → WooCommerce Migration Tool
+# Shopware 6 → WooCommerce Migration Tool
 
-A Laravel 12 web application with an Inertia.js + React dashboard that migrates data from a Shopware 6.4 MySQL database to a WooCommerce store via REST API.
+A Laravel 12 web application with an Inertia.js + React dashboard that migrates data from a Shopware 6 MySQL database to a WooCommerce store via REST API.
 
 ## Features
 
-- **8-step ordered migration:** Manufacturers → Taxes → Categories → Products → Customers → Orders → Coupons → Reviews
+- **12-step ordered migration:** Manufacturers → Taxes → Categories → Products → Customers → Orders → Coupons → Reviews → Shipping Methods → Payment Methods → SEO URLs → CMS Pages
 - **Per-migration settings:** Each migration run stores its own source/target connection config — run multiple migrations with different settings
 - **Async job processing:** All migration tasks run via Laravel Queues with retry logic
 - **Real-time dashboard:** Live progress tracking with per-entity status cards, error logs, and pause/resume/cancel controls
 - **Dry run mode:** Preview what would be migrated without writing to WooCommerce
+- **Delta migration mode:** Incremental updates — migrate only records changed since the last run
+- **Conflict resolution:** Choose a strategy when the same entity exists in both stores (Shopware wins, WooCommerce wins, or manual)
 - **Duplicate handling:** Automatic detection and reuse of existing WooCommerce entities
 - **Resumable:** Failed or cancelled migrations can be re-run — already-migrated entities are skipped
 - **Image migration:** Downloads images from Shopware and uploads them to WordPress Media Library
 - **Password migration:** Supports direct bcrypt hash migration for WordPress ≥ 6.8
+- **SSH tunnel support:** Connect to a Shopware database through an SSH jump host
+- **Product streams:** Migrates Shopware dynamic product groups as WooCommerce product categories
+- **CMS pages:** Selective or full migration of Shopware CMS pages
 
 ## Tech Stack
 
 | Layer | Technology |
 |-------|-----------|
-| Backend | Laravel 12, PHP 8.3+ |
+| Backend | Laravel 12, PHP 8.4+ |
 | Frontend | Inertia.js, React 19, Tailwind CSS |
 | Queue | Laravel Queues (Redis or database driver) |
-| Source | Shopware 6.4 MySQL (direct TCP connection) |
+| App database | MySQL 8.0 |
+| Source | Shopware 6 MySQL (direct TCP or SSH tunnel) |
 | Target | WooCommerce REST API v3, WordPress Media API |
 
 ## Quick Start (Docker — Recommended)
@@ -71,12 +77,12 @@ cp .env.example .env
 # Generate application key
 php artisan key:generate
 
-# Configure your application database in .env (PostgreSQL)
-# DB_CONNECTION=pgsql
+# Configure your application database in .env (MySQL)
+# DB_CONNECTION=mysql
 # DB_HOST=127.0.0.1
-# DB_PORT=5432
-# DB_DATABASE=migrator
-# DB_USERNAME=your_user
+# DB_PORT=3306
+# DB_DATABASE=migrator_app
+# DB_USERNAME=root
 # DB_PASSWORD=your_password
 
 # Run database migrations
@@ -91,10 +97,10 @@ php artisan serve
 
 ## Requirements
 
-- PHP 8.3+ with `pdo_pgsql` and `pdo_mysql` extensions
+- PHP 8.4+ with `pdo_mysql` extension
 - Composer
 - Node.js 20+
-- PostgreSQL (application database)
+- MySQL 8.0 (application database)
 - Redis (recommended for queues) or database queue driver
 - Network access to Shopware MySQL and WooCommerce REST API
 
@@ -143,8 +149,23 @@ php artisan shopware:migrate \
   --wp-username=admin \
   --wp-app-password=your_app_password
 
-# Dry run mode
+# Dry run mode — previews without writing to WooCommerce
 php artisan shopware:migrate --dry-run [... other options]
+
+# Delta mode — migrate only records changed since the last run
+php artisan shopware:migrate --mode=delta --conflict=shopware_wins [... other options]
+# --conflict accepts: shopware_wins (default), woo_wins, manual
+
+# SSH tunnel — connect to Shopware DB via a jump host
+php artisan shopware:migrate \
+  --ssh-host=jump.example.com \
+  --ssh-username=deploy \
+  --ssh-key=/path/to/id_rsa \
+  [... other options]
+
+# CMS pages migration
+php artisan shopware:migrate --cms-all [... other options]
+php artisan shopware:migrate --cms-ids=abc123,def456 [... other options]
 ```
 
 ## Migration Steps
@@ -154,15 +175,20 @@ php artisan shopware:migrate --dry-run [... other options]
 | 1 | Manufacturers | — |
 | 2 | Tax Classes + Rates | — |
 | 3 | Categories | — |
-| 4 | Products (+ media + variants) | Categories, Manufacturers, Taxes |
+| 4 | Products (+ media + variants + streams) | Categories, Manufacturers, Taxes |
 | 5 | Customers | — |
 | 6 | Orders | Products, Customers |
 | 7 | Coupons | — |
 | 8 | Reviews | Products, Customers |
+| 9 | Shipping Methods | — |
+| 10 | Payment Methods | — |
+| 11 | SEO URLs | Products, Categories |
+| 12 | CMS Pages (optional) | — |
 
 ## Entity Coverage
 
 - **Products:** Name, SKU, descriptions, prices (regular + sale from `listPrice`), stock, weight (g→kg), dimensions (mm→cm), tax class, categories, tags, attributes (variant + descriptive), up-sells/cross-sells, images, variants
+- **Product Streams:** Shopware dynamic product groups → WooCommerce product categories
 - **Categories:** Name, description, sort order, images, hierarchy, meta title/description
 - **Customers:** Name, email, billing/shipping addresses, password hash migration
 - **Orders:** Order number, date, status mapping, line items, addresses, customer notes
@@ -170,6 +196,10 @@ php artisan shopware:migrate --dry-run [... other options]
 - **Tax Classes:** Name, rates per country
 - **Coupons:** Code, discount type/amount, date range, usage limits
 - **Reviews:** Rating, author, comment, product link, approval status
+- **Shipping Methods:** Name → WooCommerce shipping zones/methods
+- **Payment Methods:** Name → WooCommerce payment gateways
+- **SEO URLs:** Shopware canonical URLs → WooCommerce slugs
+- **CMS Pages:** Shopware Experience World pages → WordPress pages (full or selective)
 
 ## Architecture
 

@@ -23,16 +23,16 @@ Open an issue with the `enhancement` label. Describe the use-case and the propos
 
 ### Submitting a Pull Request
 
-1. **Fork** the repository and create a branch from `main`:
+1. **Fork** the repository and create a branch from `master`:
    ```bash
    git checkout -b feat/your-feature-name
    ```
 
 2. **Set up the development environment** using Docker (recommended):
    ```bash
-   cd docker/local
-   cp .env.example .env
-   ./mc.sh setup
+   # From project root:
+   cp docker/local/.env.example docker/local/.env
+   ./local.sh setup
    ```
    Or follow the manual setup in [README.md](README.md).
 
@@ -63,7 +63,7 @@ Open an issue with the `enhancement` label. Describe the use-case and the propos
    docs: update Docker quick-start section
    ```
 
-6. **Open a Pull Request** against `main` and fill in the PR template.
+6. **Open a Pull Request** against `master` and fill in the PR template.
 
 ## Conventional Commits
 
@@ -134,7 +134,7 @@ git commit -m "test: add unit tests for ProductTransformer"
 Releases are **fully automated** using GitHub Actions and [release-please](https://github.com/googleapis/release-please):
 
 1. **Commit changes** using conventional commit messages
-2. **Push to `master` branch**
+2. **Push to `master` branch** (the default branch)
 3. **Release-please creates a Release PR** automatically:
    - Updates version in `composer.json`
    - Updates `CHANGELOG.md`
@@ -157,10 +157,10 @@ Releases are **fully automated** using GitHub Actions and [release-please](https
 ### Docker (Recommended)
 
 ```bash
-cd docker/local
-cp .env.example .env
-./mc.sh setup        # builds images, starts services, installs deps, runs migrations
-./mc.sh test         # run PHP tests
+# From project root:
+cp docker/local/.env.example docker/local/.env
+./local.sh setup     # builds images, starts services, installs deps, runs migrations
+./local.sh test      # run PHP tests
 ```
 
 ### Manual
