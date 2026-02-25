@@ -30,6 +30,7 @@ const ENTITY_TYPES = [
     'payment_method',
     'seo_url',
     'cms_page',
+    'product_stream',
 ];
 
 function formatDuration(seconds) {

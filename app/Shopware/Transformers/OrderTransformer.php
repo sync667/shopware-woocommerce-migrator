@@ -21,10 +21,11 @@ class OrderTransformer
         ?object $shippingAddress = null,
         array $lineItems = [],
         array $trackingCodes = [],
+        ?object $shippingMethod = null,
     ): array {
         $data = [
             'status' => self::STATUS_MAP[$order->status] ?? 'pending',
-            'date_created' => $order->order_date ?? null,
+            'date_created' => isset($order->order_date) ? (new \DateTime($order->order_date))->format('Y-m-d\TH:i:s') : null,
             'set_paid' => in_array($order->status, ['completed', 'in_progress']),
             'billing' => $billingAddress ? $this->transformAddress($billingAddress) : [],
             'shipping' => $shippingAddress ? $this->transformAddress($shippingAddress) : [],
@@ -34,6 +35,37 @@ class OrderTransformer
                 ['key' => '_shopware_order_id', 'value' => $order->id ?? ''],
             ],
         ];
+
+        // Shipping lines — always include so the order total is correct in WC
+        $shippingTotal = round((float) ($order->shipping_total ?? 0), 2);
+        if ($shippingTotal > 0 || $shippingMethod !== null) {
+            $data['shipping_lines'] = [[
+                'method_id' => $shippingMethod ? ('shopware_'.($shippingMethod->method_id ?? 'other')) : 'other',
+                'method_title' => $shippingMethod?->method_name ?? 'Shipping',
+                'total' => (string) $shippingTotal,
+            ]];
+        }
+
+        if (! empty($order->affiliate_code)) {
+            $data['meta_data'][] = ['key' => '_shopware_affiliate_code', 'value' => $order->affiliate_code];
+        }
+
+        if (! empty($order->campaign_code)) {
+            $data['meta_data'][] = ['key' => '_shopware_campaign_code', 'value' => $order->campaign_code];
+        }
+
+        if (! empty($order->custom_fields)) {
+            $customFields = is_string($order->custom_fields)
+                ? json_decode($order->custom_fields, true)
+                : (array) $order->custom_fields;
+            if (is_array($customFields)) {
+                foreach ($customFields as $key => $value) {
+                    if ($value !== null && $value !== '' && $value !== []) {
+                        $data['meta_data'][] = ['key' => '_sw_cf_'.$key, 'value' => $value];
+                    }
+                }
+            }
+        }
 
         if ($customer) {
             $data['billing']['email'] = $customer->email ?? '';
@@ -93,13 +125,25 @@ class OrderTransformer
 
             $payload = is_string($item->payload ?? null) ? json_decode($item->payload, true) : ($item->payload ?? []);
 
-            $items[] = [
+            $lineItem = [
                 'name' => $item->name ?? '',
                 'quantity' => (int) ($item->quantity ?? 1),
                 'subtotal' => (string) round((float) ($item->unit_price ?? 0) * (int) ($item->quantity ?? 1), 2),
                 'total' => (string) round((float) ($item->total_price ?? 0), 2),
                 'sku' => $payload['productNumber'] ?? '',
             ];
+
+            // Link to WC product when available (resolved by the job via StateManager)
+            if (! empty($item->woo_product_id)) {
+                $lineItem['product_id'] = $item->woo_product_id;
+            }
+
+            // Link to WC variation when available
+            if (! empty($item->woo_variation_id)) {
+                $lineItem['variation_id'] = $item->woo_variation_id;
+            }
+
+            $items[] = $lineItem;
         }
 
         return $items;

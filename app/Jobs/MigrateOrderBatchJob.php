@@ -60,36 +60,14 @@ class MigrateOrderBatchJob implements ShouldQueue
                 }
 
                 try {
-                    $orders = $db->select('
-                    SELECT
-                        LOWER(HEX(o.id)) AS id,
-                        o.order_number,
-                        o.currency_factor,
-                        LOWER(HEX(o.currency_id)) AS currency_id,
-                        LOWER(HEX(o.billing_address_id)) AS billing_address_id,
-                        o.order_date_time,
-                        o.amount_total,
-                        o.amount_net,
-                        o.position_price,
-                        o.shipping_total,
-                        o.created_at,
-                        o.updated_at,
-                        LOWER(HEX(sm.id)) AS state_id,
-                        sm.technical_name AS status
-                    FROM `order` o
-                    LEFT JOIN state_machine_state sm ON sm.id = o.state_id
-                    WHERE LOWER(HEX(o.id)) = ?
-                      AND o.version_id = ?
-                ', [$orderId, $db->liveVersionIdBin()]);
+                    $order = $reader->fetchOne($orderId);
 
-                    if (empty($orders)) {
+                    if ($order === null) {
                         $stateManager->markFailed('order', $orderId, $this->migrationId, 'Order not found in Shopware DB');
                         $this->log('warning', 'Order not found in Shopware DB', $orderId);
 
                         continue;
                     }
-
-                    $order = $orders[0];
 
                     $customer = $reader->fetchOrderCustomer($order->id);
                     $billingAddress = ! empty($order->billing_address_id)
@@ -98,8 +76,24 @@ class MigrateOrderBatchJob implements ShouldQueue
                     $shippingAddress = $reader->fetchShippingAddress($order->id);
                     $lineItems = $reader->fetchLineItems($order->id);
                     $trackingCodes = $reader->fetchDeliveryTracking($order->id);
+                    $shippingMethod = $reader->fetchShippingMethod($order->id);
 
-                    $data = $transformer->transform($order, $customer, $billingAddress, $shippingAddress, $lineItems, $trackingCodes);
+                    // Resolve WC product/variation IDs for each line item so WooCommerce
+                    // links order items to the migrated products properly.
+                    foreach ($lineItems as $lineItem) {
+                        if (! empty($lineItem->product_id)) {
+                            $wooProductId = $stateManager->get('product', $lineItem->product_id, $this->migrationId);
+                            if ($wooProductId) {
+                                $lineItem->woo_product_id = $wooProductId;
+                            }
+                            $wooVariationId = $stateManager->get('variation', $lineItem->product_id, $this->migrationId);
+                            if ($wooVariationId) {
+                                $lineItem->woo_variation_id = $wooVariationId;
+                            }
+                        }
+                    }
+
+                    $data = $transformer->transform($order, $customer, $billingAddress, $shippingAddress, $lineItems, $trackingCodes, $shippingMethod);
 
                     if (! empty($customer->customer_id)) {
                         $wooCustomerId = $stateManager->get('customer', $customer->customer_id, $this->migrationId);

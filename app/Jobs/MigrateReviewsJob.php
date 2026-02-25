@@ -120,6 +120,11 @@ class MigrateReviewsJob implements ShouldQueue
             $jobs[] = new MigrateCmsPagesJob($migrationId, $cmsOptions['selected_ids']);
         }
 
+        $streamOptions = $migration->settings['stream_options'] ?? [];
+        if (! empty($streamOptions['migrate_streams'])) {
+            $jobs[] = new MigrateProductStreamsJob($migrationId);
+        }
+
         $jobs[] = function () use ($migrationId) {
             $migration = MigrationRun::findOrFail($migrationId);
             if ($migration->status === 'running') {

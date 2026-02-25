@@ -54,6 +54,9 @@ export default function Settings() {
     const [selectedCmsPages, setSelectedCmsPages] = useState([]);
     const [loadingCmsPages, setLoadingCmsPages] = useState(false);
 
+    // Product stream options
+    const [streamsEnabled, setStreamsEnabled] = useState(false);
+
     // Shopware config options
     const [availableLanguages, setAvailableLanguages] = useState([]);
     const [loadingLanguages, setLoadingLanguages] = useState(false);
@@ -388,6 +391,8 @@ export default function Settings() {
                 selected_ids: cmsMigrateAll ? null : selectedCmsPages,
             } : null;
 
+            const streamOptions = streamsEnabled ? { migrate_streams: true } : null;
+
             // Filter out empty custom headers
             const wpConfig = { ...wordpress };
             if (wpConfig.custom_headers) {
@@ -409,6 +414,7 @@ export default function Settings() {
                     sync_mode: syncMode,
                     conflict_strategy: conflictStrategy,
                     cms_options: cmsOptions,
+                    stream_options: streamOptions,
                     settings: { shopware: swConfig, woocommerce, wordpress: wpConfig },
                 }),
             });
@@ -588,9 +594,17 @@ export default function Settings() {
                         )}
                         <span className={cmsEnabled ? '' : 'text-gray-500'}>CMS Pages (Optional)</span>
                     </div>
+                    <div className={`flex items-center gap-2 p-2 rounded ${streamsEnabled ? 'bg-green-50' : 'bg-gray-100'}`}>
+                        {streamsEnabled ? (
+                            <Check className="h-4 w-4 text-green-600" />
+                        ) : (
+                            <AlertCircle className="h-4 w-4 text-gray-400" />
+                        )}
+                        <span className={streamsEnabled ? '' : 'text-gray-500'}>Product Streams (Optional)</span>
+                    </div>
                 </div>
                 <p className="mt-3 text-xs text-gray-500">
-                    All entities are migrated automatically. CMS pages migration can be configured below.
+                    All entities are migrated automatically. CMS pages and product streams migration can be configured below.
                 </p>
             </div>
 
@@ -1125,6 +1139,35 @@ export default function Settings() {
                                 )}
                             </div>
                         )}
+                    </div>
+                )}
+            </div>
+
+            {/* Product Streams */}
+            <div className={sectionClass}>
+                <div className="flex items-center justify-between mb-4">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                            type="checkbox"
+                            checked={streamsEnabled}
+                            onChange={(e) => setStreamsEnabled(e.target.checked)}
+                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className="text-lg font-medium text-gray-900">Migrate Product Streams as WC Categories</span>
+                    </label>
+                </div>
+                {streamsEnabled && (
+                    <div className="rounded-md bg-blue-50 border border-blue-200 p-3 text-sm text-blue-800">
+                        <p>
+                            Shopware product streams will be migrated as WooCommerce product categories.
+                            Each stream&apos;s current product membership (from the Shopware cache) will be used
+                            to assign products to the corresponding WC category. This runs after all products
+                            have been migrated.
+                        </p>
+                        <p className="mt-2 text-xs text-blue-600">
+                            Note: This creates static category assignments based on the current stream snapshot.
+                            To make categories dynamic, use the WooCommerce Dynamic Product Categories plugin after migration.
+                        </p>
                     </div>
                 )}
             </div>

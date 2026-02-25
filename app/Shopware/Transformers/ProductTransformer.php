@@ -32,6 +32,10 @@ class ProductTransformer
             $shortDescription = $this->contentMigrator->extractPlainText($description, 150);
         }
 
+        $manageStock = (bool) ($product->manage_stock ?? false);
+        $stockQuantity = (int) ($product->stock ?? 0);
+        $available = $product->available ?? true;
+
         $data = [
             'name' => $product->name ?: 'Unnamed Product',
             'sku' => $product->sku ?? '',
@@ -40,8 +44,9 @@ class ProductTransformer
             'description' => $description,
             'short_description' => $shortDescription,
             'regular_price' => $prices['regular'],
-            'manage_stock' => (bool) ($product->manage_stock ?? false),
-            'stock_quantity' => (int) ($product->stock ?? 0),
+            'manage_stock' => $manageStock,
+            'stock_quantity' => $stockQuantity,
+            'stock_status' => ($manageStock || $available) ? 'instock' : 'outofstock',
             'weight' => $this->gramsToKg($product->weight ?? 0),
             'dimensions' => [
                 'length' => $this->mmToCm($product->depth ?? 0),
@@ -51,6 +56,24 @@ class ProductTransformer
             'tax_class' => $taxClassSlug,
             'categories' => array_map(fn ($id) => ['id' => $id], $categoryWooIds),
         ];
+
+        // Map Shopware visibility to WooCommerce catalog_visibility
+        $maxVisibility = (int) ($product->max_visibility ?? 0);
+        if ($maxVisibility >= 30) {
+            $data['catalog_visibility'] = 'visible';
+        } elseif ($maxVisibility >= 10) {
+            $data['catalog_visibility'] = 'search';
+        } elseif ($maxVisibility === 0 && isset($product->max_visibility)) {
+            $data['catalog_visibility'] = 'hidden';
+        }
+
+        // Product creation date
+        if (! empty($product->created_at)) {
+            try {
+                $data['date_created'] = (new \DateTime($product->created_at))->format('Y-m-d\TH:i:s');
+            } catch (\Exception) {
+            }
+        }
 
         if ($prices['sale'] !== null) {
             $data['sale_price'] = $prices['sale'];
@@ -89,6 +112,7 @@ class ProductTransformer
 
         if ($product->ean ?? '') {
             $data['meta_data'][] = ['key' => '_ean', 'value' => $product->ean];
+            $data['meta_data'][] = ['key' => '_global_unique_id', 'value' => $product->ean]; // WC 9.2+ GTIN
         }
 
         if ($product->manufacturer_number ?? '') {
@@ -126,6 +150,28 @@ class ProductTransformer
 
         if (isset($product->available)) {
             $data['meta_data'][] = ['key' => '_available', 'value' => (bool) $product->available];
+        }
+
+        // Custom search keywords
+        if (! empty($product->keywords)) {
+            $keywords = json_decode($product->keywords, true);
+            if (is_array($keywords) && ! empty($keywords)) {
+                $data['meta_data'][] = ['key' => '_custom_search_keywords', 'value' => implode(', ', $keywords)];
+            }
+        }
+
+        // Custom fields (stored as individual _sw_cf_* meta entries)
+        if (! empty($product->custom_fields)) {
+            $customFields = is_string($product->custom_fields)
+                ? json_decode($product->custom_fields, true)
+                : (array) $product->custom_fields;
+            if (is_array($customFields)) {
+                foreach ($customFields as $key => $value) {
+                    if ($value !== null && $value !== '' && $value !== []) {
+                        $data['meta_data'][] = ['key' => '_sw_cf_'.$key, 'value' => $value];
+                    }
+                }
+            }
         }
 
         return $data;

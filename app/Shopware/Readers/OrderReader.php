@@ -34,6 +34,33 @@ class OrderReader
         ", [$this->db->liveVersionIdBin()]);
     }
 
+    public function fetchOne(string $orderId): ?object
+    {
+        $results = $this->db->select("
+            SELECT
+                LOWER(HEX(o.id)) AS id,
+                o.order_number,
+                o.order_date_time AS order_date,
+                o.amount_total AS total,
+                o.amount_net AS subtotal,
+                o.position_price,
+                o.shipping_total,
+                o.customer_comment,
+                o.currency_factor,
+                LOWER(HEX(o.billing_address_id)) AS billing_address_id,
+                COALESCE(sms.technical_name, '') AS status,
+                o.custom_fields,
+                o.affiliate_code,
+                o.campaign_code
+            FROM `order` o
+            LEFT JOIN state_machine_state sms ON sms.id = o.state_id
+            WHERE LOWER(HEX(o.id)) = ?
+              AND o.version_id = ?
+        ", [$orderId, $this->db->liveVersionIdBin()]);
+
+        return $results[0] ?? null;
+    }
+
     public function fetchLineItems(string $orderId): array
     {
         return $this->db->select("
@@ -144,6 +171,25 @@ class OrderReader
             : $results[0]->tracking_codes;
 
         return is_array($trackingCodes) ? $trackingCodes : [];
+    }
+
+    public function fetchShippingMethod(string $orderId): ?object
+    {
+        $results = $this->db->select("
+            SELECT
+                COALESCE(smt.name, sm.technical_name, 'Shipping') AS method_name,
+                LOWER(HEX(od.shipping_method_id)) AS method_id
+            FROM order_delivery od
+            LEFT JOIN shipping_method sm ON sm.id = od.shipping_method_id
+            LEFT JOIN shipping_method_translation smt
+                ON smt.shipping_method_id = sm.id
+                AND smt.language_id = ?
+            WHERE od.order_id = UNHEX(?)
+              AND od.order_version_id = ?
+            LIMIT 1
+        ", [$this->db->languageIdBin(), $orderId, $this->db->liveVersionIdBin()]);
+
+        return $results[0] ?? null;
     }
 
     /**

@@ -53,6 +53,58 @@ class ProductReader
         ", [$this->db->languageIdBin(), $this->db->liveVersionIdBin()]);
     }
 
+    public function fetchOne(string $productId): ?object
+    {
+        $results = $this->db->select("
+            SELECT
+                LOWER(HEX(p.id)) AS id,
+                LOWER(HEX(p.parent_id)) AS parent_id,
+                p.product_number AS sku,
+                p.active,
+                p.stock,
+                p.is_closeout AS manage_stock,
+                p.weight,
+                p.width,
+                p.height,
+                p.length AS depth,
+                p.price,
+                CASE WHEN p.child_count > 0 THEN 'grouped' ELSE 'simple' END AS type,
+                LOWER(HEX(p.tax_id)) AS tax_id,
+                LOWER(HEX(p.product_manufacturer_id)) AS manufacturer_id,
+                LOWER(HEX(p.product_media_id)) AS cover_id,
+                COALESCE(pt.name, '') AS name,
+                COALESCE(pt.description, '') AS description,
+                COALESCE(pt.meta_title, '') AS meta_title,
+                COALESCE(pt.meta_description, '') AS meta_description,
+                COALESCE(pt.custom_search_keywords, '') AS keywords,
+                p.ean,
+                p.manufacturer_number,
+                p.min_purchase,
+                p.max_purchase,
+                p.purchase_steps,
+                p.purchase_unit,
+                p.reference_unit,
+                p.shipping_free,
+                p.mark_as_topseller,
+                p.available,
+                pt.custom_fields,
+                p.created_at,
+                (SELECT MAX(pv.visibility)
+                 FROM product_visibility pv
+                 WHERE pv.product_id = p.id
+                   AND pv.product_version_id = p.version_id) AS max_visibility
+            FROM product p
+            LEFT JOIN product_translation pt
+                ON pt.product_id = p.id
+                AND pt.product_version_id = p.version_id
+                AND pt.language_id = ?
+            WHERE p.id = UNHEX(?)
+              AND p.version_id = ?
+        ", [$this->db->languageIdBin(), $productId, $this->db->liveVersionIdBin()]);
+
+        return $results[0] ?? null;
+    }
+
     public function fetchVariants(string $parentId): array
     {
         return $this->db->select('
@@ -172,16 +224,24 @@ class ProductReader
 
     public function fetchCrossSells(string $productId): array
     {
+        // Supports both static (crossSelling) and dynamic (productStream) cross-sell types.
+        // For productStream, products are resolved from product_stream_mapping (Shopware's cache).
         return $this->db->select('
-            SELECT
-                LOWER(HEX(pcsa.product_id)) AS target_product_id,
+            SELECT DISTINCT
+                LOWER(HEX(COALESCE(pcsa.product_id, psm.product_id))) AS target_product_id,
                 pcs.type
             FROM product_cross_selling pcs
-            INNER JOIN product_cross_selling_assigned_products pcsa
+            LEFT JOIN product_cross_selling_assigned_products pcsa
                 ON pcsa.cross_selling_id = pcs.id
+                AND pcs.type != \'productStream\'
+            LEFT JOIN product_stream_mapping psm
+                ON psm.product_stream_id = pcs.product_stream_id
+                AND pcs.type = \'productStream\'
+                AND psm.product_version_id = ?
             WHERE pcs.product_id = UNHEX(?)
               AND pcs.product_version_id = ?
-        ', [$productId, $this->db->liveVersionIdBin()]);
+              AND (pcsa.product_id IS NOT NULL OR psm.product_id IS NOT NULL)
+        ', [$this->db->liveVersionIdBin(), $productId, $this->db->liveVersionIdBin()]);
     }
 
     public function fetchVariantOptions(string $variantId): array

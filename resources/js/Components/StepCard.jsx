@@ -13,6 +13,7 @@ import {
     CreditCard,
     Link,
     FileText,
+    Layers,
 } from 'lucide-react';
 
 const ICONS = {
@@ -29,6 +30,7 @@ const ICONS = {
     payment_method: CreditCard,
     seo_url: Link,
     cms_page: FileText,
+    product_stream: Layers,
 };
 
 const LABELS = {
@@ -45,6 +47,7 @@ const LABELS = {
     payment_method: 'Payment Methods',
     seo_url: 'SEO URLs',
     cms_page: 'CMS Pages',
+    product_stream: 'Product Streams',
 };
 
 export default function StepCard({ entityType, counts = {}, isActive = false }) {

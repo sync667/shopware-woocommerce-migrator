@@ -36,6 +36,7 @@ Route::middleware(\App\Http\Middleware\ValidateAccessToken::class)->group(functi
         Route::post('/woocommerce/ping', [\App\Http\Controllers\MigrationController::class, 'pingWoocommerce']);
         Route::post('/test-connections', [\App\Http\Controllers\MigrationController::class, 'testConnections']);
         Route::post('/cms-pages/list', [\App\Http\Controllers\MigrationController::class, 'listCmsPages']);
+        Route::post('/product-streams/list', [\App\Http\Controllers\MigrationController::class, 'listProductStreams']);
         Route::post('/shopware/languages', [\App\Http\Controllers\ShopwareConfigController::class, 'getLanguages']);
         Route::post('/shopware/live-version', [\App\Http\Controllers\ShopwareConfigController::class, 'getLiveVersionId']);
 

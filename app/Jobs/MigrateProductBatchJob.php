@@ -87,38 +87,14 @@ class MigrateProductBatchJob implements ShouldQueue
         ProductTransformer $transformer,
         StateManager $stateManager,
     ): void {
-        $products = $db->select("
-            SELECT
-                LOWER(HEX(p.id)) AS id,
-                LOWER(HEX(p.parent_id)) AS parent_id,
-                p.product_number AS sku,
-                p.active, p.stock, p.is_closeout AS manage_stock,
-                p.weight, p.width, p.height, p.length AS depth,
-                p.price, CASE WHEN p.child_count > 0 THEN 'grouped' ELSE 'simple' END AS type,
-                LOWER(HEX(p.tax_id)) AS tax_id,
-                LOWER(HEX(p.product_manufacturer_id)) AS manufacturer_id,
-                LOWER(HEX(p.product_media_id)) AS cover_id,
-                COALESCE(pt.name, '') AS name,
-                COALESCE(pt.description, '') AS description,
-                COALESCE(pt.meta_title, '') AS meta_title,
-                COALESCE(pt.meta_description, '') AS meta_description
-            FROM product p
-            LEFT JOIN product_translation pt
-                ON pt.product_id = p.id
-                AND pt.product_version_id = p.version_id
-                AND pt.language_id = ?
-            WHERE p.id = UNHEX(?)
-              AND p.version_id = ?
-        ", [$db->languageIdBin(), $productId, $db->liveVersionIdBin()]);
+        $product = $reader->fetchOne($productId);
 
-        if (empty($products)) {
+        if ($product === null) {
             $stateManager->markFailed('product', $productId, $this->migrationId, 'Product not found in Shopware');
             $this->log('warning', 'Product not found in Shopware', $productId);
 
             return;
         }
-
-        $product = $products[0];
 
         try {
             $categoryWooIds = [];
@@ -130,8 +106,24 @@ class MigrateProductBatchJob implements ShouldQueue
             }
 
             $manufacturerWooId = null;
+            $manufacturerAttribute = null;
             if (! empty($product->manufacturer_id)) {
                 $manufacturerWooId = $stateManager->get('manufacturer', $product->manufacturer_id, $this->migrationId);
+
+                $wooManufacturerAttributeId = $stateManager->get('manufacturer_attribute', 'global', $this->migrationId);
+                if ($wooManufacturerAttributeId) {
+                    $manufacturerEntity = $stateManager->getEntity('manufacturer', $product->manufacturer_id, $this->migrationId);
+                    $manufacturerName = $manufacturerEntity?->payload['name'] ?? null;
+                    if ($manufacturerName) {
+                        $manufacturerAttribute = [
+                            'id' => $wooManufacturerAttributeId,
+                            'name' => 'Manufacturer',
+                            'options' => [$manufacturerName],
+                            'visible' => true,
+                            'variation' => false,
+                        ];
+                    }
+                }
             }
 
             $taxClassSlug = '';
@@ -150,6 +142,10 @@ class MigrateProductBatchJob implements ShouldQueue
                 $transformer->buildAttributes($configuratorSettings, true),
                 $transformer->buildAttributes($properties, false),
             );
+
+            if ($manufacturerAttribute !== null) {
+                $attributes[] = $manufacturerAttribute;
+            }
 
             $data = $transformer->transform(
                 $product,

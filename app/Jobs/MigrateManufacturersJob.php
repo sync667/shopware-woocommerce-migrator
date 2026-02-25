@@ -52,6 +52,35 @@ class MigrateManufacturersJob implements ShouldQueue
             'created_at' => now(),
         ]);
 
+        // Create or find the global "Manufacturer" attribute in WooCommerce.
+        // Its ID is stored so product migration can link terms as product attributes.
+        $wooAttributeId = null;
+        if (! $migration->is_dry_run) {
+            try {
+                $attributeResult = $woo->createOrFind(
+                    'products/attributes',
+                    ['name' => 'Manufacturer', 'type' => 'select', 'has_archives' => true],
+                    'search',
+                    'Manufacturer'
+                );
+                $wooAttributeId = $attributeResult['id'] ?? null;
+            } catch (\Exception $e) {
+                $this->log('error', 'Failed to create/find Manufacturer attribute: '.$e->getMessage(), null, 'manufacturer');
+                $db->disconnect();
+
+                return;
+            }
+
+            if (! $wooAttributeId) {
+                $this->log('error', 'WooCommerce returned no ID for the Manufacturer attribute', null, 'manufacturer');
+                $db->disconnect();
+
+                return;
+            }
+
+            $stateManager->set('manufacturer_attribute', 'global', $wooAttributeId, $this->migrationId);
+        }
+
         foreach ($manufacturers as $manufacturer) {
             if (app(\App\Services\CancellationService::class)->isCancelled($this->migrationId)) {
                 return;
@@ -72,7 +101,7 @@ class MigrateManufacturersJob implements ShouldQueue
                 }
 
                 $result = $woo->createOrFind(
-                    'products/attributes/terms',
+                    "products/attributes/{$wooAttributeId}/terms",
                     ['name' => $data['name']],
                     'search',
                     $data['name']
@@ -80,7 +109,10 @@ class MigrateManufacturersJob implements ShouldQueue
 
                 $wooId = $result['id'] ?? null;
                 if ($wooId) {
-                    $stateManager->set('manufacturer', $manufacturer->id, $wooId, $this->migrationId);
+                    $stateManager->set('manufacturer', $manufacturer->id, $wooId, $this->migrationId, [
+                        'name' => $data['name'],
+                        'attribute_id' => $wooAttributeId,
+                    ]);
                     $this->log('info', "Migrated manufacturer '{$data['name']}' → WC #{$wooId}", $manufacturer->id, 'manufacturer');
                 }
             } catch (\Exception $e) {

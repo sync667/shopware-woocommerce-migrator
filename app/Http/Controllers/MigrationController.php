@@ -11,6 +11,7 @@ use App\Services\ShopwareDB;
 use App\Services\WooCommerceClient;
 use App\Services\WordPressMediaClient;
 use App\Shopware\Readers\CmsPageReader;
+use App\Shopware\Readers\ProductStreamReader;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Bus;
@@ -31,6 +32,8 @@ class MigrationController extends Controller
             'cms_options' => 'nullable|array',
             'cms_options.migrate_all' => 'nullable|boolean',
             'cms_options.selected_ids' => 'nullable|array',
+            'stream_options' => 'nullable|array',
+            'stream_options.migrate_streams' => 'nullable|boolean',
             'settings' => 'required|array',
             'settings.shopware' => 'required|array',
             'settings.shopware.db_host' => 'required|string',
@@ -62,6 +65,7 @@ class MigrationController extends Controller
             'name' => $validated['name'],
             'settings' => array_merge($validated['settings'], [
                 'cms_options' => $validated['cms_options'] ?? [],
+                'stream_options' => $validated['stream_options'] ?? [],
             ]),
             'is_dry_run' => $validated['is_dry_run'] ?? false,
             'clean_woocommerce' => $validated['clean_woocommerce'] ?? false,
@@ -418,6 +422,39 @@ class MigrationController extends Controller
                     'type' => $p->type,
                     'locked' => (bool) $p->locked,
                 ], $pages),
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage(),
+            ], 400);
+        }
+    }
+
+    public function listProductStreams(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'db_host' => 'required|string',
+            'db_port' => 'required|integer',
+            'db_database' => 'required|string',
+            'db_username' => 'required|string',
+            'db_password' => 'required|string',
+            'language_id' => 'required|string',
+            'live_version_id' => 'required|string',
+            'ssh' => 'nullable|array',
+        ]);
+
+        try {
+            $db = new ShopwareDB($validated);
+            $reader = new ProductStreamReader($db);
+            $streams = $reader->fetchAll();
+
+            return response()->json([
+                'success' => true,
+                'streams' => array_map(fn ($s) => [
+                    'id' => $s->id,
+                    'name' => $s->name,
+                ], $streams),
             ]);
         } catch (\Exception $e) {
             return response()->json([
