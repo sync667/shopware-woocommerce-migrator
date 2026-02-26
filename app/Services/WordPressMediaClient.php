@@ -7,6 +7,8 @@ use Illuminate\Support\Facades\Log;
 
 class WordPressMediaClient
 {
+    use WithCloudflareRetry;
+
     protected Client $client;
 
     protected array $config;
@@ -17,6 +19,7 @@ class WordPressMediaClient
         $baseUrl = rtrim($config['base_url'] ?? '', '/');
 
         $clientConfig = [
+            'handler' => static::makeRetryHandlerStack(),
             'base_uri' => $baseUrl.'/wp-json/wp/v2/',
             'auth' => [
                 $config['wp_username'] ?? '',
@@ -122,9 +125,15 @@ class WordPressMediaClient
     public function upload(string $fileContents, string $filename, string $mimeType, string $title = '', string $altText = ''): ?int
     {
         try {
+            // WordPress uses the Content-Disposition filename for MIME/type detection.
+            // Non-ASCII characters (spaces, Polish letters, etc.) cause wp_check_filetype_and_ext()
+            // to fail with rest_upload_sideload_error, so we sanitize to ASCII-safe chars only.
+            $safeFilename = preg_replace('/[^a-zA-Z0-9._-]/', '_', $filename);
+            $safeFilename = ltrim($safeFilename, '._') ?: 'image.jpg';
+
             $response = $this->client->post('media', [
                 'headers' => [
-                    'Content-Disposition' => "attachment; filename=\"{$filename}\"",
+                    'Content-Disposition' => "attachment; filename=\"{$safeFilename}\"",
                     'Content-Type' => $mimeType,
                 ],
                 'body' => $fileContents,
@@ -158,6 +167,48 @@ class WordPressMediaClient
     }
 
     /**
+     * Get a page of WordPress pages
+     */
+    public function getPages(int $page = 1, int $perPage = 100): array
+    {
+        try {
+            $response = $this->client->get('pages', [
+                'query' => [
+                    'per_page' => $perPage,
+                    'page' => $page,
+                    'status' => 'any',
+                ],
+            ]);
+
+            return json_decode($response->getBody()->getContents(), true) ?? [];
+        } catch (\Exception $e) {
+            Log::error("WordPress pages fetch failed: {$e->getMessage()}");
+
+            return [];
+        }
+    }
+
+    /**
+     * Permanently delete a WordPress page
+     */
+    public function deletePage(int $pageId): void
+    {
+        $this->client->delete("pages/{$pageId}", [
+            'query' => ['force' => true],
+        ]);
+    }
+
+    /**
+     * Permanently delete a WordPress comment (e.g. an orphaned product review)
+     */
+    public function deleteComment(int $commentId): void
+    {
+        $this->client->delete("comments/{$commentId}", [
+            'query' => ['force' => true],
+        ]);
+    }
+
+    /**
      * Get media details by ID
      */
     public function get(int $mediaId): ?array
@@ -173,5 +224,36 @@ class WordPressMediaClient
 
             return null;
         }
+    }
+
+    /**
+     * List a page of media items
+     */
+    public function listMedia(int $page = 1, int $perPage = 100): array
+    {
+        try {
+            $response = $this->client->get('media', [
+                'query' => [
+                    'per_page' => $perPage,
+                    'page' => $page,
+                ],
+            ]);
+
+            return json_decode($response->getBody()->getContents(), true) ?? [];
+        } catch (\Exception $e) {
+            Log::error("WordPress media list failed: {$e->getMessage()}");
+
+            return [];
+        }
+    }
+
+    /**
+     * Permanently delete a WordPress media attachment
+     */
+    public function deleteMedia(int $mediaId): void
+    {
+        $this->client->delete("media/{$mediaId}", [
+            'query' => ['force' => true],
+        ]);
     }
 }

@@ -81,9 +81,10 @@ class MigrateCategoriesJob implements ShouldQueue
 
                 if (! empty($category->media_file_name) && ! empty($category->media_file_extension)) {
                     $imageUrl = $imageMigrator->buildShopwareMediaUrl(
-                        $category->media_path,
+                        $category->media_id,
                         $category->media_file_name,
-                        $category->media_file_extension
+                        $category->media_file_extension,
+                        isset($category->media_uploaded_at) ? (int) $category->media_uploaded_at : null
                     );
                     $wpImageId = $imageMigrator->migrate(
                         $imageUrl,

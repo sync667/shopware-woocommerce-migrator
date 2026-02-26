@@ -100,9 +100,9 @@ class MigrateProductJob implements ShouldQueue
 
             $taxClassSlug = '';
             if (! empty($product->tax_id)) {
-                $taxMap = $stateManager->getMap('tax', $this->migrationId);
+                $taxMap = $stateManager->getTaxClassMap($this->migrationId);
                 if (isset($taxMap[$product->tax_id])) {
-                    $taxClassSlug = (string) $taxMap[$product->tax_id];
+                    $taxClassSlug = $taxMap[$product->tax_id];
                 }
             }
 
@@ -142,7 +142,7 @@ class MigrateProductJob implements ShouldQueue
                 if (empty($m->file_name) || empty($m->file_extension)) {
                     continue;
                 }
-                $imageUrl = $imageMigrator->buildShopwareMediaUrl($m->path, $m->file_name, $m->file_extension);
+                $imageUrl = $imageMigrator->buildShopwareMediaUrl($m->media_id, $m->file_name, $m->file_extension, isset($m->uploaded_at) ? (int) $m->uploaded_at : null);
                 $wpImageId = $imageMigrator->migrate($imageUrl, "{$m->file_name}.{$m->file_extension}", $m->title ?? '', $m->alt ?? '');
                 if ($wpImageId) {
                     $imageIds[] = ['id' => $wpImageId, 'media_id' => $m->media_id];
@@ -154,15 +154,15 @@ class MigrateProductJob implements ShouldQueue
                 $featuredSet = false;
                 foreach ($imageIds as $img) {
                     if ($coverId && $img['media_id'] === $coverId && ! $featuredSet) {
+                        // Cover goes first; WooCommerce treats index-0 as the featured image.
                         $data['images'] = array_merge([['id' => $img['id']]], $data['images'] ?? []);
                         $featuredSet = true;
                     } else {
                         $data['images'][] = ['id' => $img['id']];
                     }
                 }
-                if (! $featuredSet && ! empty($imageIds)) {
-                    array_unshift($data['images'], ['id' => $imageIds[0]['id']]);
-                }
+                // No fallback unshift needed: when no cover match, images are already in
+                // order with the first image at index 0 via the else branch above.
             }
 
             $result = $woo->createOrFind('products', $data, 'sku', $product->sku);
@@ -211,7 +211,7 @@ class MigrateProductJob implements ShouldQueue
             if (! empty($media)) {
                 $m = $media[0];
                 if (! empty($m->file_name) && ! empty($m->file_extension)) {
-                    $imageUrl = $imageMigrator->buildShopwareMediaUrl($m->path, $m->file_name, $m->file_extension);
+                    $imageUrl = $imageMigrator->buildShopwareMediaUrl($m->media_id, $m->file_name, $m->file_extension, isset($m->uploaded_at) ? (int) $m->uploaded_at : null);
                     $wpImageId = $imageMigrator->migrate($imageUrl, "{$m->file_name}.{$m->file_extension}");
                     if ($wpImageId) {
                         $data['image'] = ['id' => $wpImageId];

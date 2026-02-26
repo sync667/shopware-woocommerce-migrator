@@ -57,6 +57,23 @@ class StateManager
             ->toArray();
     }
 
+    /**
+     * Returns a map of shopware_tax_id => wc_tax_class_slug for migrated taxes.
+     * Tax class slugs are strings (e.g. "23-vat", ""), so they are stored in payload
+     * rather than the integer woo_id column.
+     *
+     * @return array<string, string>
+     */
+    public function getTaxClassMap(int $migrationId): array
+    {
+        return MigrationEntity::where('migration_id', $migrationId)
+            ->where('entity_type', 'tax')
+            ->where('status', 'success')
+            ->get(['shopware_id', 'payload'])
+            ->mapWithKeys(fn ($e) => [$e->shopware_id => $e->payload['class_slug'] ?? ''])
+            ->toArray();
+    }
+
     public function markFailed(string $entityType, string $shopwareId, int $migrationId, string $error): void
     {
         MigrationEntity::updateOrCreate(

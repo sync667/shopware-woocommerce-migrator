@@ -14,7 +14,7 @@ class TaxTransformer
         ];
     }
 
-    public function transformRule(object $rule, string $taxClassName): array
+    public function transformRule(object $rule, string $taxClassName, string $classSlug): array
     {
         return [
             'country' => $rule->country_iso,
@@ -24,7 +24,7 @@ class TaxTransformer
             'priority' => 1,
             'compound' => false,
             'shipping' => true,
-            'class' => $taxClassName,
+            'class' => $classSlug,
         ];
     }
 

@@ -68,7 +68,11 @@ class OrderTransformer
         }
 
         if ($customer) {
-            $data['billing']['email'] = $customer->email ?? '';
+            $email = $customer->email ?? '';
+            if (! filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                $email = 'order-'.($order->order_number ?? $order->id).'@migrated.invalid';
+            }
+            $data['billing']['email'] = $email;
             $data['billing']['first_name'] = $data['billing']['first_name'] ?: ($customer->first_name ?? '');
             $data['billing']['last_name'] = $data['billing']['last_name'] ?: ($customer->last_name ?? '');
         }

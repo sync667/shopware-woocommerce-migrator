@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import StepCard from '../../Components/StepCard';
 import ProgressBar from '../../Components/ProgressBar';
+import HelpModal from '../../Components/HelpModal';
+import { guides } from '../../Components/SetupGuides';
 import {
     ArrowLeft,
     Pause,
@@ -14,6 +16,7 @@ import {
     AlertTriangle,
     CheckCircle2,
     XOctagon,
+    HelpCircle,
 } from 'lucide-react';
 
 const ENTITY_TYPES = [
@@ -68,6 +71,7 @@ function StatusBadge({ status }) {
 
 export default function Show({ migrationId }) {
     const [showWarnings, setShowWarnings] = useState(false);
+    const [activeGuide, setActiveGuide] = useState(null);
 
     const { data } = useQuery({
         queryKey: ['migration-status', migrationId],
@@ -299,6 +303,15 @@ export default function Show({ migrationId }) {
                         <h3 className="flex items-center gap-2 font-medium text-red-800">
                             <XOctagon className="h-4 w-4" />
                             Recent Errors (last 10)
+                            {recentErrors.some(e => e.message?.includes('521') || e.message?.includes('522') || e.message?.includes('524')) && (
+                                <button
+                                    onClick={() => setActiveGuide('cloudflare_bypass')}
+                                    className="flex items-center gap-1 rounded bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-700 hover:bg-orange-200"
+                                >
+                                    <HelpCircle className="h-3 w-3" />
+                                    Cloudflare issue?
+                                </button>
+                            )}
                         </h3>
                         <a
                             href={`/migrations/${migrationId}/logs?level=error`}
@@ -364,6 +377,16 @@ export default function Show({ migrationId }) {
                         </div>
                     )}
                 </div>
+            )}
+
+            {activeGuide && guides[activeGuide] && (
+                <HelpModal
+                    isOpen={true}
+                    onClose={() => setActiveGuide(null)}
+                    title={guides[activeGuide].title}
+                >
+                    {guides[activeGuide].content}
+                </HelpModal>
             )}
         </div>
     );

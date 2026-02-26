@@ -107,17 +107,33 @@ class ProductReader
 
     public function fetchVariants(string $parentId): array
     {
+        // Shopware 6 variants inherit NULL fields from the parent product.
+        // All fields marked @Inherited() in ProductDefinition are COALESCED here
+        // so that variants which have not overridden a field get the parent's value.
         return $this->db->select('
             SELECT
                 LOWER(HEX(p.id)) AS id,
                 p.product_number AS sku,
-                p.active,
+                COALESCE(p.active, parent.active) AS active,
                 p.stock,
-                p.is_closeout AS manage_stock,
-                p.weight,
-                p.price,
+                COALESCE(p.available, parent.available) AS available,
+                COALESCE(p.is_closeout, parent.is_closeout) AS manage_stock,
+                COALESCE(p.weight, parent.weight) AS weight,
+                COALESCE(p.width, parent.width) AS width,
+                COALESCE(p.height, parent.height) AS height,
+                COALESCE(p.length, parent.length) AS depth,
+                COALESCE(p.price, parent.price) AS price,
+                COALESCE(p.ean, parent.ean) AS ean,
+                COALESCE(p.manufacturer_number, parent.manufacturer_number) AS manufacturer_number,
+                COALESCE(p.shipping_free, parent.shipping_free) AS shipping_free,
+                COALESCE(p.min_purchase, parent.min_purchase) AS min_purchase,
+                COALESCE(p.max_purchase, parent.max_purchase) AS max_purchase,
+                COALESCE(p.purchase_steps, parent.purchase_steps) AS purchase_steps,
                 LOWER(HEX(p.product_media_id)) AS cover_id
             FROM product p
+            INNER JOIN product parent
+                ON parent.id = p.parent_id
+                AND parent.version_id = p.version_id
             WHERE p.version_id = ?
               AND p.parent_id = UNHEX(?)
             ORDER BY p.product_number ASC
@@ -132,9 +148,9 @@ class ProductReader
                 pm.position,
                 COALESCE(m.file_name, '') AS file_name,
                 COALESCE(m.file_extension, '') AS file_extension,
-                COALESCE(m.path, '') AS path,
                 COALESCE(mt.alt, '') AS alt,
-                COALESCE(mt.title, '') AS title
+                COALESCE(mt.title, '') AS title,
+                FLOOR(UNIX_TIMESTAMP(m.uploaded_at)) AS uploaded_at
             FROM product_media pm
             INNER JOIN media m ON m.id = pm.media_id
             LEFT JOIN media_translation mt

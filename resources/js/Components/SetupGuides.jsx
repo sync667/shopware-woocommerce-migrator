@@ -291,6 +291,85 @@ ssh-copy-id -i ~/.ssh/shopware_migration.pub user@server.com
         ),
     },
 
+    cloudflare_bypass: {
+        title: 'Bypassing Cloudflare During Migration',
+        content: (
+            <div className="space-y-4">
+                <p className="text-sm text-gray-700">
+                    Cloudflare can block or rate-limit the migrator's API requests, causing <code className="bg-gray-100 px-1 py-0.5 rounded">HTTP 521</code> or <code className="bg-gray-100 px-1 py-0.5 rounded">HTTP 429</code> errors.
+                    Use one of the options below to allow the migrator through.
+                </p>
+
+                <div className="rounded-lg bg-green-50 border border-green-200 p-4">
+                    <h4 className="font-medium text-green-900 mb-2">✨ Option 1 — Whitelist Your Server IP (Recommended)</h4>
+                    <p className="text-sm text-green-800 mb-2">Lets the migrator skip all WAF rules and rate limits without affecting other visitors.</p>
+                    <ol className="list-decimal list-inside space-y-2 text-sm text-green-800">
+                        <li>Open <strong>Cloudflare Dashboard</strong> → your domain → <code className="bg-green-100 px-1 py-0.5 rounded">Security → WAF → Custom Rules</code></li>
+                        <li>Click <strong>Create Rule</strong></li>
+                        <li>Set the condition:
+                            <pre className="bg-green-100 p-2 rounded mt-2 text-xs overflow-x-auto">{`Field: IP Source Address
+Operator: equals
+Value: <your-migrator-server-IP>`}</pre>
+                        </li>
+                        <li>Set <strong>Action</strong> to <strong>Skip</strong>, and check:
+                            <ul className="list-disc list-inside ml-4 mt-1 space-y-1 text-xs">
+                                <li>Skip all remaining custom rules</li>
+                                <li>Skip rate limiting rules</li>
+                            </ul>
+                        </li>
+                        <li>Save and deploy — remove the rule after migration completes</li>
+                    </ol>
+                </div>
+
+                <div className="rounded-lg bg-blue-50 p-4">
+                    <h4 className="font-medium text-blue-900 mb-2">Option 2 — IP Access Rules (Allow List)</h4>
+                    <ol className="list-decimal list-inside space-y-2 text-sm text-blue-800">
+                        <li>Go to <code className="bg-blue-100 px-1 py-0.5 rounded">Security → Tools → IP Access Rules</code></li>
+                        <li>Add your migrator server IP with action <strong>Allow</strong> for your domain</li>
+                    </ol>
+                    <p className="text-xs text-blue-700 mt-2">Note: this prevents challenges and blocks but may not bypass rate limiting rules — combine with Option 1 if needed.</p>
+                </div>
+
+                <div className="rounded-lg bg-purple-50 p-4">
+                    <h4 className="font-medium text-purple-900 mb-2">Option 3 — Raise Rate Limit Threshold for <code className="bg-purple-100 px-1 py-0.5 rounded">/wp-json/*</code></h4>
+                    <ol className="list-decimal list-inside space-y-2 text-sm text-purple-800">
+                        <li>Go to <code className="bg-purple-100 px-1 py-0.5 rounded">Security → WAF → Rate Limiting Rules</code></li>
+                        <li>Find the rule that matches <code className="bg-purple-100 px-1 py-0.5 rounded">/wp-json/</code> or your domain</li>
+                        <li>Increase the threshold (e.g. 10 000 requests / 5 minutes) or add an IP exception</li>
+                    </ol>
+                </div>
+
+                <div className="rounded-lg bg-orange-50 p-4">
+                    <h4 className="font-medium text-orange-900 mb-2">Option 4 — Temporarily Disable CF Proxy</h4>
+                    <p className="text-sm text-orange-800 mb-2">Quickest option — bypasses Cloudflare completely for the duration of the migration.</p>
+                    <ol className="list-decimal list-inside space-y-2 text-sm text-orange-800">
+                        <li>Go to <code className="bg-orange-100 px-1 py-0.5 rounded">DNS</code> in Cloudflare Dashboard</li>
+                        <li>Click the <strong>orange cloud</strong> next to your domain's A record to turn it <strong>grey</strong> (DNS only)</li>
+                        <li>Run the full migration</li>
+                        <li>Re-enable the orange cloud when done</li>
+                    </ol>
+                    <p className="text-xs text-orange-700 mt-2">⚠️ This exposes your origin server IP. Only do this if the server has its own firewall.</p>
+                </div>
+
+                <div className="rounded-lg bg-gray-50 p-4">
+                    <h4 className="font-medium text-gray-900 mb-2">Option 5 — Access Origin Directly</h4>
+                    <p className="text-sm text-gray-600 mb-2">If you know the origin server's IP, bypass CF by connecting directly:</p>
+                    <ol className="list-decimal list-inside space-y-2 text-sm text-gray-700">
+                        <li>Set the WooCommerce/WordPress Base URL to <code className="bg-gray-100 px-1 py-0.5 rounded">https://&lt;origin-server-IP&gt;</code></li>
+                        <li>Add a custom header: <code className="bg-gray-100 px-1 py-0.5 rounded">Host: your-domain.com</code></li>
+                    </ol>
+                    <p className="text-xs text-gray-500 mt-2">This requires the origin IP to be reachable from the migrator server.</p>
+                </div>
+
+                <div className="rounded-lg bg-yellow-50 border border-yellow-200 p-4">
+                    <p className="text-sm text-yellow-800">
+                        <strong>What is HTTP 521?</strong> Cloudflare returns 521 when your origin web server refuses the connection — usually because it is overloaded or a firewall rule is blocking Cloudflare's IPs. Whitelisting the migrator IP (Options 1–2) or disabling the proxy (Option 4) resolves this.
+                    </p>
+                </div>
+            </div>
+        ),
+    },
+
     database_connection: {
         title: 'How to Get Database Connection Details',
         content: (

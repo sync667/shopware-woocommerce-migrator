@@ -73,6 +73,12 @@ class MigrateCouponBatchJob implements ShouldQueue
                     if ($promotion->use_individual_codes ?? false) {
                         $codes = $reader->fetchIndividualCodes($promotion->id);
                         foreach ($codes as $codeRow) {
+                            if (empty($codeRow->code)) {
+                                $this->log('warning', 'Skipping individual coupon code: empty code', $promotion->id);
+
+                                continue;
+                            }
+
                             $data = $transformer->transform($promotion, $discounts, $codeRow->code);
 
                             if ($migration->is_dry_run) {
@@ -85,6 +91,13 @@ class MigrateCouponBatchJob implements ShouldQueue
                         }
                     } else {
                         $data = $transformer->transform($promotion, $discounts);
+
+                        if (empty($data['code'])) {
+                            $stateManager->markFailed('coupon', $promotion->id, $this->migrationId, 'Empty coupon code');
+                            $this->log('warning', 'Skipping coupon: empty code', $promotion->id);
+
+                            continue;
+                        }
 
                         if ($migration->is_dry_run) {
                             $stateManager->markSkipped('coupon', $promotion->id, $this->migrationId, $data);

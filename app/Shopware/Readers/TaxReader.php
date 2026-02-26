@@ -28,7 +28,7 @@ class TaxReader
                 tr.tax_rate AS rate,
                 LOWER(HEX(tr.country_id)) AS country_id,
                 COALESCE(c.iso, '') AS country_iso,
-                COALESCE(trt.type_technical_name, '') AS rule_type
+                COALESCE(trt.technical_name, '') AS rule_type
             FROM tax_rule tr
             LEFT JOIN tax_rule_type trt ON trt.id = tr.tax_rule_type_id
             LEFT JOIN country c ON c.id = tr.country_id

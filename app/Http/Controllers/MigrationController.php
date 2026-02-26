@@ -50,6 +50,8 @@ class MigrationController extends Controller
             'settings.shopware.ssh.username' => 'required_with:settings.shopware.ssh|string',
             'settings.shopware.ssh.password' => 'nullable|string',
             'settings.shopware.ssh.key' => 'nullable|string',
+            'settings.shopware.custom_headers' => 'nullable|array',
+            'settings.shopware.custom_headers.*' => 'nullable|string',
             'settings.woocommerce' => 'required|array',
             'settings.woocommerce.base_url' => 'required|string|url|starts_with:https://',
             'settings.woocommerce.consumer_key' => 'required|string',
@@ -80,19 +82,9 @@ class MigrationController extends Controller
 
         // Clean WooCommerce if requested (and not dry run)
         if (($validated['clean_woocommerce'] ?? false) && ! ($validated['is_dry_run'] ?? false)) {
-            $jobs[] = function () use ($migration) {
-                $wooClient = new \App\Services\WooCommerceClient($migration->settings['woocommerce']);
-                $cleanup = new \App\Services\WooCommerceCleanup($wooClient, $migration->id);
-                $results = $cleanup->cleanAll();
-
-                \App\Models\MigrationLog::create([
-                    'migration_id' => $migration->id,
-                    'entity_type' => 'cleanup',
-                    'level' => 'info',
-                    'message' => 'WooCommerce cleanup completed: '.json_encode($results),
-                    'created_at' => now(),
-                ]);
-            };
+            foreach (\App\Services\WooCommerceCleanup::entities() as $entity) {
+                $jobs[] = new \App\Jobs\CleanWooCommerceJob($migration->id, $entity);
+            }
         }
 
         // Products batch dispatches customers batch via then(),
@@ -348,6 +340,8 @@ class MigrationController extends Controller
             'shopware.ssh.username' => 'required_with:shopware.ssh|string',
             'shopware.ssh.password' => 'nullable|string',
             'shopware.ssh.key' => 'nullable|string',
+            'shopware.custom_headers' => 'nullable|array',
+            'shopware.custom_headers.*' => 'nullable|string',
             'woocommerce' => 'nullable|array',
             'woocommerce.base_url' => 'nullable|string',
             'woocommerce.consumer_key' => 'nullable|string',

@@ -20,6 +20,7 @@ export default function Settings() {
         live_version_id: '',
         base_url: '',
         ssh: null,
+        custom_headers: {},
     });
     const [sshEnabled, setSshEnabled] = useState(false);
     const [sshConfig, setSshConfig] = useState({
@@ -173,6 +174,14 @@ export default function Settings() {
                                 setSshEnabled(true);
                                 setSshConfig(settings.shopware.ssh);
                             }
+                            // Pre-populate language selector so it shows without re-testing
+                            if (settings.shopware.language_id) {
+                                setAvailableLanguages([{
+                                    id: settings.shopware.language_id,
+                                    name: 'Previously selected — click "Load Shopware Config" to refresh',
+                                    locale_code: null,
+                                }]);
+                            }
                         }
 
                         if (settings.woocommerce) {
@@ -184,6 +193,10 @@ export default function Settings() {
                             if (settings.wordpress.custom_headers && Object.keys(settings.wordpress.custom_headers).length > 0) {
                                 setCustomHeadersEnabled(true);
                             }
+                        }
+
+                        if (settings.shopware?.custom_headers && Object.keys(settings.shopware.custom_headers).length > 0) {
+                            setCustomHeadersEnabled(true);
                         }
 
                         // Load additional options
@@ -221,6 +234,15 @@ export default function Settings() {
             }
 
             // Filter out empty custom headers
+            if (swConfig.custom_headers) {
+                swConfig.custom_headers = Object.fromEntries(
+                    Object.entries(swConfig.custom_headers).filter(([_, v]) => v && v.trim() !== '')
+                );
+                if (Object.keys(swConfig.custom_headers).length === 0) {
+                    delete swConfig.custom_headers;
+                }
+            }
+
             const wpConfig = { ...wordpress };
             if (wpConfig.custom_headers) {
                 wpConfig.custom_headers = Object.fromEntries(
@@ -394,6 +416,15 @@ export default function Settings() {
             const streamOptions = streamsEnabled ? { migrate_streams: true } : null;
 
             // Filter out empty custom headers
+            if (swConfig.custom_headers) {
+                swConfig.custom_headers = Object.fromEntries(
+                    Object.entries(swConfig.custom_headers).filter(([_, v]) => v && v.trim() !== '')
+                );
+                if (Object.keys(swConfig.custom_headers).length === 0) {
+                    delete swConfig.custom_headers;
+                }
+            }
+
             const wpConfig = { ...wordpress };
             if (wpConfig.custom_headers) {
                 wpConfig.custom_headers = Object.fromEntries(
@@ -530,7 +561,7 @@ export default function Settings() {
                             </div>
                             <p className="mt-1 text-xs text-gray-500">
                                 <AlertCircle className="inline h-3 w-3 mr-1" />
-                                Delete all existing WooCommerce products, categories, customers, orders, coupons, and reviews before migration.
+                                Delete all existing WooCommerce data before migration: products, categories, product attributes &amp; tags, customers, orders, coupons, reviews, tax rates &amp; classes, and shipping zones.
                                 <span className="font-medium text-red-600"> This cannot be undone!</span>
                             </p>
                         </div>
@@ -974,6 +1005,7 @@ export default function Settings() {
                             Custom Headers (Optional)
                         </h2>
                         <span className="rounded bg-blue-100 px-2 py-0.5 text-xs text-blue-700">Zero Trust</span>
+                        <HelpButton guideKey="cloudflare_bypass" />
                     </div>
                     {customHeadersEnabled ? <ChevronUp className="h-5 w-5 text-gray-400" /> : <ChevronDown className="h-5 w-5 text-gray-400" />}
                 </div>
@@ -983,6 +1015,45 @@ export default function Settings() {
                         <p className="text-sm text-gray-600 mb-3">
                             Add custom HTTP headers for Zero Trust services like Cloudflare Access, Azure AD, or other authentication proxies.
                         </p>
+
+                        {/* Shopware Source Headers */}
+                        <div className="p-4 bg-orange-50 rounded-md border border-orange-100">
+                            <h3 className="text-sm font-medium text-gray-900 mb-1">Shopware Source (image downloads)</h3>
+                            <p className="text-xs text-gray-500 mb-3">Used when downloading media/images from your Shopware store</p>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className={labelClass}>CF-Access-Client-Id</label>
+                                    <input
+                                        type="text"
+                                        value={shopware.custom_headers?.['CF-Access-Client-Id'] || ''}
+                                        onChange={(e) => updateShopware('custom_headers', {
+                                            ...shopware.custom_headers,
+                                            'CF-Access-Client-Id': e.target.value
+                                        })}
+                                        className={inputClass}
+                                        placeholder="Shopware Service Token ID"
+                                    />
+                                </div>
+                                <div>
+                                    <label className={labelClass}>CF-Access-Client-Secret</label>
+                                    <input
+                                        type="password"
+                                        value={shopware.custom_headers?.['CF-Access-Client-Secret'] || ''}
+                                        onChange={(e) => updateShopware('custom_headers', {
+                                            ...shopware.custom_headers,
+                                            'CF-Access-Client-Secret': e.target.value
+                                        })}
+                                        className={inputClass}
+                                        placeholder="Shopware Service Token Secret"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* WooCommerce/WordPress Target Headers */}
+                        <div className="p-4 bg-gray-50 rounded-md">
+                            <h3 className="text-sm font-medium text-gray-900 mb-1">WooCommerce / WordPress Target</h3>
+                            <p className="text-xs text-gray-500 mb-3">Used when calling the WordPress REST API and WooCommerce API</p>
 
                         {/* Cloudflare Access */}
                         <div className="p-4 bg-gray-50 rounded-md">
@@ -1064,6 +1135,7 @@ export default function Settings() {
                                 💡 Leave empty if not using Zero Trust authentication. Headers with empty values will be ignored.
                             </p>
                         </div>
+                        </div>{/* end WooCommerce/WordPress Target */}
                     </div>
                 )}
             </div>

@@ -112,7 +112,6 @@ class ProductTransformer
 
         if ($product->ean ?? '') {
             $data['meta_data'][] = ['key' => '_ean', 'value' => $product->ean];
-            $data['meta_data'][] = ['key' => '_global_unique_id', 'value' => $product->ean]; // WC 9.2+ GTIN
         }
 
         if ($product->manufacturer_number ?? '') {
@@ -144,7 +143,6 @@ class ProductTransformer
         }
 
         if (isset($product->mark_as_topseller) && $product->mark_as_topseller) {
-            $data['meta_data'][] = ['key' => '_featured', 'value' => true];
             $data['featured'] = true;
         }
 
@@ -181,12 +179,23 @@ class ProductTransformer
     {
         $prices = $this->parsePrices($variant->price ?? '[]');
 
+        $manageStock = (bool) ($variant->manage_stock ?? false);
+        $stock = (int) ($variant->stock ?? 0);
+        $available = $variant->available ?? true;
+
         $data = [
             'sku' => $variant->sku ?? '',
+            'status' => ($variant->active ?? true) ? 'publish' : 'private',
             'regular_price' => $prices['regular'],
-            'manage_stock' => (bool) ($variant->manage_stock ?? false),
-            'stock_quantity' => (int) ($variant->stock ?? 0),
+            'manage_stock' => $manageStock,
+            'stock_quantity' => $stock,
+            'stock_status' => ($manageStock ? $stock > 0 : (bool) $available) ? 'instock' : 'outofstock',
             'weight' => $this->gramsToKg($variant->weight ?? 0),
+            'dimensions' => [
+                'length' => $this->mmToCm($variant->depth ?? 0),
+                'width' => $this->mmToCm($variant->width ?? 0),
+                'height' => $this->mmToCm($variant->height ?? 0),
+            ],
         ];
 
         if ($prices['sale'] !== null) {
@@ -195,6 +204,36 @@ class ProductTransformer
 
         if (! empty($optionAttributes)) {
             $data['attributes'] = $optionAttributes;
+        }
+
+        $data['meta_data'] = [];
+
+        if ($variant->ean ?? '') {
+            $data['meta_data'][] = ['key' => '_ean', 'value' => $variant->ean];
+        }
+
+        if ($variant->manufacturer_number ?? '') {
+            $data['meta_data'][] = ['key' => '_manufacturer_number', 'value' => $variant->manufacturer_number];
+        }
+
+        if (isset($variant->shipping_free) && $variant->shipping_free) {
+            $data['meta_data'][] = ['key' => '_shipping_free', 'value' => true];
+        }
+
+        if (isset($variant->min_purchase) && $variant->min_purchase > 1) {
+            $data['meta_data'][] = ['key' => '_min_purchase', 'value' => (int) $variant->min_purchase];
+        }
+
+        if (isset($variant->max_purchase) && $variant->max_purchase > 0) {
+            $data['meta_data'][] = ['key' => '_max_purchase', 'value' => (int) $variant->max_purchase];
+        }
+
+        if (isset($variant->purchase_steps) && $variant->purchase_steps > 1) {
+            $data['meta_data'][] = ['key' => '_purchase_steps', 'value' => (int) $variant->purchase_steps];
+        }
+
+        if (empty($data['meta_data'])) {
+            unset($data['meta_data']);
         }
 
         return $data;
@@ -248,7 +287,7 @@ class ProductTransformer
             return ['regular' => '0', 'sale' => null];
         }
 
-        $price = $prices[0] ?? [];
+        $price = reset($prices) ?: [];
         $gross = (float) ($price['gross'] ?? 0);
         $listPrice = isset($price['listPrice']['gross']) ? $price['listPrice']['gross'] : null;
 

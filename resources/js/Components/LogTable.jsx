@@ -1,5 +1,26 @@
 import { useState } from 'react';
 
+function LogMessage({ message }) {
+    const [expanded, setExpanded] = useState(false);
+    const isLong = message && message.length > 120;
+
+    if (!isLong) {
+        return <span>{message}</span>;
+    }
+
+    return (
+        <span>
+            {expanded ? message : message.slice(0, 120) + '…'}
+            <button
+                onClick={() => setExpanded(!expanded)}
+                className="ml-2 text-xs text-blue-500 hover:underline whitespace-nowrap"
+            >
+                {expanded ? 'show less' : 'show more'}
+            </button>
+        </span>
+    );
+}
+
 export default function LogTable({ logs = [], loading = false }) {
     const [filter, setFilter] = useState('');
 
@@ -56,8 +77,8 @@ export default function LogTable({ logs = [], loading = false }) {
                                 <td className="whitespace-nowrap px-3 py-2 text-gray-600">
                                     {log.entity_type || '—'}
                                 </td>
-                                <td className="max-w-md truncate px-3 py-2 text-gray-800">
-                                    {log.message}
+                                <td className="max-w-md px-3 py-2 text-gray-800 break-words">
+                                    <LogMessage message={log.message} />
                                 </td>
                                 <td className="whitespace-nowrap px-3 py-2 text-gray-500">
                                     {log.created_at

@@ -8,6 +8,8 @@ use Illuminate\Support\Facades\Log;
 
 class WooCommerceClient
 {
+    use WithCloudflareRetry;
+
     protected Client $client;
 
     protected array $config;
@@ -28,6 +30,7 @@ class WooCommerceClient
         }
 
         $this->client = new Client([
+            'handler' => static::makeRetryHandlerStack(),
             'base_uri' => $baseUrl.'/wp-json/wc/v3/',
             'auth' => [
                 $config['consumer_key'] ?? '',
@@ -53,30 +56,109 @@ class WooCommerceClient
 
     public function get(string $endpoint, array $query = []): array
     {
-        $response = $this->client->get($endpoint, ['query' => $query]);
+        try {
+            $response = $this->client->get($endpoint, ['query' => $query]);
 
-        return json_decode($response->getBody()->getContents(), true) ?? [];
+            return json_decode($response->getBody()->getContents(), true) ?? [];
+        } catch (\GuzzleHttp\Exception\RequestException $e) {
+            throw $this->withFullBody($e);
+        }
     }
 
-    public function post(string $endpoint, array $data = []): array
+    public function post(string $endpoint, array $data = [], array $query = []): array
     {
-        $response = $this->client->post($endpoint, ['json' => $data]);
+        try {
+            $options = ['json' => $data];
+            if (! empty($query)) {
+                $options['query'] = $query;
+            }
+            $response = $this->client->post($endpoint, $options);
 
-        return json_decode($response->getBody()->getContents(), true) ?? [];
+            return json_decode($response->getBody()->getContents(), true) ?? [];
+        } catch (\GuzzleHttp\Exception\RequestException $e) {
+            throw $this->withFullBody($e);
+        }
+    }
+
+    /**
+     * Batch-delete items by ID using the WooCommerce batch endpoint.
+     * Passes force=true as a query param so it is inherited by each sub-request.
+     *
+     * @param  string[]  $extraQuery  Additional query params (e.g. ['reassign' => '0'])
+     */
+    public function batchDelete(string $endpoint, array $ids, array $extraQuery = []): void
+    {
+        $this->post(
+            "{$endpoint}/batch",
+            ['delete' => $ids],
+            array_merge(['force' => 'true'], $extraQuery)
+        );
     }
 
     public function put(string $endpoint, array $data = []): array
     {
-        $response = $this->client->put($endpoint, ['json' => $data]);
+        try {
+            $response = $this->client->put($endpoint, ['json' => $data]);
 
-        return json_decode($response->getBody()->getContents(), true) ?? [];
+            return json_decode($response->getBody()->getContents(), true) ?? [];
+        } catch (\GuzzleHttp\Exception\RequestException $e) {
+            throw $this->withFullBody($e);
+        }
     }
 
     public function delete(string $endpoint, array $query = []): array
     {
-        $response = $this->client->delete($endpoint, ['query' => $query]);
+        try {
+            $response = $this->client->delete($endpoint, ['query' => $query]);
 
-        return json_decode($response->getBody()->getContents(), true) ?? [];
+            return json_decode($response->getBody()->getContents(), true) ?? [];
+        } catch (\GuzzleHttp\Exception\RequestException $e) {
+            throw $this->withFullBody($e);
+        }
+    }
+
+    /**
+     * Re-throw a Guzzle RequestException with the full response body AND the request body
+     * in the message. Guzzle truncates response bodies to 120 chars by default, and omits
+     * the request body entirely — both make debugging API errors very hard.
+     */
+    protected function withFullBody(\GuzzleHttp\Exception\RequestException $e): \GuzzleHttp\Exception\RequestException
+    {
+        if (! $e->hasResponse()) {
+            return $e;
+        }
+
+        $response = $e->getResponse();
+        $body = (string) $response->getBody();
+        $status = $response->getStatusCode();
+        $method = $e->getRequest()->getMethod();
+        $uri = $e->getRequest()->getUri();
+
+        $message = "HTTP {$status} {$method} {$uri}: {$body}";
+
+        try {
+            $reqStream = $e->getRequest()->getBody();
+            $reqStream->rewind();
+            $requestBody = (string) $reqStream;
+            if ($requestBody !== '') {
+                if (strlen($requestBody) > 2000) {
+                    $requestBody = substr($requestBody, 0, 2000).'... [truncated]';
+                }
+                $message .= "\nRequest: {$requestBody}";
+            }
+        } catch (\Throwable) {
+            // Body unreadable — skip silently
+        }
+
+        $class = get_class($e);
+
+        return new $class(
+            $message,
+            $e->getRequest(),
+            $response,
+            $e,
+            $e->getHandlerContext()
+        );
     }
 
     public function findExisting(string $endpoint, array $query): ?array
