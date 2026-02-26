@@ -296,7 +296,7 @@ ssh-copy-id -i ~/.ssh/shopware_migration.pub user@server.com
         content: (
             <div className="space-y-4">
                 <p className="text-sm text-gray-700">
-                    Cloudflare can block or rate-limit the migrator's API requests, causing <code className="bg-gray-100 px-1 py-0.5 rounded">HTTP 521</code> or <code className="bg-gray-100 px-1 py-0.5 rounded">HTTP 429</code> errors.
+                    Cloudflare can block or rate-limit the migrator&apos;s API requests, causing <code className="bg-gray-100 px-1 py-0.5 rounded">HTTP 521</code> or <code className="bg-gray-100 px-1 py-0.5 rounded">HTTP 429</code> errors.
                     Use one of the options below to allow the migrator through.
                 </p>
 
@@ -344,7 +344,7 @@ Value: <your-migrator-server-IP>`}</pre>
                     <p className="text-sm text-orange-800 mb-2">Quickest option — bypasses Cloudflare completely for the duration of the migration.</p>
                     <ol className="list-decimal list-inside space-y-2 text-sm text-orange-800">
                         <li>Go to <code className="bg-orange-100 px-1 py-0.5 rounded">DNS</code> in Cloudflare Dashboard</li>
-                        <li>Click the <strong>orange cloud</strong> next to your domain's A record to turn it <strong>grey</strong> (DNS only)</li>
+                        <li>Click the <strong>orange cloud</strong> next to your domain&apos;s A record to turn it <strong>grey</strong> (DNS only)</li>
                         <li>Run the full migration</li>
                         <li>Re-enable the orange cloud when done</li>
                     </ol>
@@ -353,7 +353,7 @@ Value: <your-migrator-server-IP>`}</pre>
 
                 <div className="rounded-lg bg-gray-50 p-4">
                     <h4 className="font-medium text-gray-900 mb-2">Option 5 — Access Origin Directly</h4>
-                    <p className="text-sm text-gray-600 mb-2">If you know the origin server's IP, bypass CF by connecting directly:</p>
+                    <p className="text-sm text-gray-600 mb-2">If you know the origin server&apos;s IP, bypass CF by connecting directly:</p>
                     <ol className="list-decimal list-inside space-y-2 text-sm text-gray-700">
                         <li>Set the WooCommerce/WordPress Base URL to <code className="bg-gray-100 px-1 py-0.5 rounded">https://&lt;origin-server-IP&gt;</code></li>
                         <li>Add a custom header: <code className="bg-gray-100 px-1 py-0.5 rounded">Host: your-domain.com</code></li>
@@ -363,7 +363,7 @@ Value: <your-migrator-server-IP>`}</pre>
 
                 <div className="rounded-lg bg-yellow-50 border border-yellow-200 p-4">
                     <p className="text-sm text-yellow-800">
-                        <strong>What is HTTP 521?</strong> Cloudflare returns 521 when your origin web server refuses the connection — usually because it is overloaded or a firewall rule is blocking Cloudflare's IPs. Whitelisting the migrator IP (Options 1–2) or disabling the proxy (Option 4) resolves this.
+                        <strong>What is HTTP 521?</strong> Cloudflare returns 521 when your origin web server refuses the connection — usually because it is overloaded or a firewall rule is blocking Cloudflare&apos;s IPs. Whitelisting the migrator IP (Options 1–2) or disabling the proxy (Option 4) resolves this.
                     </p>
                 </div>
             </div>
