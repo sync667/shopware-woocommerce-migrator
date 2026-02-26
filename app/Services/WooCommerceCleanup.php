@@ -136,9 +136,11 @@ class WooCommerceCleanup
                         $this->log('warning', "Failed to delete review {$review['id']}: {$e->getMessage()}", null, 'cleanup');
                     }
                 }
+
+                $this->log('info', "Cleaning reviews: {$deleted} deleted so far…", null, 'cleanup');
             } while (! empty($reviews) && $deletedThisRound > 0);
 
-            $this->log('info', "Deleted {$deleted} reviews", null, 'cleanup');
+            $this->log('info', "Finished cleaning reviews: {$deleted} deleted", null, 'cleanup');
         } catch (\Exception $e) {
             $this->log('error', "Review cleanup failed: {$e->getMessage()}", null, 'cleanup');
         }
@@ -180,6 +182,7 @@ class WooCommerceCleanup
                 try {
                     $this->woocommerce->batchDelete($endpoint, $ids, $extraQuery);
                     $deleted += count($ids);
+                    $this->log('info', "Cleaning {$logName}: {$deleted} deleted so far…", null, 'cleanup');
                 } catch (\Exception $e) {
                     $failed += count($ids);
                     $this->log('warning', "Batch delete failed for {$logName}: {$e->getMessage()}", null, 'cleanup');
@@ -187,7 +190,7 @@ class WooCommerceCleanup
                 }
             } while (count($items) === 100);
 
-            $this->log('info', "Deleted {$deleted} {$logName}", null, 'cleanup');
+            $this->log('info', "Finished cleaning {$logName}: {$deleted} deleted", null, 'cleanup');
         } catch (\Exception $e) {
             $this->log('error', "{$logName} cleanup failed: {$e->getMessage()}", null, 'cleanup');
         }
@@ -370,33 +373,31 @@ class WooCommerceCleanup
 
         $deleted = 0;
         $failed = 0;
-        $page = 1;
 
         try {
             do {
-                $items = $this->wordpress->listMedia($page);
+                // Always fetch page 1 — after each deletion round the list shifts up.
+                $items = $this->wordpress->listMedia(1, 100);
 
                 if (empty($items)) {
                     break;
                 }
 
-                foreach ($items as $item) {
-                    try {
-                        $this->wordpress->deleteMedia($item['id']);
-                        $deleted++;
-                    } catch (\Exception $e) {
-                        $failed++;
-                        $this->log('warning', "Failed to delete media {$item['id']}: {$e->getMessage()}", null, 'cleanup');
-                    }
+                $ids = array_column($items, 'id');
+                $result = $this->wordpress->batchDeleteMedia($ids);
+                $deleted += $result['deleted'];
+                $failed += $result['failed'];
+
+                if ($result['deleted'] === 0) {
+                    // No progress — batch API failed and fallback also failed; stop to avoid infinite loop.
+                    $this->log('warning', "Media cleanup made no progress this round ({$result['failed']} failed), stopping.", null, 'cleanup');
+                    break;
                 }
 
-                // If we got a full page, there may be more — but since we always
-                // fetch page 1 after each deletion round (items shift), we only
-                // break when an empty page is returned.
-                $page = 1;
+                $this->log('info', "Cleaning media: {$deleted} attachments deleted so far…", null, 'cleanup');
             } while (count($items) === 100);
 
-            $this->log('info', "Deleted {$deleted} media attachments", null, 'cleanup');
+            $this->log('info', "Finished cleaning media: {$deleted} attachments deleted", null, 'cleanup');
         } catch (\Exception $e) {
             $this->log('error', "Media cleanup failed: {$e->getMessage()}", null, 'cleanup');
         }

@@ -96,6 +96,7 @@ export default function Show({ migrationId }) {
     const isRunning = migration.status === 'running';
     const isPaused = migration.status === 'paused';
     const isFinished = migration.status === 'completed' || migration.status === 'failed';
+    const isCleaningUp = isRunning && !currentStep && lastActivity?.entity_type === 'cleanup';
 
     const handlePause = async () => {
         await fetch(`/api/migrations/${migrationId}/pause`, { method: 'POST' });
@@ -134,6 +135,12 @@ export default function Show({ migrationId }) {
                                 <span className="flex items-center gap-1 text-xs text-blue-600">
                                     <Activity className="h-3 w-3 animate-pulse" />
                                     Processing: {currentStep}
+                                </span>
+                            )}
+                            {isCleaningUp && (
+                                <span className="flex items-center gap-1 text-xs text-orange-600">
+                                    <Activity className="h-3 w-3 animate-pulse" />
+                                    {lastActivity.message}
                                 </span>
                             )}
                         </div>

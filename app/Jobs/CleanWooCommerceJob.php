@@ -13,7 +13,7 @@ class CleanWooCommerceJob implements ShouldQueue
 {
     use Queueable;
 
-    public int $timeout = 300;
+    public int $timeout = 7200; // 2 hours — media + product cleanup can take a long time
 
     public function __construct(
         public int $migrationId,

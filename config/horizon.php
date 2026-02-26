@@ -298,7 +298,7 @@ return [
                 'balanceCooldown' => 5,
             ],
             'supervisor-products' => [
-                'maxProcesses' => 5,
+                'maxProcesses' => 10,
             ],
             'supervisor-customers' => [
                 'maxProcesses' => 3,
@@ -316,25 +316,29 @@ return [
 
         'local' => [
             'supervisor-main' => [
-                'maxProcesses' => 1,
+                'maxProcesses' => 10,
+                'balanceMaxShift' => 1,
+                'balanceCooldown' => 3,
             ],
             'supervisor-back' => [
-                'maxProcesses' => 1,
+                'maxProcesses' => 5,
+                'balanceMaxShift' => 1,
+                'balanceCooldown' => 5,
             ],
             'supervisor-products' => [
-                'maxProcesses' => 1,
+                'maxProcesses' => 10,
             ],
             'supervisor-customers' => [
-                'maxProcesses' => 1,
+                'maxProcesses' => 3,
             ],
             'supervisor-orders' => [
-                'maxProcesses' => 1,
+                'maxProcesses' => 3,
             ],
             'supervisor-coupons' => [
-                'maxProcesses' => 1,
+                'maxProcesses' => 2,
             ],
             'supervisor-reviews' => [
-                'maxProcesses' => 1,
+                'maxProcesses' => 2,
             ],
         ],
     ],

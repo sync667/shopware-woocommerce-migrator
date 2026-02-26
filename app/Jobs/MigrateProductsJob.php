@@ -47,7 +47,7 @@ class MigrateProductsJob implements ShouldQueue
         }
 
         $totalCount = count($products);
-        $chunkSize = 50;
+        $chunkSize = 20;
         $productIds = array_map(fn ($p) => $p->id, $products);
         $chunks = array_chunk($productIds, $chunkSize);
         $batchCount = count($chunks);
@@ -56,7 +56,7 @@ class MigrateProductsJob implements ShouldQueue
             'migration_id' => $this->migrationId,
             'entity_type' => 'product',
             'level' => 'info',
-            'message' => "Dispatching {$totalCount} products in {$batchCount} batches of {$chunkSize} (mode: {$mode})",
+            'message' => "Dispatching {$totalCount} products in {$batchCount} batches of up to {$chunkSize} (mode: {$mode})",
             'created_at' => now(),
         ]);
 

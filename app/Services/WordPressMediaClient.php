@@ -256,4 +256,87 @@ class WordPressMediaClient
             'query' => ['force' => true],
         ]);
     }
+
+    /**
+     * Batch-delete media attachments using the WordPress REST batch API (WP 5.6+).
+     * WordPress limits each batch request to 25 sub-requests by default, so the
+     * given IDs are chunked accordingly and multiple batch calls are made.
+     *
+     * @param  int[]  $ids
+     * @return array{deleted: int, failed: int}
+     */
+    /**
+     * Batch-delete media attachments using the WordPress REST batch API (WP 5.6+).
+     * WordPress limits each batch request to 25 sub-requests by default, so the
+     * given IDs are chunked accordingly and multiple batch calls are made.
+     * Falls back to individual DELETE calls if the batch endpoint is unavailable (404).
+     *
+     * @param  int[]  $ids
+     * @return array{deleted: int, failed: int}
+     */
+    public function batchDeleteMedia(array $ids, int $chunkSize = 25): array
+    {
+        $batchUrl = rtrim($this->config['base_url'] ?? '', '/').'/wp-json/batch/v1';
+        $deleted = 0;
+        $failed = 0;
+        $batchSupported = true;
+
+        foreach (array_chunk($ids, $chunkSize) as $chunk) {
+            if (! $batchSupported) {
+                // Batch API unavailable — fall back to individual deletes for remaining chunks
+                foreach ($chunk as $id) {
+                    try {
+                        $this->deleteMedia($id);
+                        $deleted++;
+                    } catch (\Exception $e) {
+                        $failed++;
+                    }
+                }
+
+                continue;
+            }
+
+            $requests = array_map(
+                fn ($id) => ['method' => 'DELETE', 'path' => '/wp/v2/media/'.$id.'?force=true'],
+                $chunk
+            );
+
+            try {
+                $response = $this->client->post($batchUrl, [
+                    'json' => ['validation' => 'normal', 'requests' => $requests],
+                ]);
+
+                $result = json_decode($response->getBody()->getContents(), true);
+                foreach ($result['responses'] ?? [] as $res) {
+                    if (($res['status'] ?? 500) < 300) {
+                        $deleted++;
+                    } else {
+                        $failed++;
+                    }
+                }
+            } catch (\GuzzleHttp\Exception\ClientException $e) {
+                if ($e->getResponse()->getStatusCode() === 404) {
+                    // Batch endpoint not available — switch to individual deletes
+                    $batchSupported = false;
+                    Log::info('WordPress batch API not available, falling back to individual media deletes');
+                    foreach ($chunk as $id) {
+                        try {
+                            $this->deleteMedia($id);
+                            $deleted++;
+                        } catch (\Exception $e2) {
+                            $failed++;
+                        }
+                    }
+                } else {
+                    $failed += count($chunk);
+                    Log::error('WordPress batch media delete failed: '.$e->getMessage());
+                }
+            } catch (\Exception $e) {
+                $failed += count($chunk);
+                Log::error('WordPress batch media delete failed: '.$e->getMessage());
+            }
+        }
+
+        return ['deleted' => $deleted, 'failed' => $failed];
+    }
 }
