@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0](https://github.com/sync667/shopware-woocommerce-migrator/compare/v0.3.0...v0.4.0) (2026-02-26)
+
+
+### Features
+
+* add media path to category reader and update workspace configuration ([f6e890d](https://github.com/sync667/shopware-woocommerce-migrator/commit/f6e890d4ebb57100a3397e58478e5edab887717f))
+* correct linting ([754a92a](https://github.com/sync667/shopware-woocommerce-migrator/commit/754a92afe1e116b1edfde8a748abdf2a02a6947a))
+* enhance tax and product migration with improved handling of media and custom headers ([a0195f6](https://github.com/sync667/shopware-woocommerce-migrator/commit/a0195f6b2ea811fa24f3e6dcd7e322ecf805c22f))
+* increase timeout and process limits for media and product cleanup ([0768e70](https://github.com/sync667/shopware-woocommerce-migrator/commit/0768e70bb2c776a86d12f4325fd51df9895d8e33))
+
 ## [0.3.0](https://github.com/sync667/shopware-woocommerce-migrator/compare/v0.2.0...v0.3.0) (2026-02-25)
 
 
@@ -41,4 +51,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * add cancellation support for migration jobs and enhance supervisor configurations ([07e3f77](https://github.com/sync667/shopware-woocommerce-migrator/commit/07e3f77932cf3ac81edc40ca97661dd8656041d5))
 * implement session management and access token validation for authentication ([7a15bab](https://github.com/sync667/shopware-woocommerce-migrator/commit/7a15bab93ff2524176889deccecbb88d7f177a55))
-
