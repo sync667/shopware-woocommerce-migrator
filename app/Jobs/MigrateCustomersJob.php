@@ -6,6 +6,7 @@ use App\Models\MigrationLog;
 use App\Models\MigrationRun;
 use App\Services\ShopwareDB;
 use App\Services\StateManager;
+use App\Services\WooCommerceClient;
 use App\Shopware\Readers\CustomerReader;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -78,6 +79,21 @@ class MigrateCustomersJob implements ShouldQueue
             self::dispatchRemainingChain($migrationId);
 
             return;
+        }
+
+        // Disable WooCommerce email notifications before creating customers/orders
+        // so historical data imports don't spam customers or admins.
+        if (! $migration->is_dry_run) {
+            try {
+                $woo = WooCommerceClient::fromMigration($migration);
+                $emailBackup = $woo->disableEmails();
+                $migration->update([
+                    'settings' => array_merge($migration->settings ?? [], ['_wc_email_backup' => $emailBackup]),
+                ]);
+                $this->log('info', 'Disabled WooCommerce email notifications for migration');
+            } catch (\Exception $e) {
+                $this->log('warning', 'Could not disable WooCommerce emails: '.$e->getMessage());
+            }
         }
 
         $batchJobs = array_map(

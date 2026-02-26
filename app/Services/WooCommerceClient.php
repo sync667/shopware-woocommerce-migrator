@@ -201,4 +201,59 @@ class WooCommerceClient
             return false;
         }
     }
+
+    /**
+     * Email notification groups that fire during customer/order creation via REST API.
+     * These are suppressed for the duration of a migration to avoid spamming customers
+     * and admins with historical data imports.
+     */
+    private const MIGRATION_EMAIL_GROUPS = [
+        'email_new_order',
+        'email_cancelled_order',
+        'email_failed_order',
+        'email_customer_on_hold_order',
+        'email_customer_processing_order',
+        'email_customer_completed_order',
+        'email_customer_refunded_order',
+        'email_customer_new_account',
+    ];
+
+    /**
+     * Disable WooCommerce email notifications for all migration-relevant event types.
+     * Returns the previous enabled/disabled value for each group so it can be restored later.
+     *
+     * @return array<string, string> group_id → 'yes'|'no'
+     */
+    public function disableEmails(): array
+    {
+        $backup = [];
+
+        foreach (self::MIGRATION_EMAIL_GROUPS as $group) {
+            try {
+                $setting = $this->get("settings/{$group}/enabled");
+                $backup[$group] = $setting['value'] ?? 'yes';
+                $this->put("settings/{$group}/enabled", ['value' => 'no']);
+            } catch (\Exception) {
+                // Setting may not exist (e.g. plugin not installed) — skip silently.
+            }
+        }
+
+        return $backup;
+    }
+
+    /**
+     * Restore WooCommerce email settings from a backup produced by disableEmails().
+     *
+     * @param  array<string, string>  $backup
+     */
+    public function restoreEmails(array $backup): void
+    {
+        foreach ($backup as $group => $value) {
+            try {
+                $this->put("settings/{$group}/enabled", ['value' => $value]);
+            } catch (\Exception) {
+                // Best-effort — if it fails, the admin can re-enable manually.
+            }
+        }
+    }
 }

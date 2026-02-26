@@ -6,6 +6,7 @@ use App\Models\MigrationLog;
 use App\Models\MigrationRun;
 use App\Services\ShopwareDB;
 use App\Services\StateManager;
+use App\Services\WooCommerceClient;
 use App\Shopware\Readers\OrderReader;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -74,8 +75,22 @@ class MigrateOrdersJob implements ShouldQueue
 
         $migrationId = $this->migrationId;
 
+        // If customers job didn't disable emails (e.g. zero customers), do it now.
+        if (! $migration->is_dry_run && empty($migration->setting('_wc_email_backup'))) {
+            try {
+                $woo = WooCommerceClient::fromMigration($migration);
+                $emailBackup = $woo->disableEmails();
+                $migration->update([
+                    'settings' => array_merge($migration->settings ?? [], ['_wc_email_backup' => $emailBackup]),
+                ]);
+                $this->log('info', 'Disabled WooCommerce email notifications for order migration');
+            } catch (\Exception $e) {
+                $this->log('warning', 'Could not disable WooCommerce emails: '.$e->getMessage());
+            }
+        }
+
         if (empty($chunks)) {
-            MigrateCouponsJob::dispatch($migrationId);
+            self::restoreEmailsAndDispatchCoupons($migrationId);
 
             return;
         }
@@ -88,7 +103,7 @@ class MigrateOrdersJob implements ShouldQueue
         Bus::batch($batchJobs)
             ->allowFailures()
             ->then(function () use ($migrationId) {
-                MigrateCouponsJob::dispatch($migrationId);
+                MigrateOrdersJob::restoreEmailsAndDispatchCoupons($migrationId);
             })
             ->catch(function (\Illuminate\Bus\Batch $batch, \Throwable $e) use ($migrationId) {
                 MigrationLog::create([
@@ -101,6 +116,49 @@ class MigrateOrdersJob implements ShouldQueue
             })
             ->onQueue('orders')
             ->dispatch();
+    }
+
+    /**
+     * Restore WooCommerce email settings from the migration backup, clear the backup,
+     * then advance the chain to coupons. Called from both the then() callback and the
+     * empty-chunks early return so emails are always restored regardless of order count.
+     */
+    public static function restoreEmailsAndDispatchCoupons(int $migrationId): void
+    {
+        $migration = MigrationRun::find($migrationId);
+
+        if ($migration) {
+            $emailBackup = $migration->setting('_wc_email_backup', []);
+
+            if (! empty($emailBackup)) {
+                try {
+                    $woo = WooCommerceClient::fromMigration($migration);
+                    $woo->restoreEmails($emailBackup);
+
+                    $settings = $migration->settings ?? [];
+                    unset($settings['_wc_email_backup']);
+                    $migration->update(['settings' => $settings]);
+
+                    MigrationLog::create([
+                        'migration_id' => $migrationId,
+                        'entity_type' => 'order',
+                        'level' => 'info',
+                        'message' => 'Restored WooCommerce email notifications after order migration',
+                        'created_at' => now(),
+                    ]);
+                } catch (\Exception $e) {
+                    MigrationLog::create([
+                        'migration_id' => $migrationId,
+                        'entity_type' => 'order',
+                        'level' => 'warning',
+                        'message' => 'Could not restore WooCommerce email settings: '.$e->getMessage().'. Please re-enable them manually in WooCommerce → Settings → Emails.',
+                        'created_at' => now(),
+                    ]);
+                }
+            }
+        }
+
+        MigrateCouponsJob::dispatch($migrationId);
     }
 
     protected function log(string $level, string $message, ?string $shopwareId = null): void
