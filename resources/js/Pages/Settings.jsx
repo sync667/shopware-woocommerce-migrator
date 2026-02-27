@@ -959,7 +959,7 @@ export default function Settings() {
                             />
                             <p className="mt-1 text-xs text-green-700">✓ Auto-detected from database</p>
                         </div>
-                        {detectedShopwareVersion && (
+                        {detectedShopwareVersion && detectedShopwareVersion !== 'unknown' && (
                             <div>
                                 <label className={labelClass}>Detected Shopware Version</label>
                                 <div className="mt-1 inline-flex items-center rounded-md bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 ring-1 ring-inset ring-blue-600/20">

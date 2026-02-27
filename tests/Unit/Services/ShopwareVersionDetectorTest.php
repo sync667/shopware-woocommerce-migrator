@@ -152,9 +152,8 @@ class ShopwareVersionDetectorTest extends TestCase
     {
         $mock = $this->createMock(ShopwareDB::class);
 
-        $callIndex = 0;
         $mock->method('select')->willReturnCallback(
-            function (string $query, array $bindings) use (&$callIndex, $columnChecks, $tableExists) {
+            function (string $query, array $bindings) use ($columnChecks, $tableExists) {
                 if (str_contains($query, 'information_schema.COLUMNS')) {
                     $table = $bindings[0];
                     $column = $bindings[1];
