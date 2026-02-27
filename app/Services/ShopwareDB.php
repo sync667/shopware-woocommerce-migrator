@@ -51,6 +51,16 @@ class ShopwareDB
                 'collation' => 'utf8mb4_unicode_ci',
             ]);
             $this->connection = new MySqlConnection($pdo, $this->config['db_database'] ?? '');
+
+            // Auto-detect Shopware version if not already known
+            if ($this->shopwareVersion === null) {
+                try {
+                    $detector = new ShopwareVersionDetector($this);
+                    $this->shopwareVersion = $detector->detectMajorVersion();
+                } catch (\Exception $e) {
+                    // Silently continue – version will be null
+                }
+            }
         }
 
         return $this->connection;

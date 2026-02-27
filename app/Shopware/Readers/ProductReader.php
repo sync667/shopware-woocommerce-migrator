@@ -8,8 +8,36 @@ class ProductReader
 {
     public function __construct(protected ShopwareDB $db) {}
 
+    /**
+     * Build a version-aware SQL expression that maps Shopware product type info
+     * to our internal type string.
+     *
+     * - Shopware 6.7+ has a scalar `product.type` column ('physical', 'digital').
+     * - Shopware 6.5/6.6 have a JSON `product.states` column with values like '["is-download"]'.
+     * - `child_count > 0` indicates a product with variants (grouped/variable).
+     */
+    protected function productTypeExpression(): string
+    {
+        if ($this->db->isAtLeast('6.7')) {
+            return "CASE
+                WHEN p.child_count > 0 THEN 'grouped'
+                WHEN p.type = 'digital' THEN 'digital'
+                ELSE 'simple'
+            END";
+        }
+
+        // 6.5/6.6: check JSON states column for is-download
+        return "CASE
+            WHEN p.child_count > 0 THEN 'grouped'
+            WHEN JSON_CONTAINS(p.states, '\"is-download\"') THEN 'digital'
+            ELSE 'simple'
+        END";
+    }
+
     public function fetchAllParents(): array
     {
+        $typeExpr = $this->productTypeExpression();
+
         return $this->db->select("
             SELECT
                 LOWER(HEX(p.id)) AS id,
@@ -23,7 +51,7 @@ class ProductReader
                 p.height,
                 p.length AS depth,
                 p.price,
-                CASE WHEN p.child_count > 0 THEN 'grouped' ELSE 'simple' END AS type,
+                {$typeExpr} AS type,
                 LOWER(HEX(p.tax_id)) AS tax_id,
                 LOWER(HEX(p.product_manufacturer_id)) AS manufacturer_id,
                 LOWER(HEX(p.product_media_id)) AS cover_id,
@@ -55,6 +83,8 @@ class ProductReader
 
     public function fetchOne(string $productId): ?object
     {
+        $typeExpr = $this->productTypeExpression();
+
         $results = $this->db->select("
             SELECT
                 LOWER(HEX(p.id)) AS id,
@@ -68,7 +98,7 @@ class ProductReader
                 p.height,
                 p.length AS depth,
                 p.price,
-                CASE WHEN p.child_count > 0 THEN 'grouped' ELSE 'simple' END AS type,
+                {$typeExpr} AS type,
                 LOWER(HEX(p.tax_id)) AS tax_id,
                 LOWER(HEX(p.product_manufacturer_id)) AS manufacturer_id,
                 LOWER(HEX(p.product_media_id)) AS cover_id,
@@ -292,6 +322,8 @@ class ProductReader
      */
     public function fetchUpdatedSince(\DateTimeInterface $since): array
     {
+        $typeExpr = $this->productTypeExpression();
+
         return $this->db->select("
             SELECT
                 LOWER(HEX(p.id)) AS id,
@@ -305,7 +337,7 @@ class ProductReader
                 p.height,
                 p.length AS depth,
                 p.price,
-                CASE WHEN p.child_count > 0 THEN 'grouped' ELSE 'simple' END AS type,
+                {$typeExpr} AS type,
                 LOWER(HEX(p.tax_id)) AS tax_id,
                 LOWER(HEX(p.product_manufacturer_id)) AS manufacturer_id,
                 LOWER(HEX(p.product_media_id)) AS cover_id,

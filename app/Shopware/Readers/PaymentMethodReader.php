@@ -10,12 +10,17 @@ class PaymentMethodReader
 
     public function fetchAll(): array
     {
+        $technicalNameColumn = $this->db->isAtLeast('6.6')
+            ? 'pm.technical_name,'
+            : 'NULL AS technical_name,';
+
         return $this->db->select("
             SELECT
                 LOWER(HEX(pm.id)) AS id,
                 COALESCE(pmt.name, '') AS name,
                 COALESCE(pmt.description, '') AS description,
                 pm.handler_identifier,
+                {$technicalNameColumn}
                 pm.active,
                 pm.position,
                 pm.after_order_enabled
@@ -30,12 +35,17 @@ class PaymentMethodReader
 
     public function fetchUpdatedSince(\DateTimeInterface $since): array
     {
+        $technicalNameColumn = $this->db->isAtLeast('6.6')
+            ? 'pm.technical_name,'
+            : 'NULL AS technical_name,';
+
         return $this->db->select("
             SELECT
                 LOWER(HEX(pm.id)) AS id,
                 COALESCE(pmt.name, '') AS name,
                 COALESCE(pmt.description, '') AS description,
                 pm.handler_identifier,
+                {$technicalNameColumn}
                 pm.active,
                 pm.position,
                 pm.after_order_enabled,
