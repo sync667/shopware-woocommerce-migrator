@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0](https://github.com/sync667/shopware-woocommerce-migrator/compare/v0.4.0...v0.5.0) (2026-02-27)
+
+
+### Features
+
+* implement WooCommerce email notification management during migration ([343fc0e](https://github.com/sync667/shopware-woocommerce-migrator/commit/343fc0ed93792c961e5898477638d7cd66730d8c))
+* update environment configuration and API documentation for Shopware to WooCommerce migration ([3ded5e7](https://github.com/sync667/shopware-woocommerce-migrator/commit/3ded5e7bece4b052cf251c54b59528d85373134a))
+
 ## [0.4.0](https://github.com/sync667/shopware-woocommerce-migrator/compare/v0.3.0...v0.4.0) (2026-02-26)
 
 
