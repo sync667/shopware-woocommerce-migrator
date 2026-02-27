@@ -57,6 +57,12 @@ class ProductTransformer
             'categories' => array_map(fn ($id) => ['id' => $id], $categoryWooIds),
         ];
 
+        // Mark digital products as virtual (no shipping)
+        $shopwareType = $product->type ?? 'simple';
+        if ($shopwareType === 'digital') {
+            $data['virtual'] = true;
+        }
+
         // Map Shopware visibility to WooCommerce catalog_visibility
         $maxVisibility = (int) ($product->max_visibility ?? 0);
         if ($maxVisibility >= 30) {
@@ -326,6 +332,7 @@ class ProductTransformer
     {
         return match ($shopwareType) {
             'grouped' => 'grouped',
+            'digital' => 'simple', // WooCommerce handles downloads separately via meta
             default => 'simple',
         };
     }

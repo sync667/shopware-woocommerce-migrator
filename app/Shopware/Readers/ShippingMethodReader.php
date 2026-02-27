@@ -10,11 +10,16 @@ class ShippingMethodReader
 
     public function fetchAll(): array
     {
+        $technicalNameColumn = $this->db->isAtLeast('6.6')
+            ? 'sm.technical_name,'
+            : 'NULL AS technical_name,';
+
         return $this->db->select("
             SELECT
                 LOWER(HEX(sm.id)) AS id,
                 COALESCE(smt.name, '') AS name,
                 COALESCE(smt.description, '') AS description,
+                {$technicalNameColumn}
                 sm.active,
                 sm.position,
                 LOWER(HEX(sm.tax_id)) AS tax_id
@@ -44,11 +49,16 @@ class ShippingMethodReader
 
     public function fetchUpdatedSince(\DateTimeInterface $since): array
     {
+        $technicalNameColumn = $this->db->isAtLeast('6.6')
+            ? 'sm.technical_name,'
+            : 'NULL AS technical_name,';
+
         return $this->db->select("
             SELECT
                 LOWER(HEX(sm.id)) AS id,
                 COALESCE(smt.name, '') AS name,
                 COALESCE(smt.description, '') AS description,
+                {$technicalNameColumn}
                 sm.active,
                 sm.position,
                 LOWER(HEX(sm.tax_id)) AS tax_id,

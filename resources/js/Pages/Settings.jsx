@@ -61,6 +61,7 @@ export default function Settings() {
     // Shopware config options
     const [availableLanguages, setAvailableLanguages] = useState([]);
     const [loadingLanguages, setLoadingLanguages] = useState(false);
+    const [detectedShopwareVersion, setDetectedShopwareVersion] = useState(null);
 
     // Database dump upload mode
     const [dbSourceMode, setDbSourceMode] = useState('direct'); // 'direct' or 'dump'
@@ -346,6 +347,9 @@ export default function Settings() {
             if (versionData.success && !shopware.live_version_id) {
                 updateShopware('live_version_id', versionData.live_version_id);
             }
+            if (versionData.shopware_version) {
+                setDetectedShopwareVersion(versionData.shopware_version);
+            }
         } catch (err) {
             alert('Failed to load Shopware configuration: ' + err.message);
             setTestResults((prev) => ({
@@ -433,6 +437,11 @@ export default function Settings() {
                 if (Object.keys(wpConfig.custom_headers).length === 0) {
                     delete wpConfig.custom_headers;
                 }
+            }
+
+            // Include detected Shopware version in settings only when it's a known supported version
+            if (detectedShopwareVersion && detectedShopwareVersion !== 'unknown') {
+                swConfig.shopware_version = detectedShopwareVersion;
             }
 
             const res = await fetch('/api/migrations', {
@@ -950,6 +959,14 @@ export default function Settings() {
                             />
                             <p className="mt-1 text-xs text-green-700">✓ Auto-detected from database</p>
                         </div>
+                        {detectedShopwareVersion && detectedShopwareVersion !== 'unknown' && (
+                            <div>
+                                <label className={labelClass}>Detected Shopware Version</label>
+                                <div className="mt-1 inline-flex items-center rounded-md bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 ring-1 ring-inset ring-blue-600/20">
+                                    Shopware {detectedShopwareVersion}.x
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )}
             </div>

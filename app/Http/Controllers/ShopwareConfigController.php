@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Services\ShopwareDB;
+use App\Services\ShopwareVersionDetector;
 use Illuminate\Http\Request;
 
 class ShopwareConfigController extends Controller
@@ -91,9 +92,16 @@ class ShopwareConfigController extends Controller
 
             $liveVersionId = $result[0]['id'] ?? '0fa91ce3e96a4bc2be4bd9ce752c3425';
 
+            // Also detect the Shopware version
+            $detector = new ShopwareVersionDetector($db);
+            $versionInfo = $detector->detect();
+
             return response()->json([
                 'success' => true,
                 'live_version_id' => $liveVersionId,
+                'shopware_version' => $versionInfo['version'],
+                'shopware_features' => $versionInfo['features'],
+                'shopware_warnings' => $versionInfo['warnings'],
             ]);
         } catch (\Exception $e) {
             // Return default if query fails
@@ -101,6 +109,45 @@ class ShopwareConfigController extends Controller
                 'success' => true,
                 'live_version_id' => '0fa91ce3e96a4bc2be4bd9ce752c3425',
             ]);
+        }
+    }
+
+    /**
+     * Detect the Shopware version from the connected database
+     */
+    public function detectVersion(Request $request)
+    {
+        $validated = $request->validate([
+            'db_host' => 'required|string',
+            'db_port' => 'required|integer',
+            'db_database' => 'required|string',
+            'db_username' => 'required|string',
+            'db_password' => 'required|string',
+            'ssh' => 'nullable|array',
+        ]);
+
+        try {
+            $db = new ShopwareDB([
+                'db_host' => $validated['db_host'],
+                'db_port' => $validated['db_port'],
+                'db_database' => $validated['db_database'],
+                'db_username' => $validated['db_username'],
+                'db_password' => $validated['db_password'],
+                'ssh' => $validated['ssh'] ?? null,
+            ]);
+
+            $detector = new ShopwareVersionDetector($db);
+            $versionInfo = $detector->detect();
+
+            return response()->json([
+                'success' => true,
+                ...$versionInfo,
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage(),
+            ], 400);
         }
     }
 }
