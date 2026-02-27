@@ -29,7 +29,7 @@ class ProductReader
         // 6.5/6.6: check JSON states column for is-download
         return "CASE
             WHEN p.child_count > 0 THEN 'grouped'
-            WHEN JSON_CONTAINS(p.states, '\"is-download\"') THEN 'digital'
+            WHEN JSON_CONTAINS(p.states, JSON_QUOTE('is-download')) THEN 'digital'
             ELSE 'simple'
         END";
     }

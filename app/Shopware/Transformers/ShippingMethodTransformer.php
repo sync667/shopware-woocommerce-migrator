@@ -18,13 +18,13 @@ class ShippingMethodTransformer
                 'cost' => $defaultPrice,
                 'tax_status' => $shippingMethod->tax_id ? 'taxable' : 'none',
             ],
-            'meta_data' => array_filter([
+            'meta_data' => array_values(array_filter([
                 ['key' => '_shopware_id', 'value' => $shippingMethod->id ?? ''],
                 $technicalName ? ['key' => '_shopware_technical_name', 'value' => $technicalName] : null,
                 ['key' => '_shopware_position', 'value' => $shippingMethod->position ?? 0],
                 ['key' => '_shopware_tax_id', 'value' => $shippingMethod->tax_id ?? ''],
                 ['key' => '_shopware_prices', 'value' => json_encode($prices)],
-            ]),
+            ])),
         ];
     }
 

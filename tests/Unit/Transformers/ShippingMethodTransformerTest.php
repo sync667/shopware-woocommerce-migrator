@@ -81,6 +81,9 @@ class ShippingMethodTransformerTest extends TestCase
         // technical_name should NOT be in meta_data when null
         $metaKeys = array_column($result['meta_data'], 'key');
         $this->assertNotContains('_shopware_technical_name', $metaKeys);
+
+        // meta_data must be a sequential array so it JSON-encodes as an array
+        $this->assertTrue(array_is_list($result['meta_data']));
     }
 
     public function test_transforms_with_prices(): void

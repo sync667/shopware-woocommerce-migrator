@@ -111,7 +111,11 @@ class ShopwareDB
      */
     public function isAtLeast(string $minVersion): bool
     {
-        if ($this->shopwareVersion === null) {
+        if ($this->shopwareVersion === null || $this->shopwareVersion === 'unknown') {
+            return false;
+        }
+
+        if (! preg_match('/^\d+\.\d+(\.\d+)*$/', $this->shopwareVersion)) {
             return false;
         }
 

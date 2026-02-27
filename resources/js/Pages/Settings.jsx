@@ -439,8 +439,8 @@ export default function Settings() {
                 }
             }
 
-            // Include detected Shopware version in settings
-            if (detectedShopwareVersion) {
+            // Include detected Shopware version in settings only when it's a known supported version
+            if (detectedShopwareVersion && detectedShopwareVersion !== 'unknown') {
                 swConfig.shopware_version = detectedShopwareVersion;
             }
 

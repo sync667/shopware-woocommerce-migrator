@@ -21,13 +21,13 @@ class PaymentMethodTransformer
             'settings' => [
                 'enabled' => (bool) ($paymentMethod->active ?? false),
             ],
-            'meta_data' => array_filter([
+            'meta_data' => array_values(array_filter([
                 ['key' => '_shopware_id', 'value' => $paymentMethod->id ?? ''],
                 ['key' => '_shopware_handler', 'value' => $paymentMethod->handler_identifier ?? ''],
                 $technicalName ? ['key' => '_shopware_technical_name', 'value' => $technicalName] : null,
                 ['key' => '_shopware_position', 'value' => $paymentMethod->position ?? 0],
                 ['key' => '_after_order_enabled', 'value' => (bool) ($paymentMethod->after_order_enabled ?? false)],
-            ]),
+            ])),
         ];
     }
 

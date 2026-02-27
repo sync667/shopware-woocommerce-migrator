@@ -18,6 +18,27 @@ A Laravel 12 web application with an Inertia.js + React dashboard that migrates 
 - **SSH tunnel support:** Connect to a Shopware database through an SSH jump host
 - **Product streams:** Migrates Shopware dynamic product groups as WooCommerce product categories
 - **CMS pages:** Selective or full migration of Shopware CMS pages
+- **Multi-version Shopware support:** Auto-detects and supports Shopware 6.5, 6.6, and 6.7+
+
+## Shopware Version Compatibility
+
+The tool auto-detects the connected Shopware version by inspecting the database schema and adapts its queries accordingly:
+
+| Shopware Version | Status | Detection Method |
+|-----------------|--------|-----------------|
+| **6.5.x** | ✅ Supported | Baseline — `product` table exists |
+| **6.6.x** | ✅ Supported | `payment_method.technical_name` column exists |
+| **6.7.x** | ✅ Supported | `product.type` column exists |
+
+### Version-Specific Behavior
+
+| Feature | 6.5 | 6.6+ | 6.7+ |
+|---------|-----|------|------|
+| Digital product detection | `product.states` JSON (`is-download`) | `product.states` JSON (`is-download`) | `product.type = 'digital'` |
+| Payment method identification | `handler_identifier` only | `handler_identifier` + `technical_name` | `handler_identifier` + `technical_name` |
+| Shipping method identification | Name only | Name + `technical_name` | Name + `technical_name` |
+
+Version detection happens automatically on first database connection. The detected version is displayed as a badge in the settings UI and stored with the migration settings. Use `ShopwareDB::isAtLeast('6.6')` in code for version-conditional logic.
 
 ## Tech Stack
 

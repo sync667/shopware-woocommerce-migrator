@@ -49,6 +49,7 @@ class ProductReaderVersionTest extends TestCase
         // On 6.5/6.6, should use JSON_CONTAINS for is-download
         $this->assertStringContainsString('JSON_CONTAINS', $result);
         $this->assertStringContainsString('is-download', $result);
+        $this->assertStringContainsString('JSON_QUOTE', $result);
         $this->assertStringNotContainsString("p.type = 'digital'", $result);
     }
 

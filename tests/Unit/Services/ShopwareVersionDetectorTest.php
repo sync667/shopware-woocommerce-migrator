@@ -143,6 +143,15 @@ class ShopwareVersionDetectorTest extends TestCase
         $dbNull = new ShopwareDB([]);
         $this->assertNull($dbNull->shopwareVersion());
         $this->assertFalse($dbNull->isAtLeast('6.5'));
+
+        // 'unknown' version should return false for all comparisons
+        $dbUnknown = new ShopwareDB(['shopware_version' => 'unknown']);
+        $this->assertFalse($dbUnknown->isAtLeast('6.5'));
+        $this->assertFalse($dbUnknown->isAtLeast('6.6'));
+
+        // Non-numeric version strings should return false
+        $dbBadVersion = new ShopwareDB(['shopware_version' => 'invalid']);
+        $this->assertFalse($dbBadVersion->isAtLeast('6.5'));
     }
 
     /**

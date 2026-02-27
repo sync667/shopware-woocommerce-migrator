@@ -86,6 +86,9 @@ class PaymentMethodTransformerTest extends TestCase
         // technical_name should NOT be in meta_data when null
         $metaKeys = array_column($result['meta_data'], 'key');
         $this->assertNotContains('_shopware_technical_name', $metaKeys);
+
+        // meta_data must remain a sequential numeric array so it JSON-encodes as a list
+        $this->assertTrue(array_is_list($result['meta_data']));
     }
 
     public function test_handler_identifier_fallback_when_technical_name_not_matching(): void
