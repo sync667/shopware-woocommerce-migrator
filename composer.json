@@ -1,12 +1,12 @@
 {
-    "name": "laravel/laravel",
+    "name": "sync667/shopware-woocommerce-migrator",
     "type": "project",
-    "description": "The skeleton application for the Laravel framework.",
-    "keywords": ["laravel", "framework"],
+    "description": "A Laravel web application that migrates data from a Shopware 6 MySQL database to a WooCommerce store via REST API.",
+    "keywords": ["shopware", "woocommerce", "migration", "laravel", "php", "ecommerce"],
     "license": "MIT",
-    "version": "0.1.0",
+    "version": "0.4.0",
     "require": {
-        "php": "^8.3",
+        "php": "^8.4",
         "guzzlehttp/guzzle": "^7.2",
         "inertiajs/inertia-laravel": "^2.0",
         "laravel/framework": "^v12.45.1",

@@ -210,13 +210,25 @@ app/
 │   ├── DashboardController.php                   # Inertia pages
 │   ├── MigrationController.php                   # Migration API
 │   └── LogController.php                         # Log endpoints
-├── Jobs/                                         # Async migration jobs
+├── Jobs/                                         # Async migration jobs (one per entity type)
 ├── Models/                                       # MigrationRun, MigrationEntity, MigrationLog
 ├── Services/                                     # ShopwareDB, WooCommerceClient, StateManager, etc.
 └── Shopware/
-    ├── Readers/                                  # Shopware DB query classes
-    └── Transformers/                             # Data transformation (no I/O)
+    ├── Readers/                                  # Pure DB query classes — no transformation
+    └── Transformers/                             # Pure data mapping — no I/O
 ```
+
+**Data flow per entity:**
+
+```
+MigrateXxxJob (queue)
+  → Reader::fetchXxx()          reads raw rows from Shopware MySQL
+  → Transformer::transform()    maps Shopware fields to WooCommerce shape
+  → WooCommerceClient::post()   writes to WooCommerce REST API
+  → StateManager::set()         records shopware_id → woo_id mapping
+```
+
+**Readers** are stateless query objects that translate Shopware's UUID-heavy schema (binary IDs, inherited fields, JSON columns) into plain PHP objects. **Transformers** are pure functions with no database or HTTP calls — easy to unit test in isolation. **Jobs** orchestrate the two and handle retries, dry-run mode, and progress logging.
 
 ## Finding Shopware IDs
 
@@ -232,16 +244,85 @@ SELECT LOWER(HEX(id)) FROM version WHERE name = 'Live';
 
 ## API Endpoints
 
+All endpoints require session authentication (cookie from the login page). JSON request/response.
+
+**Migrations**
+
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/api/migrations` | Start a new migration |
-| GET | `/api/migrations/{id}/status` | Poll migration progress |
-| GET | `/api/migrations/{id}/logs` | Paginated logs (filterable) |
-| POST | `/api/migrations/{id}/pause` | Pause migration |
-| POST | `/api/migrations/{id}/resume` | Resume migration |
-| POST | `/api/migrations/{id}/cancel` | Cancel migration |
+| POST | `/api/migrations` | Create and start a new migration |
+| GET | `/api/migrations/{id}/status` | Poll progress, counts, ETA, current step |
+| GET | `/api/migrations/{id}/logs` | Paginated logs (`?level=error&page=1`) |
+| POST | `/api/migrations/{id}/pause` | Pause a running migration |
+| POST | `/api/migrations/{id}/resume` | Resume a paused migration |
+| POST | `/api/migrations/{id}/cancel` | Cancel a running migration |
+
+**Connection testing**
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
 | POST | `/api/shopware/ping` | Test Shopware DB connection |
 | POST | `/api/woocommerce/ping` | Test WooCommerce API connection |
+| POST | `/api/test-connections` | Test all connections at once |
+| POST | `/api/shopware/languages` | List available Shopware languages |
+| POST | `/api/shopware/live-version` | Get the Shopware Live version ID |
+
+**Setup helpers**
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/cms-pages/list` | List Shopware CMS pages for selection |
+| POST | `/api/product-streams/list` | List Shopware product streams |
+| POST | `/api/dump/upload` | Upload a Shopware MySQL dump file |
+| POST | `/api/dump/validate` | Validate an uploaded dump |
+| POST | `/api/dump/status` | Check dump import status |
+| POST | `/api/dump/cleanup` | Remove uploaded dump files |
+
+## Troubleshooting
+
+**Images return `text/html` / Cloudflare Access blocking downloads**
+
+If the Shopware store is behind Cloudflare Access (Zero Trust), the migrator's image downloader receives an HTML sign-in page instead of the image. Add your Cloudflare service token headers under **Settings → Shopware Custom Headers**:
+
+```
+CF-Access-Client-Id: your-client-id.access
+CF-Access-Client-Secret: your-client-secret
+```
+
+**Orders trigger customer/admin email notifications during migration**
+
+The migrator automatically disables WooCommerce email notifications before migrating customers and orders, and re-enables them afterwards. If the process is interrupted mid-migration, emails may remain disabled — re-enable them in **WooCommerce → Settings → Emails**.
+
+**Migration is stuck / queue workers are idle**
+
+Check that Horizon (or a manual queue worker) is running:
+
+```bash
+php artisan horizon:status
+php artisan queue:work redis --queue=products,orders,customers,default
+```
+
+Inspect failed jobs in the Horizon dashboard or with `php artisan queue:failed`.
+
+**Shopware language / version IDs are unknown**
+
+Run these queries directly on the Shopware MySQL database:
+
+```sql
+-- Available languages
+SELECT LOWER(HEX(id)) AS id, name FROM language;
+
+-- Live version ID
+SELECT LOWER(HEX(id)) AS id, name FROM version WHERE name = 'Live';
+```
+
+**Cleanup is slow / shows 0 progress for a long time**
+
+Media deletion uses the WordPress REST Batch API (WP 5.6+) in chunks of 25. If the batch endpoint is unavailable, it falls back to individual deletes — which is slower but still correct. Progress updates appear after every 100 items.
+
+**`php artisan shopware:migrate` command not found**
+
+Run `php artisan list | grep shopware` to verify the command is registered. If not, run `php artisan package:discover` then retry.
 
 ## Contributing
 
