@@ -14,9 +14,12 @@ class ShopwareDB
 
     protected ?SSHTunnel $sshTunnel = null;
 
+    protected ?string $shopwareVersion = null;
+
     public function __construct(array $config)
     {
         $this->config = $config;
+        $this->shopwareVersion = $config['shopware_version'] ?? null;
     }
 
     public static function fromMigration(\App\Models\MigrationRun $migration): static
@@ -81,6 +84,28 @@ class ShopwareDB
     public function baseUrl(): string
     {
         return rtrim($this->config['base_url'] ?? '', '/');
+    }
+
+    /**
+     * Get the detected Shopware major version line (e.g. '6.5', '6.6', '6.7').
+     * Returns null if not yet detected.
+     */
+    public function shopwareVersion(): ?string
+    {
+        return $this->shopwareVersion;
+    }
+
+    /**
+     * Check if the Shopware version is at least the given version.
+     * Example: isAtLeast('6.6') returns true for 6.6 and 6.7.
+     */
+    public function isAtLeast(string $minVersion): bool
+    {
+        if ($this->shopwareVersion === null) {
+            return false;
+        }
+
+        return version_compare($this->shopwareVersion, $minVersion, '>=');
     }
 
     public function ping(): bool
