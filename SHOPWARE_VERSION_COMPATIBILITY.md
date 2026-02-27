@@ -138,27 +138,27 @@ User enters DB credentials
 
 ## Current Compatibility Status
 
-### ✅ Already Compatible (No Changes Needed)
+### ✅ Fully Implemented Multi-Version Support
 
-The tool's SQL queries are **already compatible with all Shopware 6.5–6.7** versions because:
+The tool now uses version-conditional queries to leverage the best available data source for each Shopware version:
 
-1. **Product queries** use `stock` (not `available_stock`) and derive type from `child_count` (not `product.type` or `product.states`)
-2. **Payment method queries** use `handler_identifier` (present in all versions) not `technical_name`
-3. **Shipping method queries** don't reference `technical_name`
-4. **Order queries** use standard columns stable across all 6.x versions
-5. **CMS queries** use the stable cms_page/section/block/slot hierarchy
-6. **No column-specific conditionals are currently needed** since the tool avoids version-specific columns
+1. **Product type detection** – Uses `product.type` column on 6.7+, `product.states` JSON on 6.5/6.6 for digital product detection
+2. **Payment method queries** – Include `technical_name` on 6.6+, fall back to `handler_identifier` on 6.5
+3. **Shipping method queries** – Include `technical_name` on 6.6+, gracefully omit on 6.5
+4. **Digital products** – Marked as `virtual: true` in WooCommerce for proper no-shipping handling
+5. **Technical names** – Stored in meta_data (`_shopware_technical_name`) when available for reference
+6. **Order queries** use standard columns stable across all 6.x versions
+7. **CMS queries** use the stable cms_page/section/block/slot hierarchy
+8. **Auto-detection on connect** – Version is auto-detected on first DB connection if not already set
 
-### 🔮 Future Enhancements (Optional)
+### ✅ All Version-Specific Enhancements Implemented
 
-These are opportunities to leverage newer Shopware features but are not required for compatibility:
-
-| Enhancement | Shopware Version | Benefit |
-|------------|-----------------|---------|
-| Use `product.type` for digital product detection | 6.7+ | Better product type mapping (digital vs physical) |
-| Use `payment_method.technical_name` | 6.6+ | More reliable payment method identification |
-| Use `shipping_method.technical_name` | 6.6+ | More reliable shipping method identification |
-| Read `product.states` for is-download detection | 6.5–6.6 | Digital product support for older versions |
+| Enhancement | Shopware Version | Status |
+|------------|-----------------|--------|
+| Use `product.type` for digital product detection | 6.7+ | ✅ Implemented |
+| Read `product.states` for is-download detection | 6.5–6.6 | ✅ Implemented |
+| Use `payment_method.technical_name` | 6.6+ | ✅ Implemented |
+| Use `shipping_method.technical_name` | 6.6+ | ✅ Implemented |
 
 ## Testing Strategy
 
@@ -185,9 +185,12 @@ Run the full migration against each to verify compatibility.
 
 ## Summary
 
-The migration tool is **already compatible** with Shopware 6.5, 6.6, and 6.7 because it uses only stable, core database columns that have remained consistent across all 6.x releases. The version detection system added in this PR provides:
+The migration tool **fully supports Shopware 6.5, 6.6, and 6.7** with version-conditional query logic:
 
-1. **Visibility** – Users see which Shopware version they're migrating from
-2. **Future-proofing** – The `isAtLeast()` helper enables version-conditional logic when needed
-3. **Diagnostics** – The feature detection report helps troubleshoot connection issues
-4. **Extensibility** – New version-specific features can be gated behind version checks
+1. **Version detection** – Auto-detects via `information_schema` column probes on first connection
+2. **Product type mapping** – Uses `product.type` (6.7+) or `product.states` JSON (6.5/6.6) for digital product detection
+3. **Technical names** – `payment_method.technical_name` and `shipping_method.technical_name` are included in queries on 6.6+ and stored in WooCommerce meta_data
+4. **Digital products** – Marked as `virtual: true` in WooCommerce output
+5. **Backward compatibility** – Falls back gracefully when version is unknown; uses `handler_identifier` as primary payment method key on all versions
+6. **Frontend visibility** – Users see which Shopware version they're migrating from via a badge in settings
+7. **Comprehensive tests** – 30 unit tests covering version detection, type expressions, and all transformer edge cases

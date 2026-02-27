@@ -203,4 +203,55 @@ class ProductTransformerTest extends TestCase
 
         $this->assertEquals('grouped', $result['type']);
     }
+
+    public function test_maps_digital_product_type(): void
+    {
+        $product = (object) [
+            'name' => 'Digital Product',
+            'sku' => 'DIG-001',
+            'active' => true,
+            'description' => '',
+            'stock' => 0,
+            'manage_stock' => false,
+            'weight' => 0,
+            'width' => 0,
+            'height' => 0,
+            'depth' => 0,
+            'price' => json_encode([['gross' => 9.99, 'net' => 8.40, 'linked' => true]]),
+            'type' => 'digital',
+            'meta_title' => '',
+            'meta_description' => '',
+        ];
+
+        $result = $this->transformer->transform($product);
+
+        // Digital products become 'simple' in WooCommerce but are marked virtual
+        $this->assertEquals('simple', $result['type']);
+        $this->assertTrue($result['virtual']);
+    }
+
+    public function test_physical_product_not_marked_virtual(): void
+    {
+        $product = (object) [
+            'name' => 'Physical Product',
+            'sku' => 'PHYS-001',
+            'active' => true,
+            'description' => '',
+            'stock' => 5,
+            'manage_stock' => true,
+            'weight' => 1000,
+            'width' => 100,
+            'height' => 50,
+            'depth' => 200,
+            'price' => json_encode([['gross' => 49.99, 'net' => 42.01, 'linked' => true]]),
+            'type' => 'simple',
+            'meta_title' => '',
+            'meta_description' => '',
+        ];
+
+        $result = $this->transformer->transform($product);
+
+        $this->assertEquals('simple', $result['type']);
+        $this->assertArrayNotHasKey('virtual', $result);
+    }
 }
