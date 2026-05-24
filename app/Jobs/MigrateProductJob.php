@@ -172,7 +172,9 @@ class MigrateProductJob implements ShouldQueue
                 throw new \RuntimeException('Failed to create product in WooCommerce');
             }
 
-            $stateManager->set('product', $product->id, $wooProductId, $this->migrationId);
+            $stateManager->set('product', $product->id, $wooProductId, $this->migrationId, [
+                'slug' => $result['slug'] ?? null,
+            ]);
             $this->log('info', "Migrated product '{$data['name']}' → WC #{$wooProductId}");
 
             foreach ($variants as $variant) {

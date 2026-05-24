@@ -21,9 +21,8 @@ class SeoUrlReader
             FROM seo_url su
             WHERE su.route_name = 'frontend.detail.page'
               AND su.is_deleted = 0
-              AND su.is_canonical = 1
               AND su.language_id = ?
-            ORDER BY su.seo_path_info ASC
+            ORDER BY su.is_canonical DESC, su.seo_path_info ASC
         ", [$this->db->languageIdBin()]);
     }
 
@@ -40,9 +39,8 @@ class SeoUrlReader
             FROM seo_url su
             WHERE su.route_name = 'frontend.navigation.page'
               AND su.is_deleted = 0
-              AND su.is_canonical = 1
               AND su.language_id = ?
-            ORDER BY su.seo_path_info ASC
+            ORDER BY su.is_canonical DESC, su.seo_path_info ASC
         ", [$this->db->languageIdBin()]);
     }
 
@@ -77,9 +75,8 @@ class SeoUrlReader
             FROM seo_url su
             WHERE su.route_name LIKE 'frontend.cms.page%'
               AND su.is_deleted = 0
-              AND su.is_canonical = 1
               AND su.language_id = ?
-            ORDER BY su.seo_path_info ASC
+            ORDER BY su.is_canonical DESC, su.seo_path_info ASC
         ", [$this->db->languageIdBin()]);
     }
 

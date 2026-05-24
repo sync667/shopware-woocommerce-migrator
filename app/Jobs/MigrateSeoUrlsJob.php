@@ -4,6 +4,8 @@ namespace App\Jobs;
 
 use App\Models\MigrationLog;
 use App\Models\MigrationRun;
+use App\Services\CancellationService;
+use App\Services\RedirectionClient;
 use App\Services\ShopwareDB;
 use App\Services\StateManager;
 use App\Shopware\Readers\SeoUrlReader;
@@ -13,6 +15,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Throwable;
 
 class MigrateSeoUrlsJob implements ShouldQueue
 {
@@ -22,134 +25,249 @@ class MigrateSeoUrlsJob implements ShouldQueue
 
     public int $backoff = 5;
 
-    public int $timeout = 3600; // 1 hour timeout for large migrations
+    public int $timeout = 3600;
 
     public function __construct(protected int $migrationId) {}
 
-    public function handle(StateManager $stateManager): void
+    public function handle(StateManager $stateManager, CancellationService $cancellation): void
     {
         $migration = MigrationRun::findOrFail($this->migrationId);
-        $db = ShopwareDB::fromMigration($migration);
-        $reader = new SeoUrlReader($db);
-        $transformer = new SeoUrlTransformer;
 
-        // Delta migration: fetch updated SEO URLs
-        if ($migration->sync_mode === 'delta' && $migration->last_sync_at) {
-            $seoUrls = $reader->fetchUpdatedSince($migration->last_sync_at);
-            $this->processSeoUrls($seoUrls, $migration, $stateManager, $transformer);
-            $db->disconnect();
+        $reader = $this->makeReader($migration);
+        $transformer = $this->makeTransformer();
+        $client = $this->makeClient($migration);
 
-            return;
+        $groupName = (string) config('migration.redirection.group_name', 'Shopware Migration');
+        $defaultCode = (int) config('migration.redirection.default_code', 301);
+        $apiEnabled = (bool) config('migration.redirection.enabled', true);
+
+        $csv = $this->openCsv();
+
+        $usingApi = false;
+        $groupId = null;
+        $existingSources = [];
+        if ($apiEnabled) {
+            if ($client->isAvailable()) {
+                $usingApi = true;
+                $groupId = $client->ensureGroup($groupName);
+                $existingSources = array_fill_keys($client->loadExistingSources($groupId), true);
+            } else {
+                $this->log('warning', 'Redirection plugin not reachable; running in file-only mode');
+            }
         }
 
-        // Full migration: process by type
-        // Migrate product SEO URLs
-        $productSeoUrls = $reader->fetchAllForProducts();
-        foreach ($productSeoUrls as $seoUrl) {
-            if (app(\App\Services\CancellationService::class)->isCancelled($this->migrationId)) {
-                return;
-            }
+        $createdSources = [];
 
-            if ($stateManager->alreadyMigrated('seo_url', $seoUrl->id, $this->migrationId)) {
-                continue;
-            }
+        $streams = [
+            ['product', fn () => $reader->fetchAllForProducts()],
+            ['category', fn () => $reader->fetchAllForCategories()],
+            ['cms_page', fn () => $reader->fetchAllForCmsPages()],
+        ];
 
-            try {
-                // Get the new WooCommerce product URL from state
-                $productWooId = $stateManager->get('product', $seoUrl->foreign_key, $this->migrationId);
-                $newUrl = $productWooId ? "/product/{$productWooId}" : null;
+        try {
+            foreach ($streams as [$entityType, $fetcher]) {
+                $rows = $fetcher();
 
-                $data = $transformer->transform($seoUrl, $newUrl);
+                foreach ($rows as $row) {
+                    if ($cancellation->isCancelled($this->migrationId)) {
+                        return;
+                    }
 
-                if ($migration->is_dry_run) {
-                    $stateManager->markSkipped('seo_url', $seoUrl->id, $this->migrationId, $data);
-                    $this->log('info', "Dry run: SEO URL '{$data['old_url']}' → '{$data['new_url']}'", $seoUrl->id, 'seo_url');
+                    if ($stateManager->alreadyMigrated('seo_url', $row->id, $this->migrationId)) {
+                        continue;
+                    }
 
-                    continue;
+                    $entity = $stateManager->getEntity($entityType, $row->foreign_key, $this->migrationId);
+
+                    $wooId = $entity?->woo_id;
+                    $slug = $entity?->payload['slug'] ?? null;
+
+                    if ($entity === null || ($wooId === null && ($slug === null || $slug === ''))) {
+                        $this->log(
+                            'warning',
+                            "SEO URL '/{$row->seo_path_info}' references {$entityType} {$row->foreign_key} which is not yet migrated; leaving for next pass",
+                            $row->id,
+                            'seo_url'
+                        );
+
+                        continue;
+                    }
+
+                    try {
+                        $data = $transformer->transform($row, $entityType, $wooId, $slug);
+                    } catch (\InvalidArgumentException $e) {
+                        $stateManager->markFailed('seo_url', $row->id, $this->migrationId, $e->getMessage());
+                        $this->log('error', $e->getMessage(), $row->id, 'seo_url');
+
+                        continue;
+                    }
+
+                    if ($data['target'] === '') {
+                        $stateManager->markSkipped(
+                            'seo_url',
+                            $row->id,
+                            $this->migrationId,
+                            $this->skipPayload($data, 'no_target')
+                        );
+
+                        continue;
+                    }
+
+                    if ($data['is_self_redirect']) {
+                        $stateManager->markSkipped(
+                            'seo_url',
+                            $row->id,
+                            $this->migrationId,
+                            $this->skipPayload($data, 'self_redirect')
+                        );
+                        $this->log('info', "Self-redirect skipped: '{$data['source']}'", $row->id, 'seo_url');
+
+                        continue;
+                    }
+
+                    if (isset($createdSources[$data['source']])) {
+                        $stateManager->markSkipped(
+                            'seo_url',
+                            $row->id,
+                            $this->migrationId,
+                            $this->skipPayload($data, 'source_collision')
+                        );
+                        $this->log(
+                            'warning',
+                            "Source '{$data['source']}' collides with another SEO URL in this run; first one wins",
+                            $row->id,
+                            'seo_url'
+                        );
+
+                        continue;
+                    }
+
+                    if (isset($existingSources[$data['source']])) {
+                        $stateManager->markSkipped(
+                            'seo_url',
+                            $row->id,
+                            $this->migrationId,
+                            $this->skipPayload($data, 'exists_in_redirection')
+                        );
+
+                        continue;
+                    }
+
+                    // CSV captures the intended redirect for every mode that would have created one.
+                    fputcsv($csv, [$data['source'], $data['target'], '', (string) $data['code']]);
+
+                    if ($migration->is_dry_run) {
+                        $stateManager->markSkipped(
+                            'seo_url',
+                            $row->id,
+                            $this->migrationId,
+                            $this->skipPayload($data, 'dry_run')
+                        );
+
+                        continue;
+                    }
+
+                    if (! $apiEnabled) {
+                        $stateManager->markSkipped(
+                            'seo_url',
+                            $row->id,
+                            $this->migrationId,
+                            $this->skipPayload($data, 'api_disabled')
+                        );
+
+                        continue;
+                    }
+
+                    if (! $usingApi) {
+                        $stateManager->markSkipped(
+                            'seo_url',
+                            $row->id,
+                            $this->migrationId,
+                            $this->skipPayload($data, 'plugin_unavailable')
+                        );
+
+                        continue;
+                    }
+
+                    try {
+                        $ruleId = $client->createRedirect(
+                            $data['source'],
+                            $data['target'],
+                            $data['code'] ?: $defaultCode,
+                            $groupId,
+                        );
+                        $createdSources[$data['source']] = true;
+                        $stateManager->set('seo_url', $row->id, $ruleId, $this->migrationId, $data);
+                        $this->log('info', "Migrated SEO URL '{$data['source']}' → '{$data['target']}' (rule #{$ruleId})", $row->id, 'seo_url');
+                    } catch (Throwable $e) {
+                        $stateManager->markFailed('seo_url', $row->id, $this->migrationId, $e->getMessage());
+                        $this->log('error', "Failed to push redirect: {$e->getMessage()}", $row->id, 'seo_url');
+                    }
                 }
-
-                $stateManager->set('seo_url', $seoUrl->id, crc32($data['old_url']), $this->migrationId, $data);
-                $this->log('info', "Migrated SEO URL '{$data['old_url']}'", $seoUrl->id, 'seo_url');
-            } catch (\Exception $e) {
-                $stateManager->markFailed('seo_url', $seoUrl->id, $this->migrationId, $e->getMessage());
-                $this->log('error', "Failed: {$e->getMessage()}", $seoUrl->id, 'seo_url');
             }
+        } finally {
+            fclose($csv);
         }
-
-        // Migrate category SEO URLs
-        $categorySeoUrls = $reader->fetchAllForCategories();
-        foreach ($categorySeoUrls as $seoUrl) {
-            if (app(\App\Services\CancellationService::class)->isCancelled($this->migrationId)) {
-                return;
-            }
-
-            if ($stateManager->alreadyMigrated('seo_url', $seoUrl->id, $this->migrationId)) {
-                continue;
-            }
-
-            try {
-                // Get the new WooCommerce category URL from state
-                $categoryWooId = $stateManager->get('category', $seoUrl->foreign_key, $this->migrationId);
-                $newUrl = $categoryWooId ? "/product-category/{$categoryWooId}" : null;
-
-                $data = $transformer->transform($seoUrl, $newUrl);
-
-                if ($migration->is_dry_run) {
-                    $stateManager->markSkipped('seo_url', $seoUrl->id, $this->migrationId, $data);
-                    $this->log('info', "Dry run: SEO URL '{$data['old_url']}' → '{$data['new_url']}'", $seoUrl->id, 'seo_url');
-
-                    continue;
-                }
-
-                $stateManager->set('seo_url', $seoUrl->id, crc32($data['old_url']), $this->migrationId, $data);
-                $this->log('info', "Migrated category SEO URL '{$data['old_url']}'", $seoUrl->id, 'seo_url');
-            } catch (\Exception $e) {
-                $stateManager->markFailed('seo_url', $seoUrl->id, $this->migrationId, $e->getMessage());
-                $this->log('error', "Failed: {$e->getMessage()}", $seoUrl->id, 'seo_url');
-            }
-        }
-
-        $db->disconnect();
     }
 
-    protected function processSeoUrls(array $seoUrls, MigrationRun $migration, StateManager $stateManager, SeoUrlTransformer $transformer): void
+    protected function makeReader(MigrationRun $migration): SeoUrlReader
     {
-        foreach ($seoUrls as $seoUrl) {
-            if (app(\App\Services\CancellationService::class)->isCancelled($this->migrationId)) {
-                return;
-            }
+        $db = ShopwareDB::fromMigration($migration);
 
-            if ($stateManager->alreadyMigrated('seo_url', $seoUrl->id, $this->migrationId)) {
-                continue;
-            }
+        return app(SeoUrlReader::class, ['db' => $db]);
+    }
 
-            try {
-                // Determine entity type and get new URL
-                $newUrl = null;
-                if ($seoUrl->route_name === 'frontend.detail.page') {
-                    $productWooId = $stateManager->get('product', $seoUrl->foreign_key, $this->migrationId);
-                    $newUrl = $productWooId ? "/product/{$productWooId}" : null;
-                } elseif ($seoUrl->route_name === 'frontend.navigation.page') {
-                    $categoryWooId = $stateManager->get('category', $seoUrl->foreign_key, $this->migrationId);
-                    $newUrl = $categoryWooId ? "/product-category/{$categoryWooId}" : null;
-                }
+    protected function makeTransformer(): SeoUrlTransformer
+    {
+        return app(SeoUrlTransformer::class);
+    }
 
-                $data = $transformer->transform($seoUrl, $newUrl);
+    protected function makeClient(MigrationRun $migration): RedirectionClient
+    {
+        $woo = $migration->woocommerceSettings();
+        $wp = $migration->wordpressSettings();
 
-                if ($migration->is_dry_run) {
-                    $stateManager->markSkipped('seo_url', $seoUrl->id, $this->migrationId, $data);
-                    $this->log('info', "Dry run: SEO URL '{$data['old_url']}' → '{$data['new_url']}'", $seoUrl->id, 'seo_url');
+        $config = [
+            'base_url' => $woo['base_url'] ?? '',
+            'wp_username' => $wp['username'] ?? '',
+            'wp_app_password' => $wp['app_password'] ?? '',
+            'custom_headers' => $wp['custom_headers'] ?? [],
+        ];
 
-                    continue;
-                }
+        return app(RedirectionClient::class, ['config' => $config]);
+    }
 
-                $stateManager->set('seo_url', $seoUrl->id, crc32($data['old_url']), $this->migrationId, $data);
-                $this->log('info', "Migrated SEO URL '{$data['old_url']}'", $seoUrl->id, 'seo_url');
-            } catch (\Exception $e) {
-                $stateManager->markFailed('seo_url', $seoUrl->id, $this->migrationId, $e->getMessage());
-                $this->log('error', "Failed: {$e->getMessage()}", $seoUrl->id, 'seo_url');
-            }
+    /**
+     * @return resource
+     */
+    protected function openCsv()
+    {
+        $dir = storage_path("app/migrations/{$this->migrationId}");
+        if (! is_dir($dir)) {
+            mkdir($dir, 0755, true);
         }
+        $path = $dir.'/redirects.csv';
+
+        $isNew = ! file_exists($path) || filesize($path) === 0;
+        $handle = fopen($path, 'a');
+        if ($handle === false) {
+            throw new \RuntimeException("Unable to open CSV at {$path}");
+        }
+
+        if ($isNew) {
+            fputcsv($handle, ['source', 'target', 'regex', 'code']);
+        }
+
+        return $handle;
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    protected function skipPayload(array $data, string $reason): array
+    {
+        return $data + ['skip_reason' => $reason];
     }
 
     protected function log(string $level, string $message, ?string $shopwareId = null, ?string $entityType = null): void

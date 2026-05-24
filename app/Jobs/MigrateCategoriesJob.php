@@ -101,7 +101,9 @@ class MigrateCategoriesJob implements ShouldQueue
                 $wooId = $result['id'] ?? null;
 
                 if ($wooId) {
-                    $stateManager->set('category', $category->id, $wooId, $this->migrationId);
+                    $stateManager->set('category', $category->id, $wooId, $this->migrationId, [
+                        'slug' => $result['slug'] ?? null,
+                    ]);
                     $this->log('info', "Migrated category '{$data['name']}' → WC #{$wooId}", $category->id, 'category');
                 }
             } catch (\Exception $e) {

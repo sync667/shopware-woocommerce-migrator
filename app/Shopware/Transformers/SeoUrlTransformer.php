@@ -2,38 +2,74 @@
 
 namespace App\Shopware\Transformers;
 
+use InvalidArgumentException;
+
 class SeoUrlTransformer
 {
-    public function transform(object $seoUrl, ?string $newUrl = null): array
+    private const TARGETS = [
+        'product' => ['slug' => '/product/%s/', 'fallback' => '/?p=%d'],
+        'category' => ['slug' => '/product-category/%s/', 'fallback' => '/?cat=%d'],
+        'cms_page' => ['slug' => '/%s/', 'fallback' => '/?page_id=%d'],
+    ];
+
+    /**
+     * @return array{
+     *   source: string,
+     *   target: string,
+     *   code: int,
+     *   is_self_redirect: bool,
+     *   metadata: array{shopware_id: string, foreign_key: string, route_name: string, is_canonical: bool}
+     * }
+     */
+    public function transform(object $seoUrl, string $entityType, ?int $wooId, ?string $wooSlug): array
     {
+        if (! isset(self::TARGETS[$entityType])) {
+            throw new InvalidArgumentException("Unknown entity type: {$entityType}");
+        }
+
+        $source = $this->normalizeSource($seoUrl->seo_path_info ?? '');
+        $target = $this->buildTarget($entityType, $wooId, $wooSlug);
+
         return [
-            'old_url' => '/'.ltrim($seoUrl->seo_path_info ?? '', '/'),
-            'new_url' => $newUrl,
-            'status_code' => 301,
-            'meta_data' => [
-                ['key' => '_shopware_id', 'value' => $seoUrl->id ?? ''],
-                ['key' => '_shopware_foreign_key', 'value' => $seoUrl->foreign_key ?? ''],
-                ['key' => '_shopware_route_name', 'value' => $seoUrl->route_name ?? ''],
-                ['key' => '_is_canonical', 'value' => (bool) ($seoUrl->is_canonical ?? false)],
+            'source' => $source,
+            'target' => $target,
+            'code' => 301,
+            'is_self_redirect' => $source === $target || $source.'/' === $target,
+            'metadata' => [
+                'shopware_id' => (string) ($seoUrl->id ?? ''),
+                'foreign_key' => (string) ($seoUrl->foreign_key ?? ''),
+                'route_name' => (string) ($seoUrl->route_name ?? ''),
+                'is_canonical' => (bool) ($seoUrl->is_canonical ?? false),
             ],
         ];
     }
 
-    public function generateWordPressRedirectRule(object $seoUrl, ?string $newSlug = null): string
+    private function normalizeSource(string $path): string
     {
-        $oldPath = ltrim($seoUrl->seo_path_info ?? '', '/');
-        $newPath = $newSlug ? ltrim($newSlug, '/') : '';
+        $path = strtok($path, '?');
+        if ($path === false) {
+            $path = '';
+        }
 
-        // Generate Apache .htaccess redirect rule
-        return "Redirect 301 /{$oldPath} /{$newPath}";
+        $path = preg_replace('#/+#', '/', $path) ?? '';
+        $path = '/'.ltrim($path, '/');
+        $path = rtrim($path, '/');
+
+        return $path === '' ? '/' : $path;
     }
 
-    public function generateNginxRedirectRule(object $seoUrl, ?string $newSlug = null): string
+    private function buildTarget(string $entityType, ?int $wooId, ?string $wooSlug): string
     {
-        $oldPath = ltrim($seoUrl->seo_path_info ?? '', '/');
-        $newPath = $newSlug ? ltrim($newSlug, '/') : '';
+        $templates = self::TARGETS[$entityType];
 
-        // Generate Nginx redirect rule
-        return "rewrite ^/{$oldPath}$ /{$newPath} permanent;";
+        if ($wooSlug !== null && $wooSlug !== '') {
+            return sprintf($templates['slug'], $wooSlug);
+        }
+
+        if ($wooId !== null) {
+            return sprintf($templates['fallback'], $wooId);
+        }
+
+        return '';
     }
 }
