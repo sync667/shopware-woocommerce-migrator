@@ -12,7 +12,7 @@ class CouponTransformer
             'code' => $code ?: ($promotion->code ?? ''),
             'description' => $promotion->name ?? '',
             'discount_type' => $this->mapDiscountType($discount),
-            'amount' => $discount ? (string) round((float) $discount->discount_value, 2) : '0',
+            'amount' => $discount ? number_format((float) $discount->discount_value, 2, '.', '') : '0.00',
         ];
 
         if (! empty($promotion->valid_from)) {

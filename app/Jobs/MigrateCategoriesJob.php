@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Models\MigrationLog;
 use App\Models\MigrationRun;
+use App\Services\CategorySeoTextResolver;
 use App\Services\ImageMigrator;
 use App\Services\ShopwareDB;
 use App\Services\StateManager;
@@ -37,6 +38,7 @@ class MigrateCategoriesJob implements ShouldQueue
         $imageMigrator = ImageMigrator::fromMigration($migration);
         $reader = new CategoryReader($db);
         $transformer = new CategoryTransformer;
+        $seoResolver = new CategorySeoTextResolver($db);
 
         // Fetch categories based on sync mode
         if ($migration->sync_mode === 'delta' && $migration->last_sync_at) {
@@ -70,7 +72,16 @@ class MigrateCategoriesJob implements ShouldQueue
                     $wooParentId = $stateManager->get('category', $category->parent_id, $this->migrationId);
                 }
 
-                $data = $transformer->transform($category, $wooParentId);
+                $seoText = '';
+                if (config('migration.category_seo.enabled', true)) {
+                    try {
+                        $seoText = $seoResolver->resolve($category);
+                    } catch (\Throwable $e) {
+                        $this->log('warning', "SEO text resolution failed: {$e->getMessage()}", $category->id, 'category');
+                    }
+                }
+
+                $data = $transformer->transform($category, $wooParentId, $seoText);
 
                 if ($migration->is_dry_run) {
                     $stateManager->markSkipped('category', $category->id, $this->migrationId, $data);

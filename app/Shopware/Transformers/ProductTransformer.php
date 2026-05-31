@@ -32,9 +32,13 @@ class ProductTransformer
             $shortDescription = $this->contentMigrator->extractPlainText($description, 150);
         }
 
-        $manageStock = (bool) ($product->manage_stock ?? false);
+        // The reader aliases Shopware `is_closeout` as `manage_stock`, but the two flags
+        // mean different things. Shopware ALWAYS tracks stock; `is_closeout` only controls
+        // whether selling stops once stock hits zero. WC's `manage_stock` means "track
+        // inventory at all", which in Shopware terms is always true.
+        $isCloseout = (bool) ($product->manage_stock ?? false);
         $stockQuantity = (int) ($product->stock ?? 0);
-        $available = $product->available ?? true;
+        $available = (bool) ($product->available ?? true);
 
         $data = [
             'name' => $product->name ?: 'Unnamed Product',
@@ -44,9 +48,9 @@ class ProductTransformer
             'description' => $description,
             'short_description' => $shortDescription,
             'regular_price' => $prices['regular'],
-            'manage_stock' => $manageStock,
+            'manage_stock' => true,
             'stock_quantity' => $stockQuantity,
-            'stock_status' => ($manageStock || $available) ? 'instock' : 'outofstock',
+            'stock_status' => $this->stockStatus($isCloseout, $stockQuantity, $available),
             'weight' => $this->gramsToKg($product->weight ?? 0),
             'dimensions' => [
                 'length' => $this->mmToCm($product->depth ?? 0),
@@ -179,17 +183,18 @@ class ProductTransformer
     {
         $prices = $this->parsePrices($variant->price ?? '[]');
 
-        $manageStock = (bool) ($variant->manage_stock ?? false);
+        // See parent transform() for the is_closeout vs. manage_stock semantics.
+        $isCloseout = (bool) ($variant->manage_stock ?? false);
         $stock = (int) ($variant->stock ?? 0);
-        $available = $variant->available ?? true;
+        $available = (bool) ($variant->available ?? true);
 
         $data = [
             'sku' => $variant->sku ?? '',
             'status' => ($variant->active ?? true) ? 'publish' : 'private',
             'regular_price' => $prices['regular'],
-            'manage_stock' => $manageStock,
+            'manage_stock' => true,
             'stock_quantity' => $stock,
-            'stock_status' => ($manageStock ? $stock > 0 : (bool) $available) ? 'instock' : 'outofstock',
+            'stock_status' => $this->stockStatus($isCloseout, $stock, $available),
             'weight' => $this->gramsToKg($variant->weight ?? 0),
             'dimensions' => [
                 'length' => $this->mmToCm($variant->depth ?? 0),
@@ -284,24 +289,54 @@ class ProductTransformer
         $prices = json_decode($priceJson, true);
 
         if (empty($prices) || ! is_array($prices)) {
-            return ['regular' => '0', 'sale' => null];
+            return ['regular' => '0.00', 'sale' => null];
         }
 
         $price = reset($prices) ?: [];
         $gross = (float) ($price['gross'] ?? 0);
-        $listPrice = isset($price['listPrice']['gross']) ? $price['listPrice']['gross'] : null;
+        $listPrice = isset($price['listPrice']['gross']) ? (float) $price['listPrice']['gross'] : null;
 
-        if ($listPrice !== null && (float) $listPrice > $gross) {
+        if ($listPrice !== null && $listPrice > $gross) {
             return [
-                'regular' => (string) round((float) $listPrice, 2),
-                'sale' => (string) round($gross, 2),
+                'regular' => $this->formatMoney($listPrice),
+                'sale' => $this->formatMoney($gross),
             ];
         }
 
         return [
-            'regular' => (string) round($gross, 2),
+            'regular' => $this->formatMoney($gross),
             'sale' => null,
         ];
+    }
+
+    /**
+     * Format a money value as a fixed 2-decimal string with no thousands separator.
+     *
+     * Uses number_format instead of round() to avoid PHP's banker's-rounding edge
+     * cases (e.g. round(0.005, 2) varying by platform) and to guarantee the
+     * trailing-zero form WooCommerce expects ('19.00' not '19').
+     */
+    protected function formatMoney(float $value): string
+    {
+        return number_format($value, 2, '.', '');
+    }
+
+    /**
+     * WC `stock_status` derived from Shopware semantics:
+     *   - `is_closeout=true`  : stop selling when stock hits zero
+     *   - `is_closeout=false` : keep selling regardless of stock
+     *   - `available=false`   : explicitly unavailable (e.g. discontinued in Shopware)
+     */
+    protected function stockStatus(bool $isCloseout, int $stock, bool $available): string
+    {
+        if (! $available) {
+            return 'outofstock';
+        }
+        if ($isCloseout && $stock <= 0) {
+            return 'outofstock';
+        }
+
+        return 'instock';
     }
 
     protected function gramsToKg(float $grams): string

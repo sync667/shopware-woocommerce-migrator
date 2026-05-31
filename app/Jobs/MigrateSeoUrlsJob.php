@@ -82,7 +82,10 @@ class MigrateSeoUrlsJob implements ShouldQueue
                     $wooId = $entity?->woo_id;
                     $slug = $entity?->payload['slug'] ?? null;
 
-                    if ($entity === null || ($wooId === null && ($slug === null || $slug === ''))) {
+                    // The target entity must have actually been migrated. A pending/failed entity
+                    // (with only a placeholder slug from an earlier pass) would produce a redirect
+                    // to a URL that 404s, so leave the seo_url row untouched for the next pass.
+                    if ($entity === null || $entity->status !== 'success' || $wooId === null) {
                         $this->log(
                             'warning',
                             "SEO URL '/{$row->seo_path_info}' references {$entityType} {$row->foreign_key} which is not yet migrated; leaving for next pass",
@@ -255,6 +258,9 @@ class MigrateSeoUrlsJob implements ShouldQueue
         }
 
         if ($isNew) {
+            // UTF-8 BOM so non-ASCII slugs (Polish/German/etc.) survive a round trip through
+            // Excel or any importer that auto-detects encoding from the first bytes.
+            fwrite($handle, "\xEF\xBB\xBF");
             fputcsv($handle, ['source', 'target', 'regex', 'code']);
         }
 

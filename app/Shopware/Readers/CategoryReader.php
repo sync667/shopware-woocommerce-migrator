@@ -20,6 +20,8 @@ class CategoryReader
                 c.level,
                 c.active,
                 LOWER(HEX(c.media_id)) AS media_id,
+                LOWER(HEX(c.cms_page_id)) AS cms_page_id,
+                ct.custom_fields AS translation_custom_fields,
                 COALESCE(ct.meta_title, '') AS meta_title,
                 COALESCE(ct.meta_description, '') AS meta_description,
                 COALESCE(m.file_name, '') AS media_file_name,
@@ -47,6 +49,8 @@ class CategoryReader
                 c.level,
                 c.active,
                 LOWER(HEX(c.media_id)) AS media_id,
+                LOWER(HEX(c.cms_page_id)) AS cms_page_id,
+                ct.custom_fields AS translation_custom_fields,
                 COALESCE(ct.meta_title, '') AS meta_title,
                 COALESCE(ct.meta_description, '') AS meta_description,
                 COALESCE(m.file_name, '') AS media_file_name,
@@ -61,7 +65,7 @@ class CategoryReader
             LEFT JOIN media m ON m.id = c.media_id
             WHERE c.type = 'page'
               AND (c.updated_at > ? OR c.created_at > ?)
-            ORDER BY c.updated_at ASC, c.created_at ASC
+            ORDER BY c.level ASC, c.updated_at ASC, c.created_at ASC
         ", [
             $this->db->languageIdBin(),
             $since->format('Y-m-d H:i:s'),

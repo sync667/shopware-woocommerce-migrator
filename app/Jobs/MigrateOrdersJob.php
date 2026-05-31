@@ -68,12 +68,8 @@ class MigrateOrdersJob implements ShouldQueue
 
         $db->disconnect();
 
-        // Update last_sync_at timestamp for delta migrations
-        if ($migration->sync_mode === 'delta') {
-            $migration->update(['last_sync_at' => now()]);
-        }
-
         $migrationId = $this->migrationId;
+        $isDelta = $migration->sync_mode === 'delta';
 
         // If customers job didn't disable emails (e.g. zero customers), do it now.
         if (! $migration->is_dry_run && empty($migration->setting('_wc_email_backup'))) {
@@ -90,6 +86,9 @@ class MigrateOrdersJob implements ShouldQueue
         }
 
         if (empty($chunks)) {
+            if ($isDelta) {
+                $migration->update(['last_sync_at' => now()]);
+            }
             self::restoreEmailsAndDispatchCoupons($migrationId);
 
             return;
@@ -102,7 +101,10 @@ class MigrateOrdersJob implements ShouldQueue
 
         Bus::batch($batchJobs)
             ->allowFailures()
-            ->then(function () use ($migrationId) {
+            ->then(function () use ($migrationId, $isDelta) {
+                if ($isDelta) {
+                    MigrationRun::where('id', $migrationId)->update(['last_sync_at' => now()]);
+                }
                 MigrateOrdersJob::restoreEmailsAndDispatchCoupons($migrationId);
             })
             ->catch(function (\Illuminate\Bus\Batch $batch, \Throwable $e) use ($migrationId) {

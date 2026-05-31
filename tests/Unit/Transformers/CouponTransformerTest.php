@@ -38,7 +38,7 @@ class CouponTransformerTest extends TestCase
         $this->assertEquals('SUMMER10', $result['code']);
         $this->assertEquals('Summer Sale 10%', $result['description']);
         $this->assertEquals('percent', $result['discount_type']);
-        $this->assertEquals('10', $result['amount']);
+        $this->assertEquals('10.00', $result['amount']);
         $this->assertEquals('2025-06-01', $result['date_created']);
         $this->assertEquals('2025-08-31', $result['date_expires']);
         $this->assertEquals(100, $result['usage_limit']);
@@ -63,7 +63,7 @@ class CouponTransformerTest extends TestCase
 
         $this->assertEquals('FLAT5', $result['code']);
         $this->assertEquals('fixed_cart', $result['discount_type']);
-        $this->assertEquals('5', $result['amount']);
+        $this->assertEquals('5.00', $result['amount']);
     }
 
     public function test_uses_individual_code_when_provided(): void
@@ -88,7 +88,7 @@ class CouponTransformerTest extends TestCase
         $result = $this->transformer->transform($promotion, []);
 
         $this->assertEquals('fixed_cart', $result['discount_type']);
-        $this->assertEquals('0', $result['amount']);
+        $this->assertEquals('0.00', $result['amount']);
     }
 
     public function test_omits_optional_fields_when_not_set(): void

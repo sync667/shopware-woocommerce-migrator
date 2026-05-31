@@ -102,4 +102,48 @@ class OrderTransformerTest extends TestCase
         $this->assertEquals(2, $result['line_items'][0]['quantity']);
         $this->assertEquals('WDG-001', $result['line_items'][0]['sku']);
     }
+
+    public function test_emits_single_tracking_meta_with_all_codes(): void
+    {
+        // Regression: previously the loop emitted one meta per tracking code.
+        // WP/Woo deduplicates post-meta with the same key, so only the last
+        // code survived. The transformer must emit one meta with all items.
+        $order = (object) [
+            'order_number' => 'SW-10003',
+            'order_date' => '2025-01-15 14:30:00',
+            'status' => 'completed',
+            'customer_comment' => '',
+        ];
+
+        $result = $this->transformer->transform(
+            $order,
+            trackingCodes: ['TRK-A', 'TRK-B', 'TRK-C']
+        );
+
+        $trackingMetas = array_values(array_filter(
+            $result['meta_data'],
+            fn ($m) => $m['key'] === '_wc_shipment_tracking_items'
+        ));
+
+        $this->assertCount(1, $trackingMetas, 'Should emit exactly one tracking meta entry');
+        $this->assertCount(3, $trackingMetas[0]['value'], 'All tracking codes must be inside one value array');
+        $this->assertSame('TRK-A', $trackingMetas[0]['value'][0]['tracking_number']);
+        $this->assertSame('TRK-B', $trackingMetas[0]['value'][1]['tracking_number']);
+        $this->assertSame('TRK-C', $trackingMetas[0]['value'][2]['tracking_number']);
+    }
+
+    public function test_no_tracking_meta_when_no_codes(): void
+    {
+        $order = (object) [
+            'order_number' => 'SW-10004',
+            'order_date' => '2025-01-15 14:30:00',
+            'status' => 'completed',
+            'customer_comment' => '',
+        ];
+
+        $result = $this->transformer->transform($order);
+
+        $hasTracking = collect($result['meta_data'])->contains(fn ($m) => $m['key'] === '_wc_shipment_tracking_items');
+        $this->assertFalse($hasTracking);
+    }
 }

@@ -67,14 +67,13 @@ class MigrateCouponsJob implements ShouldQueue
 
         $db->disconnect();
 
-        // Update last_sync_at timestamp for delta migrations
-        if ($migration->sync_mode === 'delta') {
-            $migration->update(['last_sync_at' => now()]);
-        }
-
         $migrationId = $this->migrationId;
+        $isDelta = $migration->sync_mode === 'delta';
 
         if (empty($chunks)) {
+            if ($isDelta) {
+                $migration->update(['last_sync_at' => now()]);
+            }
             MigrateReviewsJob::dispatch($migrationId);
 
             return;
@@ -87,7 +86,10 @@ class MigrateCouponsJob implements ShouldQueue
 
         Bus::batch($batchJobs)
             ->allowFailures()
-            ->then(function () use ($migrationId) {
+            ->then(function () use ($migrationId, $isDelta) {
+                if ($isDelta) {
+                    MigrationRun::where('id', $migrationId)->update(['last_sync_at' => now()]);
+                }
                 MigrateReviewsJob::dispatch($migrationId);
             })
             ->catch(function (\Illuminate\Bus\Batch $batch, \Throwable $e) use ($migrationId) {

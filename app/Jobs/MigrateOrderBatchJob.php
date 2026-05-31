@@ -79,17 +79,38 @@ class MigrateOrderBatchJob implements ShouldQueue
                     $shippingMethod = $reader->fetchShippingMethod($order->id);
 
                     // Resolve WC product/variation IDs for each line item so WooCommerce
-                    // links order items to the migrated products properly.
+                    // links order items to the migrated products properly. A Shopware
+                    // product UUID can belong to either a parent product or a variant —
+                    // check variation mapping first because a variation entity carries
+                    // the parent's woo_id in its payload (set by MigrateProductBatchJob).
                     foreach ($lineItems as $lineItem) {
-                        if (! empty($lineItem->product_id)) {
-                            $wooProductId = $stateManager->get('product', $lineItem->product_id, $this->migrationId);
-                            if ($wooProductId) {
-                                $lineItem->woo_product_id = $wooProductId;
+                        if (empty($lineItem->product_id)) {
+                            continue;
+                        }
+
+                        $variationEntity = $stateManager->getEntity('variation', $lineItem->product_id, $this->migrationId);
+                        if ($variationEntity && $variationEntity->status === 'success' && $variationEntity->woo_id) {
+                            $lineItem->woo_variation_id = $variationEntity->woo_id;
+                            $parentWooId = $variationEntity->payload['parent_woo_id'] ?? null;
+                            if ($parentWooId === null) {
+                                // Legacy variation row (migrated before the parent_woo_id payload was
+                                // added). WC requires product_id on variation line items; log a
+                                // warning so the operator can spot the gap and re-migrate the parent.
+                                $this->log(
+                                    'warning',
+                                    "Variation {$lineItem->product_id} has no parent_woo_id payload; line item will lack product_id",
+                                    $orderId
+                                );
+                            } else {
+                                $lineItem->woo_product_id = $parentWooId;
                             }
-                            $wooVariationId = $stateManager->get('variation', $lineItem->product_id, $this->migrationId);
-                            if ($wooVariationId) {
-                                $lineItem->woo_variation_id = $wooVariationId;
-                            }
+
+                            continue;
+                        }
+
+                        $wooProductId = $stateManager->get('product', $lineItem->product_id, $this->migrationId);
+                        if ($wooProductId) {
+                            $lineItem->woo_product_id = $wooProductId;
                         }
                     }
 
@@ -105,6 +126,17 @@ class MigrateOrderBatchJob implements ShouldQueue
                     if ($migration->is_dry_run) {
                         $stateManager->markSkipped('order', $order->id, $this->migrationId, $data);
                         $this->log('info', "Dry run: order '{$order->order_number}'", $order->id);
+
+                        continue;
+                    }
+
+                    // Idempotency safety-net: a previous attempt may have succeeded in WC
+                    // but lost the response (network drop, CF 5xx after creation). Look
+                    // for an existing order matching our Shopware ID before POSTing again.
+                    $existing = $woo->findOrderByShopwareId($order->id, (string) ($order->order_number ?? ''));
+                    if ($existing && ! empty($existing['id'])) {
+                        $stateManager->set('order', $order->id, (int) $existing['id'], $this->migrationId);
+                        $this->log('info', "Order '{$order->order_number}' already in WC as #{$existing['id']} (idempotent skip)", $order->id);
 
                         continue;
                     }

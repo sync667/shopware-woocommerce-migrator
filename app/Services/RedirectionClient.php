@@ -86,12 +86,17 @@ class RedirectionClient
     public function loadExistingSources(int $groupId): array
     {
         $sources = [];
-        $page = 0;
+        $page = 1;
+        // Hard cap on the loop — protects against a buggy plugin response that
+        // never signals end-of-data (e.g. items present but all stripped by
+        // the url-key filter on line below, leaving $sources flat while we
+        // think there's more data to fetch).
+        $maxPages = 1000;
 
-        while (true) {
+        for ($i = 0; $i < $maxPages; $i++) {
             $response = $this->request()->get($this->endpoint('redirect'), [
-                'filterBy' => ['group' => $groupId],
-                'perPage' => self::PER_PAGE,
+                'filter' => ['group' => $groupId],
+                'per_page' => self::PER_PAGE,
                 'page' => $page,
             ]);
 
@@ -100,13 +105,17 @@ class RedirectionClient
             }
 
             $items = $response->json('items', []);
+            if (! is_array($items) || $items === []) {
+                break;
+            }
             foreach ($items as $item) {
                 if (isset($item['url'])) {
                     $sources[] = (string) $item['url'];
                 }
             }
 
-            if (count($items) < self::PER_PAGE) {
+            $total = (int) $response->json('total', 0);
+            if (count($sources) >= $total || count($items) < self::PER_PAGE) {
                 break;
             }
 
@@ -132,29 +141,68 @@ class RedirectionClient
             throw new RuntimeException("Failed to create Redirection rule for '{$source}': HTTP {$response->status()} {$message}");
         }
 
-        $items = $response->json('items', []);
-        foreach ($items as $item) {
-            if (($item['url'] ?? null) === $source) {
-                return (int) ($item['id'] ?? 0);
+        $ruleId = $this->extractRuleId($response->json(), $source);
+        if ($ruleId === null || $ruleId === 0) {
+            throw new RuntimeException(
+                "Redirection rule for '{$source}' appeared to be created but no rule id could be extracted from the response: "
+                .substr((string) $response->body(), 0, 500)
+            );
+        }
+
+        return $ruleId;
+    }
+
+    /**
+     * Pulls the created rule id from a Redirection plugin response. The plugin
+     * has shipped a few different response envelopes across versions — handle
+     * the common ones, returning null when nothing identifiable can be found.
+     *
+     * Refuses the "items[0] fallback" when the plugin returns the *list* of rules
+     * in the group rather than the just-created one — binding a new seo_url
+     * entity's woo_id to a pre-existing unrelated rule would let a later delete
+     * remove someone else's redirect.
+     *
+     * @param  array<string, mixed>|null  $body
+     */
+    private function extractRuleId(?array $body, string $source): ?int
+    {
+        if (! is_array($body)) {
+            return null;
+        }
+
+        // Shape A: { items: [ { url, id, ... } ] } — accept only when url matches.
+        if (isset($body['items']) && is_array($body['items'])) {
+            foreach ($body['items'] as $item) {
+                if (is_array($item) && ($item['url'] ?? null) === $source && isset($item['id'])) {
+                    return (int) $item['id'];
+                }
             }
         }
 
-        $first = $items[0] ?? null;
-        if ($first && isset($first['id'])) {
-            return (int) $first['id'];
+        // Shape B: { item: { id, url, ... } } — only trust when url matches or absent.
+        if (isset($body['item']['id']) && (($body['item']['url'] ?? $source) === $source)) {
+            return (int) $body['item']['id'];
         }
 
-        return 0;
+        // Shape C: flat { id, url, ... } — only trust when url matches or absent.
+        if (isset($body['id']) && (($body['url'] ?? $source) === $source)) {
+            return (int) $body['id'];
+        }
+
+        return null;
     }
 
     private function findGroupId(string $name): ?int
     {
         $response = $this->request()->get($this->endpoint('group'), [
-            'perPage' => self::PER_PAGE,
+            'per_page' => self::PER_PAGE,
         ]);
 
+        // Auth / permission errors should surface as exceptions so the caller doesn't
+        // misdiagnose them as "group missing" and try to create one (which then also
+        // fails with the same error, masking the real cause).
         if (! $response->successful()) {
-            return null;
+            throw new RuntimeException("Failed to list Redirection groups: HTTP {$response->status()} {$response->body()}");
         }
 
         foreach ($response->json('items', []) as $group) {

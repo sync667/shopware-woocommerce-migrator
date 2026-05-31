@@ -4,8 +4,12 @@ namespace App\Shopware\Transformers;
 
 class CustomerTransformer
 {
-    public function transform(object $customer, ?object $billingAddress = null, ?object $shippingAddress = null): array
-    {
+    public function transform(
+        object $customer,
+        ?object $billingAddress = null,
+        ?object $shippingAddress = null,
+        ?string $newPassword = null,
+    ): array {
         $data = [
             'email' => $customer->email,
             'first_name' => $customer->first_name ?? '',
@@ -13,6 +17,15 @@ class CustomerTransformer
             'role' => 'customer',
             'meta_data' => [],
         ];
+
+        // Explicit password on create so WC doesn't auto-generate one (which would also
+        // trigger the new-account email even with email notifications disabled at the
+        // setting level for some plugins). The customer never knows this value —
+        // _requires_password_reset below tells the storefront to force a reset.
+        if ($newPassword !== null && $newPassword !== '') {
+            $data['password'] = $newPassword;
+            $data['meta_data'][] = ['key' => '_requires_password_reset', 'value' => '1'];
+        }
 
         // Store Shopware customer ID and number for reference
         if ($customer->id ?? '') {
@@ -31,7 +44,9 @@ class CustomerTransformer
             $data['meta_data'][] = ['key' => '_newsletter_subscribed', 'value' => (bool) $customer->newsletter];
         }
 
-        // Preserve Shopware bcrypt password hash for optional custom authentication
+        // Preserve Shopware bcrypt password hash so a custom auth plugin can authenticate
+        // the customer with their original Shopware password if one is installed.
+        // Without such a plugin the customer must use the reset flow.
         if ($customer->password ?? '') {
             $data['meta_data'][] = ['key' => '_shopware_password_hash', 'value' => $customer->password];
         }

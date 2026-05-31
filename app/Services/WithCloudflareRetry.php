@@ -31,8 +31,9 @@ trait WithCloudflareRetry
                     && in_array($response->getStatusCode(), [521, 522, 524], true);
             },
             static function (int $retries): int {
-                // 1 s, 2 s, 4 s
-                return (int) (1000 * (2 ** ($retries - 1)));
+                // Guzzle invokes this with $retries = 0 before the first retry.
+                // 1 s → 2 s → 4 s matches the docblock.
+                return (int) (1000 * (2 ** $retries));
             }
         ));
 

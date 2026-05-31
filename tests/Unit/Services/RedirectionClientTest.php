@@ -123,6 +123,121 @@ class RedirectionClientTest extends TestCase
         $this->assertSame('/page-250', $sources[249]);
     }
 
+    public function test_load_existing_sources_uses_snake_case_pagination_params(): void
+    {
+        // The Redirection plugin REST controller expects snake_case `per_page` and 1-based
+        // `page`. The earlier camelCase form was silently ignored, causing pagination to
+        // truncate at page 1 and re-POST duplicates against existing rules.
+        Http::fake([
+            'https://woo.test/wp-json/redirection/v1/redirect*' => Http::response(['items' => [], 'total' => 0], 200),
+        ]);
+
+        $client = new RedirectionClient($this->config);
+        $client->loadExistingSources(7);
+
+        Http::assertSent(function ($request) {
+            parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
+
+            return $request->method() === 'GET'
+                && str_contains($request->url(), '/wp-json/redirection/v1/redirect')
+                && ($query['per_page'] ?? null) === '200'
+                && ($query['page'] ?? null) === '1';
+        });
+    }
+
+    public function test_load_existing_sources_throws_on_api_failure(): void
+    {
+        Http::fake([
+            'https://woo.test/wp-json/redirection/v1/redirect*' => Http::response(['message' => 'permission denied'], 403),
+        ]);
+
+        $client = new RedirectionClient($this->config);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Failed to list Redirection rules');
+
+        $client->loadExistingSources(7);
+    }
+
+    public function test_create_redirect_throws_when_response_has_no_id(): void
+    {
+        // Earlier code silently returned 0 in this case, corrupting state because woo_id=0
+        // is meaningless for audit and prevents future delete/update of the rule.
+        Http::fake([
+            'https://woo.test/wp-json/redirection/v1/redirect*' => Http::response(['items' => []], 200),
+        ]);
+
+        $client = new RedirectionClient($this->config);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage("rule for '/old'");
+
+        $client->createRedirect('/old', '/new', 301, 7);
+    }
+
+    public function test_create_redirect_extracts_id_from_flat_response_shape(): void
+    {
+        Http::fake([
+            'https://woo.test/wp-json/redirection/v1/redirect*' => Http::response([
+                'id' => 4242,
+                'url' => '/old',
+            ], 200),
+        ]);
+
+        $client = new RedirectionClient($this->config);
+
+        $this->assertSame(4242, $client->createRedirect('/old', '/new', 301, 7));
+    }
+
+    public function test_create_redirect_extracts_id_from_item_wrapper_shape(): void
+    {
+        Http::fake([
+            'https://woo.test/wp-json/redirection/v1/redirect*' => Http::response([
+                'item' => ['id' => 77, 'url' => '/old'],
+            ], 200),
+        ]);
+
+        $client = new RedirectionClient($this->config);
+
+        $this->assertSame(77, $client->createRedirect('/old', '/new', 301, 7));
+    }
+
+    public function test_create_redirect_refuses_when_response_lists_unrelated_rules(): void
+    {
+        // Earlier versions silently fell back to items[0] even when the url didn't match.
+        // That could bind a brand-new entity's woo_id to a pre-existing unrelated rule,
+        // so a later delete() would nuke someone else's redirect. We now refuse to guess.
+        Http::fake([
+            'https://woo.test/wp-json/redirection/v1/redirect*' => Http::response([
+                'items' => [
+                    ['id' => 1, 'url' => '/something-else'],
+                ],
+                'total' => 1,
+            ], 200),
+        ]);
+
+        $client = new RedirectionClient($this->config);
+
+        $this->expectException(\RuntimeException::class);
+        $client->createRedirect('/old', '/new', 301, 7);
+    }
+
+    public function test_ensure_group_throws_when_list_endpoint_returns_403(): void
+    {
+        // Auth failures must surface clearly so the caller doesn't fall through to
+        // a POST that will also fail with the same root cause and confuse the operator.
+        Http::fake([
+            'https://woo.test/wp-json/redirection/v1/group*' => Http::response(['code' => 'rest_forbidden'], 403),
+        ]);
+
+        $client = new RedirectionClient($this->config);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Failed to list Redirection groups');
+
+        $client->ensureGroup('Shopware Migration');
+    }
+
     public function test_create_redirect_posts_correct_payload(): void
     {
         Http::fake([

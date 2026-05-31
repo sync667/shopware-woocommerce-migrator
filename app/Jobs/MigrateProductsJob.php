@@ -67,14 +67,14 @@ class MigrateProductsJob implements ShouldQueue
 
         $db->disconnect();
 
-        // Update last_sync_at timestamp for delta migrations
-        if ($migration->sync_mode === 'delta') {
-            $migration->update(['last_sync_at' => now()]);
-        }
-
         $migrationId = $this->migrationId;
+        $isDelta = $migration->sync_mode === 'delta';
 
         if (empty($chunks)) {
+            // No batches to wait on — safe to advance the watermark now.
+            if ($isDelta) {
+                $migration->update(['last_sync_at' => now()]);
+            }
             MigrateCustomersJob::dispatch($migrationId);
 
             return;
@@ -87,7 +87,13 @@ class MigrateProductsJob implements ShouldQueue
 
         Bus::batch($batchJobs)
             ->allowFailures()
-            ->then(function () use ($migrationId) {
+            ->then(function () use ($migrationId, $isDelta) {
+                if ($isDelta) {
+                    // Advance the delta watermark only after the whole batch finished;
+                    // updating before dispatch leaves still-pending records outside the
+                    // next run's window and silently drops them on a later delta sync.
+                    MigrationRun::where('id', $migrationId)->update(['last_sync_at' => now()]);
+                }
                 MigrateCustomersJob::dispatch($migrationId);
             })
             ->catch(function (\Illuminate\Bus\Batch $batch, \Throwable $e) use ($migrationId) {

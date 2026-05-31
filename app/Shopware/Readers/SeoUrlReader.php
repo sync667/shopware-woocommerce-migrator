@@ -94,7 +94,6 @@ class SeoUrlReader
                 su.created_at
             FROM seo_url su
             WHERE su.is_deleted = 0
-              AND su.is_canonical = 1
               AND su.language_id = ?
               AND (su.updated_at > ? OR su.created_at > ?)
             ORDER BY su.updated_at ASC, su.created_at ASC

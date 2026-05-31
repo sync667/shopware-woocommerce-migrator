@@ -37,12 +37,12 @@ class OrderTransformer
         ];
 
         // Shipping lines — always include so the order total is correct in WC
-        $shippingTotal = round((float) ($order->shipping_total ?? 0), 2);
+        $shippingTotal = (float) ($order->shipping_total ?? 0);
         if ($shippingTotal > 0 || $shippingMethod !== null) {
             $data['shipping_lines'] = [[
                 'method_id' => $shippingMethod ? ('shopware_'.($shippingMethod->method_id ?? 'other')) : 'other',
                 'method_title' => $shippingMethod?->method_name ?? 'Shipping',
-                'total' => (string) $shippingTotal,
+                'total' => $this->formatMoney($shippingTotal),
             ]];
         }
 
@@ -81,18 +81,22 @@ class OrderTransformer
             $data['customer_note'] = $order->customer_comment;
         }
 
-        // Add tracking numbers if available
+        // WooCommerce Shipment Tracking expects a single meta entry whose value is
+        // an array of all tracking items. Emitting one meta per code only kept the
+        // last one (post-meta with the same key gets de-duplicated by WordPress).
         if (! empty($trackingCodes)) {
-            foreach ($trackingCodes as $index => $trackingCode) {
-                $data['meta_data'][] = [
-                    'key' => '_wc_shipment_tracking_items',
-                    'value' => [[
-                        'tracking_number' => $trackingCode,
-                        'tracking_provider' => 'Custom Provider',
-                        'date_shipped' => $order->order_date ?? '',
-                    ]],
+            $items = [];
+            foreach ($trackingCodes as $trackingCode) {
+                $items[] = [
+                    'tracking_number' => $trackingCode,
+                    'tracking_provider' => 'Custom Provider',
+                    'date_shipped' => $order->order_date ?? '',
                 ];
             }
+            $data['meta_data'][] = [
+                'key' => '_wc_shipment_tracking_items',
+                'value' => $items,
+            ];
         }
 
         return $data;
@@ -132,8 +136,8 @@ class OrderTransformer
             $lineItem = [
                 'name' => $item->name ?? '',
                 'quantity' => (int) ($item->quantity ?? 1),
-                'subtotal' => (string) round((float) ($item->unit_price ?? 0) * (int) ($item->quantity ?? 1), 2),
-                'total' => (string) round((float) ($item->total_price ?? 0), 2),
+                'subtotal' => $this->formatMoney((float) ($item->unit_price ?? 0) * (int) ($item->quantity ?? 1)),
+                'total' => $this->formatMoney((float) ($item->total_price ?? 0)),
                 'sku' => $payload['productNumber'] ?? '',
             ];
 
@@ -151,5 +155,14 @@ class OrderTransformer
         }
 
         return $items;
+    }
+
+    /**
+     * Format a money value as a fixed 2-decimal string with no thousands separator.
+     * See ProductTransformer::formatMoney() for the rationale.
+     */
+    protected function formatMoney(float $value): string
+    {
+        return number_format($value, 2, '.', '');
     }
 }

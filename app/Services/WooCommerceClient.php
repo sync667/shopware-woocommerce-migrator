@@ -191,6 +191,66 @@ class WooCommerceClient
         }
     }
 
+    /**
+     * Find an existing WooCommerce order previously imported for the given Shopware ID.
+     *
+     * WC core's REST API can't filter orders by arbitrary meta_key/value, so we use the
+     * native `?search=` query (which searches order number among other fields) to scope
+     * results, then verify the `_shopware_order_id` meta on each candidate. Returns the
+     * matching WC order array or null. This is the safety net for the order-POST retry
+     * scenario where a previous attempt succeeded in WC but the response never reached
+     * the worker (network drop, Cloudflare 5xx after creation).
+     */
+    public function findOrderByShopwareId(string $shopwareOrderId, string $orderNumber): ?array
+    {
+        // Bail early on values that would make `?search=` return everything (or nothing).
+        if ($shopwareOrderId === '' || $orderNumber === '') {
+            return null;
+        }
+
+        // Paginate generously: short order numbers like "1" or "42" produce many candidate
+        // matches in `?search=` (which does LIKE %term% across multiple fields). A hard
+        // 20-row cap would silently miss the real match in busy stores.
+        $perPage = 100;
+        $maxPages = 10;
+
+        for ($page = 1; $page <= $maxPages; $page++) {
+            try {
+                $candidates = $this->get('orders', [
+                    'search' => $orderNumber,
+                    'per_page' => $perPage,
+                    'page' => $page,
+                ]);
+            } catch (\Exception $e) {
+                Log::debug("Order idempotency lookup failed: {$e->getMessage()}");
+
+                return null;
+            }
+
+            if (! is_array($candidates) || $candidates === []) {
+                return null;
+            }
+
+            foreach ($candidates as $order) {
+                foreach (($order['meta_data'] ?? []) as $meta) {
+                    if (($meta['key'] ?? null) === '_shopware_order_id' && ($meta['value'] ?? null) === $shopwareOrderId) {
+                        return $order;
+                    }
+                }
+            }
+
+            if (count($candidates) < $perPage) {
+                return null;
+            }
+        }
+
+        // Hit the page cap without finding a match. Log so the operator can spot the
+        // case where an order with thousands of `?search=` hits silently re-POSTs.
+        Log::warning("findOrderByShopwareId: exhausted {$maxPages} pages of {$perPage} for order_number '{$orderNumber}' without finding meta match for shopware_id '{$shopwareOrderId}'");
+
+        return null;
+    }
+
     public function ping(): bool
     {
         try {

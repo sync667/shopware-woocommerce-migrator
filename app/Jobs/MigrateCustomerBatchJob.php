@@ -4,7 +4,6 @@ namespace App\Jobs;
 
 use App\Models\MigrationLog;
 use App\Models\MigrationRun;
-use App\Services\PasswordMigrator;
 use App\Services\ShopwareDB;
 use App\Services\StateManager;
 use App\Services\WooCommerceClient;
@@ -16,6 +15,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Str;
 use Throwable;
 
 class MigrateCustomerBatchJob implements ShouldQueue
@@ -47,7 +47,6 @@ class MigrateCustomerBatchJob implements ShouldQueue
         $woo = WooCommerceClient::fromMigration($migration);
         $reader = new CustomerReader($db);
         $transformer = new CustomerTransformer;
-        $passwordMigrator = new PasswordMigrator;
 
         try {
             foreach ($this->customerIds as $customerId) {
@@ -92,7 +91,13 @@ class MigrateCustomerBatchJob implements ShouldQueue
                         ? $reader->fetchAddress($customer->shipping_address_id)
                         : null;
 
-                    $data = $transformer->transform($customer, $billingAddress, $shippingAddress);
+                    // Strong random plaintext sent on the POST so WC doesn't auto-generate
+                    // a password (the auto-generation in some WC versions still triggers a
+                    // new-account email even with email settings suppressed). The customer
+                    // never receives this value; _requires_password_reset (set by the
+                    // transformer) marks them as needing a reset on first login.
+                    $newPassword = Str::random(32);
+                    $data = $transformer->transform($customer, $billingAddress, $shippingAddress, $newPassword);
 
                     if ($migration->is_dry_run) {
                         $stateManager->markSkipped('customer', $customer->id, $this->migrationId, $data);
@@ -106,23 +111,6 @@ class MigrateCustomerBatchJob implements ShouldQueue
 
                     if ($wooId) {
                         $stateManager->set('customer', $customer->id, $wooId, $this->migrationId);
-
-                        $passwordResult = $passwordMigrator->migrate($customer->password ?? '', 68);
-                        $metaData = [];
-                        if ($passwordResult['requires_reset']) {
-                            $metaData[] = ['key' => '_requires_password_reset', 'value' => '1'];
-                        } else {
-                            $metaData[] = ['key' => '_shopware_password_migrated', 'value' => '1'];
-                        }
-
-                        if (! empty($metaData)) {
-                            try {
-                                $woo->put("customers/{$wooId}", ['meta_data' => $metaData]);
-                            } catch (\Exception $e) {
-                                $this->log('warning', "Meta update failed: {$e->getMessage()}", $customer->id);
-                            }
-                        }
-
                         $this->log('info', "Migrated customer '{$customer->email}' → WC #{$wooId}", $customer->id);
                     } else {
                         $stateManager->markFailed('customer', $customer->id, $this->migrationId, 'WooCommerce returned no ID for customer');

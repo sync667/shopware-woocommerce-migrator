@@ -189,7 +189,7 @@ class MigrationController extends Controller
                 'name' => $migration->name,
                 'status' => $migration->status,
                 'is_dry_run' => $migration->is_dry_run,
-                'settings' => $migration->settings,
+                'settings' => $this->redactedSettings($migration->settings),
                 'sync_mode' => $migration->sync_mode,
                 'conflict_strategy' => $migration->conflict_strategy,
                 'clean_woocommerce' => $migration->clean_woocommerce,
@@ -220,6 +220,60 @@ class MigrationController extends Controller
             'recent_errors' => $recentErrors,
             'recent_warnings' => $recentWarnings,
         ]);
+    }
+
+    /**
+     * Returns a sanitized copy of migration settings safe for HTTP responses.
+     *
+     * The raw settings blob contains Shopware DB credentials, SSH credentials,
+     * WooCommerce consumer secrets, and WordPress app passwords; exposing it
+     * via /status would leak credentials to anyone with a valid session.
+     *
+     * @param  array<string, mixed>|null  $settings
+     * @return array<string, mixed>
+     */
+    protected function redactedSettings(?array $settings): array
+    {
+        if (! is_array($settings)) {
+            return [];
+        }
+
+        $redact = static function (mixed $value): mixed {
+            return ($value === null || $value === '') ? null : '***';
+        };
+
+        return [
+            'shopware' => [
+                'db_host' => $settings['shopware']['db_host'] ?? null,
+                'db_port' => $settings['shopware']['db_port'] ?? null,
+                'db_database' => $settings['shopware']['db_database'] ?? null,
+                'db_username' => $settings['shopware']['db_username'] ?? null,
+                'db_password' => $redact($settings['shopware']['db_password'] ?? null),
+                'language_id' => $settings['shopware']['language_id'] ?? null,
+                'live_version_id' => $settings['shopware']['live_version_id'] ?? null,
+                'base_url' => $settings['shopware']['base_url'] ?? null,
+                'ssh' => isset($settings['shopware']['ssh']) ? [
+                    'host' => $settings['shopware']['ssh']['host'] ?? null,
+                    'port' => $settings['shopware']['ssh']['port'] ?? null,
+                    'username' => $settings['shopware']['ssh']['username'] ?? null,
+                    'password' => $redact($settings['shopware']['ssh']['password'] ?? null),
+                    'key' => $redact($settings['shopware']['ssh']['key'] ?? null),
+                ] : null,
+                'custom_headers' => array_map($redact, $settings['shopware']['custom_headers'] ?? []),
+            ],
+            'woocommerce' => [
+                'base_url' => $settings['woocommerce']['base_url'] ?? null,
+                'consumer_key' => $redact($settings['woocommerce']['consumer_key'] ?? null),
+                'consumer_secret' => $redact($settings['woocommerce']['consumer_secret'] ?? null),
+            ],
+            'wordpress' => [
+                'username' => $settings['wordpress']['username'] ?? null,
+                'app_password' => $redact($settings['wordpress']['app_password'] ?? null),
+                'custom_headers' => array_map($redact, $settings['wordpress']['custom_headers'] ?? []),
+            ],
+            'cms_options' => $settings['cms_options'] ?? [],
+            'stream_options' => $settings['stream_options'] ?? [],
+        ];
     }
 
     public function show(MigrationRun $migration): Response

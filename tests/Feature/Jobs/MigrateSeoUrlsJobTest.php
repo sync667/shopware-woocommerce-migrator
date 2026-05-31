@@ -151,7 +151,22 @@ class MigrateSeoUrlsJobTest extends TestCase
             return [];
         }
 
-        return array_values(array_filter(explode("\n", trim((string) file_get_contents($path)))));
+        $contents = (string) file_get_contents($path);
+        // Strip the UTF-8 BOM the job writes at the start of new files so individual line
+        // assertions don't have to know about it.
+        if (str_starts_with($contents, "\xEF\xBB\xBF")) {
+            $contents = substr($contents, 3);
+        }
+
+        return array_values(array_filter(explode("\n", trim($contents))));
+    }
+
+    private function csvHasBom(): bool
+    {
+        $path = $this->storageDir.'/redirects.csv';
+
+        return file_exists($path)
+            && str_starts_with((string) file_get_contents($path), "\xEF\xBB\xBF");
     }
 
     public function test_happy_path_migrates_canonical_and_alias_for_product(): void
@@ -517,8 +532,12 @@ class MigrateSeoUrlsJobTest extends TestCase
         $this->assertSame('/old-cat,/product-category/cat/,,301', $lines[2]);
     }
 
-    public function test_cms_page_uses_pending_entity_with_slug(): void
+    public function test_pending_entity_with_slug_is_not_redirected_yet(): void
     {
+        // A pending entity may have a placeholder slug from an earlier pass but
+        // no actual woo_id yet. Creating a redirect now would point at a URL that
+        // 404s on the WordPress side, so we must leave the seo_url row for the
+        // next migration pass instead.
         MigrationEntity::create([
             'migration_id' => $this->migration->id,
             'entity_type' => 'cms_page',
@@ -536,9 +555,42 @@ class MigrateSeoUrlsJobTest extends TestCase
 
         $this->runJob();
 
-        Http::assertSent(fn ($r) => $r->method() === 'POST'
-            && str_contains($r->url(), '/wp-json/redirection/v1/redirect')
-            && $r['url'] === '/help/shipping'
-            && $r['action_data']['url'] === '/shipping/');
+        Http::assertNotSent(fn ($r) => $r->method() === 'POST'
+            && str_contains($r->url(), '/wp-json/redirection/v1/redirect'));
+
+        // State row should be untouched so the next pass retries it once the
+        // CMS page has actually been created.
+        $seoEntity = MigrationEntity::where('migration_id', $this->migration->id)
+            ->where('entity_type', 'seo_url')
+            ->where('shopware_id', 's1')
+            ->first();
+        $this->assertNull($seoEntity);
+
+        $this->assertTrue(
+            MigrationLog::where('migration_id', $this->migration->id)
+                ->where('shopware_id', 's1')
+                ->where('level', 'warning')
+                ->exists()
+        );
+    }
+
+    public function test_csv_is_written_with_utf8_bom(): void
+    {
+        $this->bindReader(products: [
+            $this->seoRow('s1', 'p1', 'frontend.detail.page', 'shoe'),
+        ]);
+        MigrationEntity::create([
+            'migration_id' => $this->migration->id,
+            'entity_type' => 'product',
+            'shopware_id' => 'p1',
+            'woo_id' => 11,
+            'status' => 'success',
+            'payload' => ['slug' => 'shoe'],
+        ]);
+        Config::set('migration.redirection.enabled', false);
+
+        $this->runJob();
+
+        $this->assertTrue($this->csvHasBom(), 'CSV should start with a UTF-8 BOM so importers detect encoding correctly.');
     }
 }

@@ -199,4 +199,44 @@ class SeoUrlTransformerTest extends TestCase
 
         $this->transformer->transform($seoUrl, 'unknown', 1, 'slug');
     }
+
+    public function test_source_percent_encodes_non_ascii_segments(): void
+    {
+        $seoUrl = (object) [
+            'id' => 'a', 'foreign_key' => 'b', 'route_name' => 'frontend.detail.page',
+            'seo_path_info' => 'obuwie-skórzane', 'is_canonical' => 1,
+        ];
+
+        $result = $this->transformer->transform($seoUrl, 'product', 9, 'leather-shoe');
+
+        // Browsers send '/obuwie-sk%C3%B3rzane' for this path. Storing the raw UTF-8
+        // form in Redirection would never match the incoming request.
+        $this->assertSame('/obuwie-sk%C3%B3rzane', $result['source']);
+    }
+
+    public function test_source_percent_encodes_spaces(): void
+    {
+        $seoUrl = (object) [
+            'id' => 'a', 'foreign_key' => 'b', 'route_name' => 'frontend.navigation.page',
+            'seo_path_info' => 'kategoria/damen schuhe', 'is_canonical' => 1,
+        ];
+
+        $result = $this->transformer->transform($seoUrl, 'category', 9, 'damen-schuhe');
+
+        $this->assertSame('/kategoria/damen%20schuhe', $result['source']);
+    }
+
+    public function test_source_preserves_already_encoded_segments(): void
+    {
+        $seoUrl = (object) [
+            'id' => 'a', 'foreign_key' => 'b', 'route_name' => 'frontend.detail.page',
+            'seo_path_info' => 'obuwie-sk%C3%B3rzane', 'is_canonical' => 1,
+        ];
+
+        $result = $this->transformer->transform($seoUrl, 'product', 9, 'leather-shoe');
+
+        // Idempotent: a path that's already percent-encoded must not be re-encoded
+        // (otherwise '%' becomes '%25' and the redirect breaks).
+        $this->assertSame('/obuwie-sk%C3%B3rzane', $result['source']);
+    }
 }

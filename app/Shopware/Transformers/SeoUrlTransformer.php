@@ -55,7 +55,25 @@ class SeoUrlTransformer
         $path = '/'.ltrim($path, '/');
         $path = rtrim($path, '/');
 
-        return $path === '' ? '/' : $path;
+        if ($path === '') {
+            return '/';
+        }
+
+        // Browsers send non-ASCII path segments percent-encoded (e.g. "obuwie-skórzane"
+        // → "obuwie-sk%C3%B3rzane"). The Redirection plugin matches the source byte-exact,
+        // so the stored rule must be percent-encoded too, or the redirect never fires.
+        // Decode-then-encode each segment so an already-encoded input stays byte-identical
+        // and a literal-percent input gets correctly escaped to %25.
+        $segments = explode('/', $path);
+        foreach ($segments as &$segment) {
+            if ($segment === '') {
+                continue;
+            }
+            $segment = rawurlencode(rawurldecode($segment));
+        }
+        unset($segment);
+
+        return implode('/', $segments);
     }
 
     private function buildTarget(string $entityType, ?int $wooId, ?string $wooSlug): string

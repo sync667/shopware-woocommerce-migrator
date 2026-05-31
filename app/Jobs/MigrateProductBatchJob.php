@@ -267,7 +267,12 @@ class MigrateProductBatchJob implements ShouldQueue
             $wooVariationId = $result['id'] ?? null;
 
             if ($wooVariationId) {
-                $stateManager->set('variation', $variant->id, $wooVariationId, $this->migrationId);
+                // Persist the parent product's WC id alongside the variation mapping so
+                // the order migrator can set `product_id` on line items pointing at the
+                // variation — WC requires both ids for variation line items.
+                $stateManager->set('variation', $variant->id, $wooVariationId, $this->migrationId, [
+                    'parent_woo_id' => $wooProductId,
+                ]);
                 $this->log('info', "Migrated variant '{$variant->sku}' → WC #{$wooVariationId}", $variant->id, 'variation');
             }
         } catch (\Throwable $e) {

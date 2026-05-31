@@ -203,4 +203,100 @@ class ProductTransformerTest extends TestCase
 
         $this->assertEquals('grouped', $result['type']);
     }
+
+    private function makeProduct(array $overrides = []): object
+    {
+        return (object) array_merge([
+            'name' => 'Stock Test',
+            'sku' => 'STK-001',
+            'active' => true,
+            'description' => '',
+            'stock' => 0,
+            'manage_stock' => false,
+            'available' => true,
+            'weight' => 0,
+            'width' => 0,
+            'height' => 0,
+            'depth' => 0,
+            'price' => '[{"gross": 9.99}]',
+            'type' => 'product',
+            'meta_title' => '',
+            'meta_description' => '',
+        ], $overrides);
+    }
+
+    public function test_manage_stock_is_always_true_regardless_of_is_closeout(): void
+    {
+        // Reader aliases is_closeout AS manage_stock; both values must yield manage_stock=true
+        // in WC since Shopware always tracks inventory.
+        foreach ([false, true] as $isCloseout) {
+            $result = $this->transformer->transform($this->makeProduct(['manage_stock' => $isCloseout]));
+            $this->assertTrue($result['manage_stock'], "manage_stock should always be true (is_closeout={$isCloseout})");
+        }
+    }
+
+    public function test_stock_status_with_is_closeout_false_keeps_selling_at_zero_stock(): void
+    {
+        $result = $this->transformer->transform($this->makeProduct([
+            'manage_stock' => false, // is_closeout=false in Shopware → keep selling
+            'stock' => 0,
+            'available' => true,
+        ]));
+
+        $this->assertSame('instock', $result['stock_status']);
+    }
+
+    public function test_stock_status_with_is_closeout_true_goes_out_when_stock_zero(): void
+    {
+        $result = $this->transformer->transform($this->makeProduct([
+            'manage_stock' => true, // is_closeout=true → stop selling at zero
+            'stock' => 0,
+            'available' => true,
+        ]));
+
+        $this->assertSame('outofstock', $result['stock_status']);
+    }
+
+    public function test_stock_status_respects_explicit_unavailable(): void
+    {
+        $result = $this->transformer->transform($this->makeProduct([
+            'manage_stock' => false,
+            'stock' => 5,
+            'available' => false,
+        ]));
+
+        $this->assertSame('outofstock', $result['stock_status']);
+    }
+
+    public function test_regular_price_formatted_to_two_decimals(): void
+    {
+        $result = $this->transformer->transform($this->makeProduct([
+            'price' => '[{"gross": 19.5}]',
+        ]));
+
+        // Plain round() yielded '19.5' before — WC's UI then renders inconsistent precision.
+        $this->assertSame('19.50', $result['regular_price']);
+    }
+
+    public function test_sale_price_emitted_when_list_price_higher_than_gross(): void
+    {
+        $result = $this->transformer->transform($this->makeProduct([
+            'price' => '[{"gross": 12, "listPrice": {"gross": 20}}]',
+        ]));
+
+        $this->assertSame('20.00', $result['regular_price']);
+        $this->assertSame('12.00', $result['sale_price']);
+    }
+
+    public function test_no_sale_price_when_list_price_lower_or_equal(): void
+    {
+        // Regression guard for sale price downgrade: a list price lower than gross must
+        // never be emitted as a "sale" — that would advertise a higher price as a discount.
+        $result = $this->transformer->transform($this->makeProduct([
+            'price' => '[{"gross": 20, "listPrice": {"gross": 15}}]',
+        ]));
+
+        $this->assertSame('20.00', $result['regular_price']);
+        $this->assertArrayNotHasKey('sale_price', $result);
+    }
 }

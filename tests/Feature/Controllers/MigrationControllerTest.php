@@ -237,6 +237,77 @@ class MigrationControllerTest extends TestCase
         $this->assertEquals('API connection failed', $errors[0]['message']);
     }
 
+    public function test_status_redacts_credentials(): void
+    {
+        $migration = MigrationRun::create([
+            'name' => 'Redaction Test',
+            'settings' => [
+                'shopware' => [
+                    'db_host' => '10.0.0.1',
+                    'db_port' => 3306,
+                    'db_database' => 'shopware',
+                    'db_username' => 'shopware_user',
+                    'db_password' => 'super-secret-db-password',
+                    'language_id' => 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                    'live_version_id' => 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+                    'base_url' => 'https://shop.test',
+                    'ssh' => [
+                        'host' => 'bastion.shop.test',
+                        'port' => 22,
+                        'username' => 'shop',
+                        'password' => 'ssh-secret-password',
+                        'key' => '-----BEGIN PRIVATE KEY-----...',
+                    ],
+                    'custom_headers' => ['CF-Access-Client-Secret' => 'cf-token'],
+                ],
+                'woocommerce' => [
+                    'base_url' => 'https://woo.test',
+                    'consumer_key' => 'ck_super_secret',
+                    'consumer_secret' => 'cs_super_secret',
+                ],
+                'wordpress' => [
+                    'username' => 'admin',
+                    'app_password' => 'wp-app-password-secret',
+                    'custom_headers' => ['CF-Access-Client-Secret' => 'cf-token-wp'],
+                ],
+            ],
+            'status' => 'running',
+            'is_dry_run' => false,
+        ]);
+
+        $response = $this->actsAsAuthenticated()
+            ->getJson("/api/migrations/{$migration->id}/status");
+
+        $response->assertOk();
+
+        $secrets = [
+            'super-secret-db-password',
+            'ssh-secret-password',
+            '-----BEGIN PRIVATE KEY-----',
+            'ck_super_secret',
+            'cs_super_secret',
+            'wp-app-password-secret',
+            'cf-token',
+            'cf-token-wp',
+        ];
+        $body = $response->getContent();
+        foreach ($secrets as $secret) {
+            $this->assertStringNotContainsString(
+                $secret,
+                $body,
+                "Status response leaked secret '{$secret}' in plaintext"
+            );
+        }
+
+        // Non-sensitive fields should still be visible so the dashboard can render.
+        $this->assertEquals('10.0.0.1', $response->json('migration.settings.shopware.db_host'));
+        $this->assertEquals('shopware_user', $response->json('migration.settings.shopware.db_username'));
+        $this->assertEquals('https://woo.test', $response->json('migration.settings.woocommerce.base_url'));
+        $this->assertEquals('***', $response->json('migration.settings.shopware.db_password'));
+        $this->assertEquals('***', $response->json('migration.settings.woocommerce.consumer_secret'));
+        $this->assertEquals('***', $response->json('migration.settings.wordpress.app_password'));
+    }
+
     public function test_status_requires_authentication(): void
     {
         $migration = MigrationRun::create([
