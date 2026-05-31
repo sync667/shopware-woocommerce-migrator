@@ -95,7 +95,6 @@ class ImageMigrator
      */
     public function migrateFromUrl(string $imageUrl, string $altText = ''): ?int
     {
-        // Extract filename from URL
         $filename = basename(parse_url($imageUrl, PHP_URL_PATH));
 
         if (empty($filename)) {

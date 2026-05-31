@@ -27,7 +27,6 @@ class CategoryTransformer
             $data['parent'] = $wooParentId;
         }
 
-        // Store Shopware category ID for reference
         if ($category->id ?? '') {
             $data['meta_data'][] = ['key' => '_shopware_category_id', 'value' => $category->id];
         }

@@ -30,11 +30,13 @@ class CategoryReader
             FROM category c
             LEFT JOIN category_translation ct
                 ON ct.category_id = c.id
+                AND ct.category_version_id = c.version_id
                 AND ct.language_id = ?
             LEFT JOIN media m ON m.id = c.media_id
             WHERE c.type = 'page'
+              AND c.version_id = ?
             ORDER BY c.level ASC, c.auto_increment ASC
-        ", [$this->db->languageIdBin()]);
+        ", [$this->db->languageIdBin(), $this->db->liveVersionIdBin()]);
     }
 
     public function fetchUpdatedSince(\DateTimeInterface $since): array
@@ -61,13 +63,16 @@ class CategoryReader
             FROM category c
             LEFT JOIN category_translation ct
                 ON ct.category_id = c.id
+                AND ct.category_version_id = c.version_id
                 AND ct.language_id = ?
             LEFT JOIN media m ON m.id = c.media_id
             WHERE c.type = 'page'
+              AND c.version_id = ?
               AND (c.updated_at > ? OR c.created_at > ?)
             ORDER BY c.level ASC, c.updated_at ASC, c.created_at ASC
         ", [
             $this->db->languageIdBin(),
+            $this->db->liveVersionIdBin(),
             $since->format('Y-m-d H:i:s'),
             $since->format('Y-m-d H:i:s'),
         ]);

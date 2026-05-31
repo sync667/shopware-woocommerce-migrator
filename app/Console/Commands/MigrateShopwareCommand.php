@@ -43,7 +43,6 @@ class MigrateShopwareCommand extends Command
 
     public function handle(): int
     {
-        // Validate mode
         $mode = $this->option('mode');
         if (! in_array($mode, ['full', 'delta'])) {
             $this->error("Invalid mode: {$mode}. Must be 'full' or 'delta'");
@@ -51,7 +50,6 @@ class MigrateShopwareCommand extends Command
             return Command::FAILURE;
         }
 
-        // Validate conflict strategy
         $conflictStrategy = $this->option('conflict');
         if (! in_array($conflictStrategy, ['shopware_wins', 'woo_wins', 'manual'])) {
             $this->error("Invalid conflict strategy: {$conflictStrategy}");
@@ -81,7 +79,6 @@ class MigrateShopwareCommand extends Command
             ],
         ];
 
-        // Add SSH configuration if provided
         if ($this->option('ssh-host')) {
             $settings['shopware']['ssh'] = [
                 'host' => $this->option('ssh-host'),
@@ -92,7 +89,6 @@ class MigrateShopwareCommand extends Command
             ];
         }
 
-        // Test connections before migration (unless skipped)
         if (! $this->option('skip-tests')) {
             $this->info('🔍 Testing connections...');
             if (! $this->testConnections($settings)) {
@@ -121,7 +117,6 @@ class MigrateShopwareCommand extends Command
             $this->warn('Running in DRY RUN mode — no data will be written to WooCommerce.');
         }
 
-        // Display migration mode information
         if ($mode === 'delta') {
             $this->info('🔄 Running DELTA migration (only changed records)');
             $this->info("⚔️  Conflict strategy: {$conflictStrategy}");
@@ -141,7 +136,6 @@ class MigrateShopwareCommand extends Command
             new MigrateProductsJob($migration->id),
         ];
 
-        // Log CMS pages migration if requested
         if ($this->option('cms-all')) {
             $this->info('CMS pages: Migrating all pages');
         } elseif ($cmsIds = $this->option('cms-ids')) {
@@ -166,7 +160,6 @@ class MigrateShopwareCommand extends Command
     {
         $allPassed = true;
 
-        // Test Shopware DB
         try {
             $db = new \App\Services\ShopwareDB($settings['shopware']);
             $result = $db->select('SELECT VERSION() as version');
@@ -176,7 +169,6 @@ class MigrateShopwareCommand extends Command
             $allPassed = false;
         }
 
-        // Test WooCommerce API (unless dry-run)
         if (! $this->option('dry-run')) {
             try {
                 $woo = new \App\Services\WooCommerceClient($settings['woocommerce']);

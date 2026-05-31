@@ -32,19 +32,16 @@ class ShippingMethodTransformer
             return '0';
         }
 
-        // Get the first price (usually the base price)
         $firstPrice = $prices[0] ?? null;
         if (! $firstPrice) {
             return '0';
         }
 
-        // Parse currency_price JSON
         $currencyPrices = json_decode($firstPrice->currency_price ?? '{}', true);
         if (empty($currencyPrices) || ! is_array($currencyPrices)) {
             return '0';
         }
 
-        // Get the first currency price
         $price = reset($currencyPrices);
 
         return (string) round((float) ($price['gross'] ?? 0), 2);

@@ -33,7 +33,6 @@ class MigratePaymentMethodsJob implements ShouldQueue
         $reader = new PaymentMethodReader($db);
         $transformer = new PaymentMethodTransformer;
 
-        // Delta migration: only fetch updated records
         if ($migration->sync_mode === 'delta' && $migration->last_sync_at) {
             $paymentMethods = $reader->fetchUpdatedSince($migration->last_sync_at);
         } else {
@@ -59,7 +58,6 @@ class MigratePaymentMethodsJob implements ShouldQueue
                     continue;
                 }
 
-                // Store as meta data for manual configuration in WooCommerce
                 $stateManager->set('payment_method', $method->id, crc32($data['id']), $this->migrationId, $data);
                 $this->log('info', "Migrated payment method '{$data['title']}'", $method->id, 'payment_method');
             } catch (\Exception $e) {

@@ -166,7 +166,6 @@ class DatabaseDumpServiceTest extends TestCase
         $this->assertStringEndsWith('.sql', $result);
         $this->assertFileExists($result);
 
-        // Cleanup
         $this->cleanupDirectory($tmpDir);
     }
 

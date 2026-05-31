@@ -2,7 +2,6 @@
 
 namespace App\Http\Middleware;
 
-use App\Models\AccessToken;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -16,12 +15,10 @@ class ValidateAccessToken
      */
     public function handle(Request $request, Closure $next): Response
     {
-        // Check if user has active session
         if (! $request->session()->get('authenticated')) {
             return $this->unauthorized($request, 'Authentication required');
         }
 
-        // Check if session is expired (24 hours)
         $authenticatedAt = $request->session()->get('authenticated_at');
         if ($authenticatedAt && now()->diffInHours($authenticatedAt) > 24) {
             $request->session()->invalidate();

@@ -29,17 +29,14 @@ class GenerateAccessToken extends Command
      */
     public function handle(): int
     {
-        // List tokens
         if ($this->option('list')) {
             return $this->listTokens();
         }
 
-        // Revoke token
         if ($revokeId = $this->option('revoke')) {
             return $this->revokeToken($revokeId);
         }
 
-        // Generate new token
         $expires = $this->option('expires') ? (int) $this->option('expires') : null;
 
         $token = AccessToken::generate(null, $expires);

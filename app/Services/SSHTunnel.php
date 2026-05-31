@@ -20,14 +20,12 @@ class SSHTunnel
      */
     public function connect(string $remoteHost, int $remotePort): int
     {
-        // Find available local port
         $this->localPort = $this->findAvailablePort();
 
         $sshHost = $this->config['host'];
         $sshPort = $this->config['port'] ?? 22;
         $sshUser = $this->config['username'];
 
-        // Build SSH tunnel command
         $command = [
             'ssh',
             '-N', // Don't execute remote command
@@ -38,19 +36,15 @@ class SSHTunnel
             '-o', 'ServerAliveInterval=60',
         ];
 
-        // Add authentication
         if (! empty($this->config['key'])) {
             $command[] = '-i';
             $command[] = $this->config['key'];
         } elseif (! empty($this->config['password'])) {
-            // For password authentication, we'd need sshpass
             array_unshift($command, 'sshpass', '-p', $this->config['password']);
         }
 
-        // Add user@host
         $command[] = "{$sshUser}@{$sshHost}";
 
-        // Start SSH tunnel in background
         $this->process = proc_open(
             implode(' ', array_map('escapeshellarg', $command)),
             [
@@ -65,10 +59,8 @@ class SSHTunnel
             throw new \RuntimeException('Failed to create SSH tunnel');
         }
 
-        // Give tunnel time to establish
         sleep(2);
 
-        // Check if tunnel is alive
         $status = proc_get_status($this->process);
         if (! $status['running']) {
             throw new \RuntimeException('SSH tunnel failed to start');

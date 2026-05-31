@@ -30,22 +30,18 @@ class CustomFieldTransformer
 
     protected function normalizeValue(mixed $value): mixed
     {
-        // Handle arrays and objects
         if (is_array($value) || is_object($value)) {
             return json_encode($value);
         }
 
-        // Handle booleans
         if (is_bool($value)) {
             return $value;
         }
 
-        // Handle null
         if ($value === null) {
             return '';
         }
 
-        // Return as-is
         return $value;
     }
 

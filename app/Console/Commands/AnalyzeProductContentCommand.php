@@ -39,7 +39,6 @@ class AnalyzeProductContentCommand extends Command
         $db = ShopwareDB::fromMigration($migration);
         $reader = new ProductReader($db);
 
-        // Mock ImageMigrator for testing
         $imageMigrator = $this->createMockImageMigrator();
         $contentMigrator = new ContentMigrator($imageMigrator);
 
@@ -95,7 +94,6 @@ class AnalyzeProductContentCommand extends Command
             }
         }
 
-        // Display statistics
         $this->info('📊 Content Analysis Results:');
         $this->newLine();
 
@@ -112,7 +110,6 @@ class AnalyzeProductContentCommand extends Command
             ]
         );
 
-        // Show examples
         if (! empty($examples)) {
             $this->newLine();
             $this->info('📄 Sample Products with Rich Content:');
@@ -127,7 +124,6 @@ class AnalyzeProductContentCommand extends Command
             }
         }
 
-        // Test ContentMigrator with sample
         if ($stats['with_html'] > 0) {
             $this->info('🧪 Testing ContentMigrator...');
             $this->newLine();
@@ -174,13 +170,9 @@ class AnalyzeProductContentCommand extends Command
 
     protected function createMockImageMigrator(): ImageMigrator
     {
-        // Create a mock that doesn't actually migrate images
         return new class extends ImageMigrator
         {
-            public function __construct()
-            {
-                // Skip parent constructor
-            }
+            public function __construct() {}
 
             public function migrateFromUrl(string $imageUrl, string $altText = ''): ?int
             {

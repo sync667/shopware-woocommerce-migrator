@@ -26,7 +26,6 @@ class AuthController extends Controller
             'password' => Hash::make($request->password),
         ]);
 
-        // Assign default role if it exists
         if (Role::where('name', 'user')->exists()) {
             $user->assignRole('user');
         } else {

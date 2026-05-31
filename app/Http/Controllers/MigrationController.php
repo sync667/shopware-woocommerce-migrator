@@ -80,7 +80,6 @@ class MigrationController extends Controller
 
         $jobs = [];
 
-        // Clean WooCommerce if requested (and not dry run)
         if (($validated['clean_woocommerce'] ?? false) && ! ($validated['is_dry_run'] ?? false)) {
             foreach (\App\Services\WooCommerceCleanup::entities() as $entity) {
                 $jobs[] = new \App\Jobs\CleanWooCommerceJob($migration->id, $entity);
@@ -132,7 +131,6 @@ class MigrationController extends Controller
             ->limit(10)
             ->get(['entity_type', 'shopware_id', 'message', 'created_at']);
 
-        // Summary stats
         $totalSuccess = 0;
         $totalFailed = 0;
         $totalPending = 0;
@@ -149,7 +147,6 @@ class MigrationController extends Controller
 
         $totalAll = $totalSuccess + $totalFailed + $totalPending + $totalRunning + $totalSkipped;
 
-        // Elapsed time and ETA
         $elapsedSeconds = null;
         $etaSeconds = null;
         if ($migration->started_at) {
@@ -163,7 +160,6 @@ class MigrationController extends Controller
             }
         }
 
-        // Current step determination
         $stepOrder = ['manufacturer', 'tax', 'category', 'product', 'variation', 'customer', 'order', 'coupon', 'review'];
         $currentStep = null;
         if ($migration->status === 'running') {
@@ -178,7 +174,6 @@ class MigrationController extends Controller
             }
         }
 
-        // Last activity
         $lastLog = $migration->logs()
             ->orderByDesc('created_at')
             ->first(['message', 'entity_type', 'level', 'created_at']);
@@ -412,7 +407,6 @@ class MigrationController extends Controller
             'wordpress' => null,
         ];
 
-        // Pass custom headers to both WooCommerce and WordPress clients
         $customHeaders = $validated['wordpress']['custom_headers'] ?? [];
 
         if (! empty($validated['woocommerce']['base_url'])) {
@@ -523,7 +517,6 @@ class MigrationController extends Controller
                 'database' => $result[0]->db_name ?? 'Unknown',
             ];
 
-            // Check required tables
             $tables = ['product', 'category', 'customer', 'order'];
             $missingTables = [];
             foreach ($tables as $table) {
@@ -541,11 +534,9 @@ class MigrationController extends Controller
                 ];
             }
 
-            // Count products
             $count = $db->select('SELECT COUNT(*) as count FROM product WHERE parent_id IS NULL');
             $details['product_count'] = $count[0]->count ?? 0;
 
-            // Test language ID if provided
             if (! empty($config['language_id'])) {
                 $lang = $db->select('SELECT LOWER(HEX(id)) as id, name FROM language WHERE id = UNHEX(?)', [$config['language_id']]);
                 if (! empty($lang)) {
@@ -641,7 +632,6 @@ class MigrationController extends Controller
 
             $details = ['version' => $version];
 
-            // Test critical endpoints
             $woo->get('products', ['per_page' => 1]);
             $woo->get('products/categories', ['per_page' => 1]);
 
@@ -699,14 +689,12 @@ class MigrationController extends Controller
                 'wp_app_password' => $config['app_password'],
             ];
 
-            // Add custom headers if provided
             if (! empty($config['custom_headers'])) {
                 $wpClientConfig['custom_headers'] = $config['custom_headers'];
             }
 
             $wpMedia = new WordPressMediaClient($wpClientConfig);
 
-            // First, test if API is accessible and authentication works
             $apiTest = $wpMedia->testApiAccess();
             if (! $apiTest['success']) {
                 // Check if error indicates Cloudflare/Zero Trust blocking
@@ -717,7 +705,6 @@ class MigrationController extends Controller
                 return $apiTest;
             }
 
-            // API is accessible, now try test upload
             $testContent = 'Connection test from Shopware Migration Tool';
             $mediaId = $wpMedia->upload($testContent, 'migration-test-'.time().'.txt', 'text/plain');
 

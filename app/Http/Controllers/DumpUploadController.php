@@ -25,7 +25,6 @@ class DumpUploadController extends Controller
         $storedDirectory = null;
 
         try {
-            // Check Docker availability first
             if (! $this->dumpService->isDockerAvailable()) {
                 return response()->json([
                     'success' => false,
@@ -35,14 +34,11 @@ class DumpUploadController extends Controller
 
             $file = $request->file('dump_file');
 
-            // Store the file
             $stored = $this->dumpService->store($file);
             $storedDirectory = $stored['directory'];
 
-            // Extract SQL if compressed
             $sqlPath = $this->dumpService->extractSqlFile($stored['path']);
 
-            // Validate the dump
             $validation = $this->dumpService->validateDump($sqlPath);
 
             if (! $validation['valid']) {
@@ -55,7 +51,6 @@ class DumpUploadController extends Controller
                 ], 422);
             }
 
-            // Spawn Docker container and import
             $connection = $this->dumpService->spawnAndImport($sqlPath, $stored['database_name']);
 
             Log::info('Database dump imported successfully', [
@@ -152,7 +147,6 @@ class DumpUploadController extends Controller
             $sqlPath = $this->dumpService->extractSqlFile($stored['path']);
             $validation = $this->dumpService->validateDump($sqlPath);
 
-            // Clean up files after validation-only (no import needed)
             $this->dumpService->cleanupFiles($storedDirectory);
 
             return response()->json([

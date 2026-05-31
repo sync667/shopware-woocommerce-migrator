@@ -19,7 +19,6 @@ class SmartUpdateService
     ): array {
         $migration = MigrationRun::find($migrationId);
 
-        // Full migration mode: always migrate
         if ($migration->sync_mode === 'full') {
             return [
                 'should_migrate' => true,
@@ -28,10 +27,8 @@ class SmartUpdateService
             ];
         }
 
-        // Delta mode: check timestamps
         $lastSyncAt = $migration->last_sync_at;
 
-        // No last sync: this is first delta run, migrate everything
         if (! $lastSyncAt) {
             return [
                 'should_migrate' => true,
@@ -40,10 +37,8 @@ class SmartUpdateService
             ];
         }
 
-        // Check if record exists in WooCommerce
         $entity = $stateManager->getEntity($entityType, $shopwareId, $migrationId);
 
-        // New record: create
         if (! $entity) {
             return [
                 'should_migrate' => true,
@@ -52,9 +47,7 @@ class SmartUpdateService
             ];
         }
 
-        // Existing record: check if updated since last sync
         if (! $shopwareUpdatedAt) {
-            // No timestamp available, migrate to be safe
             return [
                 'should_migrate' => true,
                 'action' => 'update',
@@ -62,9 +55,7 @@ class SmartUpdateService
             ];
         }
 
-        // Compare timestamps
         if ($shopwareUpdatedAt->greaterThan($lastSyncAt)) {
-            // Record updated in Shopware since last sync
             return [
                 'should_migrate' => true,
                 'action' => 'update',
@@ -74,7 +65,6 @@ class SmartUpdateService
             ];
         }
 
-        // Record hasn't changed: skip
         return [
             'should_migrate' => false,
             'action' => 'skip',
@@ -94,10 +84,8 @@ class SmartUpdateService
         ?Carbon $lastSyncedAt,
         WooCommerceClient $woo
     ): array {
-        // Determine WooCommerce endpoint
         $endpoint = $this->getWooEndpoint($entityType, $wooId);
 
-        // Fetch current WooCommerce record
         try {
             $wooRecord = $woo->get($endpoint);
             $wooUpdatedAt = Carbon::parse($wooRecord['date_modified'] ?? $wooRecord['date_created']);
@@ -117,9 +105,7 @@ class SmartUpdateService
             ];
         }
 
-        // Check if WooCommerce record was modified after last sync
         if ($wooUpdatedAt->greaterThan($lastSyncedAt)) {
-            // Conflict: both Shopware and WooCommerce changed
             return [
                 'has_conflict' => true,
                 'reason' => 'both_sides_modified',
@@ -129,7 +115,6 @@ class SmartUpdateService
             ];
         }
 
-        // No conflict
         return [
             'has_conflict' => false,
             'reason' => 'woo_not_modified',

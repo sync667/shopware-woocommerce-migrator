@@ -27,7 +27,6 @@ class PaymentMethodTransformer
 
     protected function getMethodDescription(string $handlerIdentifier): string
     {
-        // Extract payment type from handler identifier
         if (str_contains($handlerIdentifier, 'PayPal')) {
             return 'PayPal payment gateway';
         }

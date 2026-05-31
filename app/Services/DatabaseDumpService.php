@@ -110,7 +110,6 @@ class DatabaseDumpService
         $mysqlVersion = null;
         $tablesFound = [];
 
-        // Read the first portion of the file to check headers and structure
         $handle = fopen($sqlPath, 'r');
         if (! $handle) {
             throw new \RuntimeException('Cannot read SQL file');
@@ -141,7 +140,6 @@ class DatabaseDumpService
             }
         }
 
-        // Scan the entire file for CREATE TABLE statements
         rewind($handle);
         $fullContent = '';
         $chunkSize = 8192;
@@ -149,7 +147,6 @@ class DatabaseDumpService
         while (! feof($handle)) {
             $fullContent .= fread($handle, $chunkSize);
 
-            // Check for required tables in accumulated content
             foreach (self::REQUIRED_TABLES as $table) {
                 if (! in_array($table, $tablesFound)) {
                     if (preg_match('/CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?`?'.$table.'`?\s/i', $fullContent)) {
@@ -158,7 +155,6 @@ class DatabaseDumpService
                 }
             }
 
-            // Keep memory usage reasonable by trimming processed content
             if (strlen($fullContent) > 65536) {
                 $fullContent = substr($fullContent, -32768);
             }
@@ -202,7 +198,6 @@ class DatabaseDumpService
             throw new \RuntimeException('Docker is not available. Please install Docker to use the dump import feature.');
         }
 
-        // Remove any previously running dump containers before spawning a new one
         $this->cleanupStaleDumpContainers();
 
         $containerName = 'sw_dump_'.Str::random(8);
@@ -210,7 +205,6 @@ class DatabaseDumpService
         $password = Str::random(16);
         $dbName = 'shopware';
 
-        // Spawn MySQL container
         $result = Process::timeout(30)->run([
             'docker', 'run', '-d',
             '--name', $containerName,
@@ -227,14 +221,12 @@ class DatabaseDumpService
             throw new \RuntimeException('Failed to start MySQL container: '.$result->errorOutput());
         }
 
-        // Wait for MySQL to be ready and import the dump
         try {
             $this->waitForMysql($containerName, $password);
 
             $processedSqlPath = $this->stripGeneratedColumns($sqlPath);
             $this->importDump($containerName, $processedSqlPath, $password, $dbName);
         } catch (\Throwable $e) {
-            // Cleanup container on failure
             Process::timeout(10)->run(['docker', 'rm', '-f', $containerName]);
 
             throw $e;

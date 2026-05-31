@@ -33,7 +33,6 @@ class MigrateShippingMethodsJob implements ShouldQueue
         $reader = new ShippingMethodReader($db);
         $transformer = new ShippingMethodTransformer;
 
-        // Delta migration: only fetch updated records
         if ($migration->sync_mode === 'delta' && $migration->last_sync_at) {
             $shippingMethods = $reader->fetchUpdatedSince($migration->last_sync_at);
         } else {
@@ -60,7 +59,6 @@ class MigrateShippingMethodsJob implements ShouldQueue
                     continue;
                 }
 
-                // Store as meta data for manual configuration in WooCommerce
                 $stateManager->set('shipping_method', $method->id, crc32($data['method_id']), $this->migrationId, $data);
                 $this->log('info', "Migrated shipping method '{$data['method_title']}'", $method->id, 'shipping_method');
             } catch (\Exception $e) {

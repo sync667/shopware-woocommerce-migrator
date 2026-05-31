@@ -40,7 +40,6 @@ class MigrateCmsPagesJob implements ShouldQueue
         $seoReader = new SeoUrlReader($db);
         $transformer = new CmsPageTransformer($stateManager, $this->migrationId);
 
-        // Fetch pages based on selection
         $pages = $this->selectedPageIds
             ? $reader->fetchByIds($this->selectedPageIds)
             : $reader->fetchAll();
@@ -53,7 +52,6 @@ class MigrateCmsPagesJob implements ShouldQueue
             }
 
             try {
-                // Fetch full page structure
                 $sections = $reader->fetchSections($page->id);
 
                 foreach ($sections as $section) {
@@ -66,7 +64,6 @@ class MigrateCmsPagesJob implements ShouldQueue
                     $section->blocks = $blocks;
                 }
 
-                // Fetch SEO URL for slug
                 $seoUrls = $seoReader->fetchAllForCmsPages();
                 $seoUrl = '';
                 foreach ($seoUrls as $url) {
@@ -76,7 +73,6 @@ class MigrateCmsPagesJob implements ShouldQueue
                     }
                 }
 
-                // Transform to WordPress page
                 $data = $transformer->transform($page, $sections, $seoUrl);
 
                 if ($migration->is_dry_run) {

@@ -37,7 +37,6 @@ class MigrateProductsJob implements ShouldQueue
         $db = ShopwareDB::fromMigration($migration);
         $reader = new ProductReader($db);
 
-        // Fetch products based on sync mode
         if ($migration->sync_mode === 'delta' && $migration->last_sync_at) {
             $products = $reader->fetchUpdatedSince($migration->last_sync_at);
             $mode = 'delta (updated since '.$migration->last_sync_at->format('Y-m-d H:i:s').')';
@@ -60,7 +59,6 @@ class MigrateProductsJob implements ShouldQueue
             'created_at' => now(),
         ]);
 
-        // Mark all products as pending
         foreach ($productIds as $productId) {
             $stateManager->markPending('product', $productId, $this->migrationId);
         }

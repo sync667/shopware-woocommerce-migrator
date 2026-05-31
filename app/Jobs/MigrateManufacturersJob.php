@@ -35,7 +35,6 @@ class MigrateManufacturersJob implements ShouldQueue
         $reader = new ManufacturerReader($db);
         $transformer = new ManufacturerTransformer;
 
-        // Fetch manufacturers based on sync mode
         if ($migration->sync_mode === 'delta' && $migration->last_sync_at) {
             $manufacturers = $reader->fetchUpdatedSince($migration->last_sync_at);
             $mode = 'delta (updated since '.$migration->last_sync_at->format('Y-m-d H:i:s').')';
@@ -123,7 +122,6 @@ class MigrateManufacturersJob implements ShouldQueue
 
         $db->disconnect();
 
-        // Update last_sync_at timestamp for delta migrations
         if ($migration->sync_mode === 'delta') {
             $migration->update(['last_sync_at' => now()]);
         }

@@ -37,7 +37,6 @@ class MigrateReviewsJob implements ShouldQueue
         $db = ShopwareDB::fromMigration($migration);
         $reader = new ReviewReader($db);
 
-        // Fetch reviews based on sync mode
         if ($migration->sync_mode === 'delta' && $migration->last_sync_at) {
             $reviews = $reader->fetchUpdatedSince($migration->last_sync_at);
             $mode = 'delta (updated since '.$migration->last_sync_at->format('Y-m-d H:i:s').')';
@@ -60,7 +59,6 @@ class MigrateReviewsJob implements ShouldQueue
             'created_at' => now(),
         ]);
 
-        // Mark all reviews as pending
         foreach ($reviewIds as $reviewId) {
             $stateManager->markPending('review', $reviewId, $this->migrationId);
         }

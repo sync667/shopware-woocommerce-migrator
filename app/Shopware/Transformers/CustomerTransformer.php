@@ -27,7 +27,6 @@ class CustomerTransformer
             $data['meta_data'][] = ['key' => '_requires_password_reset', 'value' => '1'];
         }
 
-        // Store Shopware customer ID and number for reference
         if ($customer->id ?? '') {
             $data['meta_data'][] = ['key' => '_shopware_customer_id', 'value' => $customer->id];
         }

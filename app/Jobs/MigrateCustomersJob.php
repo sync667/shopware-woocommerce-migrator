@@ -38,7 +38,6 @@ class MigrateCustomersJob implements ShouldQueue
         $db = ShopwareDB::fromMigration($migration);
         $reader = new CustomerReader($db);
 
-        // Fetch customers based on sync mode
         if ($migration->sync_mode === 'delta' && $migration->last_sync_at) {
             $customers = $reader->fetchUpdatedSince($migration->last_sync_at);
             $mode = 'delta (updated since '.$migration->last_sync_at->format('Y-m-d H:i:s').')';
@@ -61,7 +60,6 @@ class MigrateCustomersJob implements ShouldQueue
             'created_at' => now(),
         ]);
 
-        // Mark all customers as pending
         foreach ($customerIds as $customerId) {
             $stateManager->markPending('customer', $customerId, $this->migrationId);
         }

@@ -38,7 +38,6 @@ class TestConnectionsCommand extends Command
 
         $allPassed = true;
 
-        // Test Shopware Database
         if ($this->hasShopwareConfig()) {
             $allPassed = $this->testShopwareConnection() && $allPassed;
         } else {
@@ -47,7 +46,6 @@ class TestConnectionsCommand extends Command
 
         $this->newLine();
 
-        // Test WooCommerce API
         if ($this->hasWooCommerceConfig()) {
             $allPassed = $this->testWooCommerceConnection() && $allPassed;
         } else {
@@ -56,7 +54,6 @@ class TestConnectionsCommand extends Command
 
         $this->newLine();
 
-        // Test WordPress Media
         if ($this->hasWordPressConfig()) {
             $allPassed = $this->testWordPressConnection() && $allPassed;
         } else {
@@ -91,7 +88,6 @@ class TestConnectionsCommand extends Command
                 'live_version_id' => $this->option('sw-version-id') ?: config('shopware.live_version_id'),
             ];
 
-            // Add SSH tunnel if configured
             if ($this->hasSSHConfig()) {
                 $config['ssh'] = [
                     'host' => $this->option('ssh-host'),
@@ -104,12 +100,10 @@ class TestConnectionsCommand extends Command
 
             $db = new ShopwareDB($config);
 
-            // Test basic connection
             $result = $db->select('SELECT VERSION() as version, DATABASE() as db_name');
             $this->line('<fg=green>  ✓</> Connected to MySQL: '.$result[0]->version);
             $this->line('<fg=green>  ✓</> Database: '.$result[0]->db_name);
 
-            // Test if required tables exist
             $tables = ['product', 'category', 'customer', 'order'];
             foreach ($tables as $table) {
                 $exists = $db->select("SHOW TABLES LIKE '{$table}'");
@@ -121,7 +115,6 @@ class TestConnectionsCommand extends Command
             }
             $this->line('<fg=green>  ✓</> Required tables exist');
 
-            // Test language ID
             if ($config['language_id']) {
                 $lang = $db->select('SELECT LOWER(HEX(id)) as id, name FROM language WHERE id = UNHEX(?)', [$config['language_id']]);
                 if (! empty($lang)) {
@@ -133,7 +126,6 @@ class TestConnectionsCommand extends Command
                 }
             }
 
-            // Count products
             $count = $db->select('SELECT COUNT(*) as count FROM product WHERE parent_id IS NULL');
             $this->line('<fg=green>  ✓</> Found '.$count[0]->count.' parent products');
 
@@ -161,20 +153,16 @@ class TestConnectionsCommand extends Command
 
             $woo = new WooCommerceClient($config);
 
-            // Test API connection
             $systemStatus = $woo->get('system_status');
             $this->line('<fg=green>  ✓</> Connected to WooCommerce API');
 
-            // Get WooCommerce version
             if (isset($systemStatus['environment']['version'])) {
                 $this->line('<fg=green>  ✓</> WooCommerce version: '.$systemStatus['environment']['version']);
             }
 
-            // Test products endpoint
             $products = $woo->get('products', ['per_page' => 1]);
             $this->line('<fg=green>  ✓</> Products endpoint accessible');
 
-            // Test categories endpoint
             $categories = $woo->get('products/categories', ['per_page' => 1]);
             $this->line('<fg=green>  ✓</> Categories endpoint accessible');
 
@@ -203,11 +191,9 @@ class TestConnectionsCommand extends Command
 
             $wpMedia = new WordPressMediaClient($config);
 
-            // Test by getting media list
             $testContent = 'Test connection from Shopware migrator';
             $testFilename = 'test-connection-'.time().'.txt';
 
-            // Try to upload a test file
             $mediaId = $wpMedia->upload($testContent, $testFilename, 'text/plain', 'Test Upload', 'Connection test');
 
             if ($mediaId) {

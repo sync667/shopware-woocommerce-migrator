@@ -55,7 +55,6 @@ class MigrateCustomerBatchJob implements ShouldQueue
                 }
 
                 try {
-                    // Fetch single customer by ID
                     $customers = $db->select('
                     SELECT
                         LOWER(HEX(c.id)) AS id,

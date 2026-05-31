@@ -40,7 +40,6 @@ class MigrateCategoriesJob implements ShouldQueue
         $transformer = new CategoryTransformer;
         $seoResolver = new CategorySeoTextResolver($db);
 
-        // Fetch categories based on sync mode
         if ($migration->sync_mode === 'delta' && $migration->last_sync_at) {
             $categories = $reader->fetchUpdatedSince($migration->last_sync_at);
             $mode = 'delta (updated since '.$migration->last_sync_at->format('Y-m-d H:i:s').')';
@@ -125,7 +124,6 @@ class MigrateCategoriesJob implements ShouldQueue
 
         $db->disconnect();
 
-        // Update last_sync_at timestamp for delta migrations
         if ($migration->sync_mode === 'delta') {
             $migration->update(['last_sync_at' => now()]);
         }

@@ -37,7 +37,6 @@ class MigrateCouponsJob implements ShouldQueue
         $db = ShopwareDB::fromMigration($migration);
         $reader = new CouponReader($db);
 
-        // Fetch coupons based on sync mode
         if ($migration->sync_mode === 'delta' && $migration->last_sync_at) {
             $promotions = $reader->fetchUpdatedSince($migration->last_sync_at);
             $mode = 'delta (updated since '.$migration->last_sync_at->format('Y-m-d H:i:s').')';
@@ -60,7 +59,6 @@ class MigrateCouponsJob implements ShouldQueue
             'created_at' => now(),
         ]);
 
-        // Mark all coupons as pending
         foreach ($couponIds as $couponId) {
             $stateManager->markPending('coupon', $couponId, $this->migrationId);
         }

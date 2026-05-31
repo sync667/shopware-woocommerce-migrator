@@ -92,7 +92,6 @@ class CmsPageTransformer
             return null;
         }
 
-        // Clean and escape HTML
         $content = $this->cleanHtml($content);
 
         return "<!-- wp:paragraph -->\n<p>{$content}</p>\n<!-- /wp:paragraph -->";
@@ -147,7 +146,6 @@ class CmsPageTransformer
             return null;
         }
 
-        // Convert Shopware product IDs to WooCommerce IDs
         $wcProductIds = [];
         foreach ($productIds as $shopwareId) {
             $wcId = $this->stateManager->get('product', $shopwareId, $this->migrationId);
@@ -186,7 +184,6 @@ class CmsPageTransformer
      */
     protected function transformManufacturerLogo(array $config): ?string
     {
-        // Similar to image slot
         $mediaUrl = $config['media']['value'] ?? '';
 
         if (empty($mediaUrl)) {
@@ -206,7 +203,6 @@ class CmsPageTransformer
     protected function generateSlug(string $name, string $seoUrl): string
     {
         if ($seoUrl) {
-            // Remove leading/trailing slashes and convert to slug format
             $slug = trim($seoUrl, '/');
             $slug = str_replace('/', '-', $slug);
 
@@ -221,11 +217,7 @@ class CmsPageTransformer
      */
     protected function cleanHtml(string $html): string
     {
-        // Remove dangerous tags
-        $html = strip_tags($html, '<p><br><strong><em><u><a><ul><ol><li><h1><h2><h3><h4><h5><h6>');
-
-        // Escape for safe output
-        return $html;
+        return strip_tags($html, '<p><br><strong><em><u><a><ul><ol><li><h1><h2><h3><h4><h5><h6>');
     }
 
     /**
@@ -233,12 +225,10 @@ class CmsPageTransformer
      */
     protected function transformDefaultSlot(string $type, array $config): ?string
     {
-        // Log unknown slot types for debugging
         if (app()->environment('local')) {
             logger()->warning("Unknown CMS slot type: {$type}", ['config' => $config]);
         }
 
-        // Return HTML comment so we know this slot existed
         return "<!-- Unknown Shopware CMS slot type: {$type} -->";
     }
 }

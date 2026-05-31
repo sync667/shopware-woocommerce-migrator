@@ -36,10 +36,8 @@ class AuthController extends Controller
             ], 401);
         }
 
-        // Mark token as used
         $accessToken->markAsUsed();
 
-        // Create session (24 hours)
         session([
             'authenticated' => true,
             'authenticated_at' => now(),

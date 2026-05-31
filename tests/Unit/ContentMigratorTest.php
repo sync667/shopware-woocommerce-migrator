@@ -15,7 +15,6 @@ class ContentMigratorTest extends TestCase
     {
         parent::setUp();
 
-        // Mock ImageMigrator
         $imageMigrator = Mockery::mock(ImageMigrator::class);
         $imageMigrator->shouldReceive('migrateFromUrl')
             ->andReturn(123);

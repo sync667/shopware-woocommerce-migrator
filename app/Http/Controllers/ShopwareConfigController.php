@@ -31,7 +31,6 @@ class ShopwareConfigController extends Controller
                 'ssh' => $validated['ssh'] ?? null,
             ]);
 
-            // Query available languages
             $languages = $db->select("
                 SELECT
                     LOWER(HEX(l.id)) AS id,
@@ -81,7 +80,6 @@ class ShopwareConfigController extends Controller
                 'ssh' => $validated['ssh'] ?? null,
             ]);
 
-            // Query live version ID
             $result = $db->select("
                 SELECT LOWER(HEX(id)) AS id
                 FROM version
@@ -96,7 +94,6 @@ class ShopwareConfigController extends Controller
                 'live_version_id' => $liveVersionId,
             ]);
         } catch (\Exception $e) {
-            // Return default if query fails
             return response()->json([
                 'success' => true,
                 'live_version_id' => '0fa91ce3e96a4bc2be4bd9ce752c3425',

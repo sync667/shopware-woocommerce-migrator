@@ -30,7 +30,6 @@ class ShopwareDB
             $host = $this->config['db_host'] ?? '127.0.0.1';
             $port = $this->config['db_port'] ?? 3306;
 
-            // Create SSH tunnel if configured
             if (! empty($this->config['ssh'])) {
                 $this->sshTunnel = new SSHTunnel($this->config['ssh']);
                 $port = $this->sshTunnel->connect($host, $port);
