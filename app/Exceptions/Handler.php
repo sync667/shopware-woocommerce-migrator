@@ -30,14 +30,24 @@ class Handler extends ExceptionHandler
         // Force JSON responses for API routes
         $this->renderable(function (Throwable $e, $request) {
             if ($request->is('api/*') || $request->expectsJson()) {
-                return response()->json([
+                $payload = [
                     'success' => false,
                     'error' => $e->getMessage(),
                     'exception' => get_class($e),
                     'file' => $e->getFile(),
                     'line' => $e->getLine(),
                     'trace' => config('app.debug') ? $e->getTrace() : null,
-                ], $this->getStatusCode($e));
+                ];
+
+                // For validation errors, also include the structured per-field map
+                // ('errors' + 'message') alongside our custom envelope so clients and
+                // tests can rely on Laravel's standard shape.
+                if ($e instanceof \Illuminate\Validation\ValidationException) {
+                    $payload['message'] = $e->getMessage();
+                    $payload['errors'] = $e->errors();
+                }
+
+                return response()->json($payload, $this->getStatusCode($e));
             }
         });
     }

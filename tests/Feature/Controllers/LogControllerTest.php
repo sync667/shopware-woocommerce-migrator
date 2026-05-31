@@ -4,7 +4,6 @@ namespace Tests\Feature\Controllers;
 
 use App\Models\MigrationLog;
 use App\Models\MigrationRun;
-use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -12,14 +11,11 @@ class LogControllerTest extends TestCase
 {
     use RefreshDatabase;
 
-    private User $user;
-
     private MigrationRun $migration;
 
     protected function setUp(): void
     {
         parent::setUp();
-        $this->user = User::factory()->create();
         $this->migration = MigrationRun::create([
             'name' => 'Log Test',
             'settings' => [
@@ -44,7 +40,7 @@ class LogControllerTest extends TestCase
             ]);
         }
 
-        $response = $this->actingAs($this->user, 'sanctum')
+        $response = $this->actsAsAuthenticated()
             ->getJson("/api/migrations/{$this->migration->id}/logs");
 
         $response->assertOk()
@@ -62,7 +58,7 @@ class LogControllerTest extends TestCase
         MigrationLog::create(['migration_id' => $this->migration->id, 'entity_type' => 'product', 'level' => 'info', 'message' => 'Product log', 'created_at' => now()]);
         MigrationLog::create(['migration_id' => $this->migration->id, 'entity_type' => 'category', 'level' => 'info', 'message' => 'Category log', 'created_at' => now()]);
 
-        $response = $this->actingAs($this->user, 'sanctum')
+        $response = $this->actsAsAuthenticated()
             ->getJson("/api/migrations/{$this->migration->id}/logs?entity_type=product");
 
         $response->assertOk()
@@ -77,7 +73,7 @@ class LogControllerTest extends TestCase
         MigrationLog::create(['migration_id' => $this->migration->id, 'entity_type' => 'product', 'level' => 'error', 'message' => 'Error log', 'created_at' => now()]);
         MigrationLog::create(['migration_id' => $this->migration->id, 'entity_type' => 'product', 'level' => 'warning', 'message' => 'Warning log', 'created_at' => now()]);
 
-        $response = $this->actingAs($this->user, 'sanctum')
+        $response = $this->actsAsAuthenticated()
             ->getJson("/api/migrations/{$this->migration->id}/logs?level=error");
 
         $response->assertOk()
@@ -91,7 +87,7 @@ class LogControllerTest extends TestCase
         MigrationLog::create(['migration_id' => $this->migration->id, 'entity_type' => 'product', 'level' => 'error', 'message' => 'API connection timeout', 'created_at' => now()]);
         MigrationLog::create(['migration_id' => $this->migration->id, 'entity_type' => 'product', 'level' => 'info', 'message' => 'Product migrated OK', 'created_at' => now()]);
 
-        $response = $this->actingAs($this->user, 'sanctum')
+        $response = $this->actsAsAuthenticated()
             ->getJson("/api/migrations/{$this->migration->id}/logs?search=timeout");
 
         $response->assertOk()
@@ -112,7 +108,7 @@ class LogControllerTest extends TestCase
             ]);
         }
 
-        $response = $this->actingAs($this->user, 'sanctum')
+        $response = $this->actsAsAuthenticated()
             ->getJson("/api/migrations/{$this->migration->id}/logs?per_page=3");
 
         $response->assertOk()
@@ -125,7 +121,7 @@ class LogControllerTest extends TestCase
         MigrationLog::create(['migration_id' => $this->migration->id, 'entity_type' => 'product', 'level' => 'info', 'message' => 'First', 'created_at' => now()->subMinutes(5)]);
         MigrationLog::create(['migration_id' => $this->migration->id, 'entity_type' => 'product', 'level' => 'info', 'message' => 'Latest', 'created_at' => now()]);
 
-        $response = $this->actingAs($this->user, 'sanctum')
+        $response = $this->actsAsAuthenticated()
             ->getJson("/api/migrations/{$this->migration->id}/logs");
 
         $response->assertOk();
@@ -138,7 +134,7 @@ class LogControllerTest extends TestCase
         MigrationLog::create(['migration_id' => $this->migration->id, 'entity_type' => 'product', 'level' => 'info', 'message' => 'Product OK', 'created_at' => now()]);
         MigrationLog::create(['migration_id' => $this->migration->id, 'entity_type' => 'category', 'level' => 'error', 'message' => 'Category API error', 'created_at' => now()]);
 
-        $response = $this->actingAs($this->user, 'sanctum')
+        $response = $this->actsAsAuthenticated()
             ->getJson("/api/migrations/{$this->migration->id}/logs?entity_type=product&level=error");
 
         $response->assertOk()
@@ -149,7 +145,7 @@ class LogControllerTest extends TestCase
 
     public function test_returns_empty_for_no_logs(): void
     {
-        $response = $this->actingAs($this->user, 'sanctum')
+        $response = $this->actsAsAuthenticated()
             ->getJson("/api/migrations/{$this->migration->id}/logs");
 
         $response->assertOk()

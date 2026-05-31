@@ -16,7 +16,7 @@ class ExampleTest extends TestCase
     {
         $this->withoutVite();
 
-        $response = $this->get('/');
+        $response = $this->actsAsAuthenticated()->get('/');
 
         $response->assertStatus(200);
     }

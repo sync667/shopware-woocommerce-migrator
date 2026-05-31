@@ -5,7 +5,6 @@ namespace Tests\Feature\Controllers;
 use App\Models\MigrationEntity;
 use App\Models\MigrationLog;
 use App\Models\MigrationRun;
-use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
 use Tests\TestCase;
@@ -13,14 +12,6 @@ use Tests\TestCase;
 class MigrationControllerTest extends TestCase
 {
     use RefreshDatabase;
-
-    private User $user;
-
-    protected function setUp(): void
-    {
-        parent::setUp();
-        $this->user = User::factory()->create();
-    }
 
     private function validPayload(array $overrides = []): array
     {
@@ -57,7 +48,7 @@ class MigrationControllerTest extends TestCase
     {
         Queue::fake();
 
-        $response = $this->actingAs($this->user, 'sanctum')
+        $response = $this->actsAsAuthenticated()
             ->postJson('/api/migrations', $this->validPayload());
 
         $response->assertStatus(201)
@@ -74,7 +65,7 @@ class MigrationControllerTest extends TestCase
 
     public function test_store_validates_required_fields(): void
     {
-        $response = $this->actingAs($this->user, 'sanctum')
+        $response = $this->actsAsAuthenticated()
             ->postJson('/api/migrations', []);
 
         $response->assertStatus(422)
@@ -86,7 +77,7 @@ class MigrationControllerTest extends TestCase
         $payload = $this->validPayload();
         unset($payload['settings']['shopware']['db_host']);
 
-        $response = $this->actingAs($this->user, 'sanctum')
+        $response = $this->actsAsAuthenticated()
             ->postJson('/api/migrations', $payload);
 
         $response->assertStatus(422)
@@ -98,7 +89,7 @@ class MigrationControllerTest extends TestCase
         $payload = $this->validPayload();
         $payload['settings']['shopware']['db_port'] = 99999;
 
-        $response = $this->actingAs($this->user, 'sanctum')
+        $response = $this->actsAsAuthenticated()
             ->postJson('/api/migrations', $payload);
 
         $response->assertStatus(422)
@@ -110,7 +101,7 @@ class MigrationControllerTest extends TestCase
         $payload = $this->validPayload();
         $payload['settings']['shopware']['base_url'] = 'not-a-url';
 
-        $response = $this->actingAs($this->user, 'sanctum')
+        $response = $this->actsAsAuthenticated()
             ->postJson('/api/migrations', $payload);
 
         $response->assertStatus(422)
@@ -122,7 +113,7 @@ class MigrationControllerTest extends TestCase
         $payload = $this->validPayload();
         $payload['settings']['shopware']['base_url'] = 'http://insecure.test';
 
-        $response = $this->actingAs($this->user, 'sanctum')
+        $response = $this->actsAsAuthenticated()
             ->postJson('/api/migrations', $payload);
 
         $response->assertStatus(422)
@@ -134,7 +125,7 @@ class MigrationControllerTest extends TestCase
         $payload = $this->validPayload();
         $payload['settings']['woocommerce']['base_url'] = 'http://insecure.test';
 
-        $response = $this->actingAs($this->user, 'sanctum')
+        $response = $this->actsAsAuthenticated()
             ->postJson('/api/migrations', $payload);
 
         $response->assertStatus(422)
@@ -145,7 +136,7 @@ class MigrationControllerTest extends TestCase
     {
         Queue::fake();
 
-        $response = $this->actingAs($this->user, 'sanctum')
+        $response = $this->actsAsAuthenticated()
             ->postJson('/api/migrations', $this->validPayload(['is_dry_run' => true]));
 
         $response->assertStatus(201);
@@ -171,7 +162,7 @@ class MigrationControllerTest extends TestCase
             'started_at' => now(),
         ]);
 
-        $response = $this->actingAs($this->user, 'sanctum')
+        $response = $this->actsAsAuthenticated()
             ->getJson("/api/migrations/{$migration->id}/status");
 
         $response->assertOk()
@@ -201,7 +192,7 @@ class MigrationControllerTest extends TestCase
         MigrationEntity::create(['migration_id' => $migration->id, 'entity_type' => 'product', 'shopware_id' => 'p3', 'status' => 'failed', 'error_message' => 'API error']);
         MigrationEntity::create(['migration_id' => $migration->id, 'entity_type' => 'category', 'shopware_id' => 'c1', 'status' => 'success', 'woo_id' => 10]);
 
-        $response = $this->actingAs($this->user, 'sanctum')
+        $response = $this->actsAsAuthenticated()
             ->getJson("/api/migrations/{$migration->id}/status");
 
         $response->assertOk();
@@ -237,7 +228,7 @@ class MigrationControllerTest extends TestCase
             'created_at' => now(),
         ]);
 
-        $response = $this->actingAs($this->user, 'sanctum')
+        $response = $this->actsAsAuthenticated()
             ->getJson("/api/migrations/{$migration->id}/status");
 
         $response->assertOk();
@@ -275,7 +266,7 @@ class MigrationControllerTest extends TestCase
         MigrationEntity::create(['migration_id' => $migration->id, 'entity_type' => 'product', 'shopware_id' => 'p3', 'status' => 'failed', 'error_message' => 'Error']);
         MigrationEntity::create(['migration_id' => $migration->id, 'entity_type' => 'category', 'shopware_id' => 'c1', 'status' => 'pending']);
 
-        $response = $this->actingAs($this->user, 'sanctum')
+        $response = $this->actsAsAuthenticated()
             ->getJson("/api/migrations/{$migration->id}/status");
 
         $response->assertOk();
@@ -301,7 +292,7 @@ class MigrationControllerTest extends TestCase
         MigrationEntity::create(['migration_id' => $migration->id, 'entity_type' => 'category', 'shopware_id' => 'c1', 'status' => 'skipped']);
         MigrationEntity::create(['migration_id' => $migration->id, 'entity_type' => 'category', 'shopware_id' => 'c2', 'status' => 'pending']);
 
-        $response = $this->actingAs($this->user, 'sanctum')
+        $response = $this->actsAsAuthenticated()
             ->getJson("/api/migrations/{$migration->id}/status");
 
         $response->assertOk();
@@ -326,7 +317,7 @@ class MigrationControllerTest extends TestCase
             'started_at' => now()->subMinutes(2),
         ]);
 
-        $response = $this->actingAs($this->user, 'sanctum')
+        $response = $this->actsAsAuthenticated()
             ->getJson("/api/migrations/{$migration->id}/status");
 
         $response->assertOk();
@@ -352,7 +343,7 @@ class MigrationControllerTest extends TestCase
             'created_at' => now(),
         ]);
 
-        $response = $this->actingAs($this->user, 'sanctum')
+        $response = $this->actsAsAuthenticated()
             ->getJson("/api/migrations/{$migration->id}/status");
 
         $response->assertOk();
@@ -378,7 +369,7 @@ class MigrationControllerTest extends TestCase
             'created_at' => now(),
         ]);
 
-        $response = $this->actingAs($this->user, 'sanctum')
+        $response = $this->actsAsAuthenticated()
             ->getJson("/api/migrations/{$migration->id}/status");
 
         $response->assertOk();
@@ -399,7 +390,7 @@ class MigrationControllerTest extends TestCase
             'is_dry_run' => false,
         ]);
 
-        $response = $this->actingAs($this->user, 'sanctum')
+        $response = $this->actsAsAuthenticated()
             ->postJson("/api/migrations/{$migration->id}/pause");
 
         $response->assertOk()
@@ -417,7 +408,7 @@ class MigrationControllerTest extends TestCase
             'is_dry_run' => false,
         ]);
 
-        $response = $this->actingAs($this->user, 'sanctum')
+        $response = $this->actsAsAuthenticated()
             ->postJson("/api/migrations/{$migration->id}/resume");
 
         $response->assertOk()
@@ -435,7 +426,7 @@ class MigrationControllerTest extends TestCase
             'is_dry_run' => false,
         ]);
 
-        $response = $this->actingAs($this->user, 'sanctum')
+        $response = $this->actsAsAuthenticated()
             ->postJson("/api/migrations/{$migration->id}/cancel");
 
         $response->assertOk()
@@ -463,7 +454,7 @@ class MigrationControllerTest extends TestCase
 
     public function test_ping_shopware_validates_inputs(): void
     {
-        $response = $this->actingAs($this->user, 'sanctum')
+        $response = $this->actsAsAuthenticated()
             ->postJson('/api/shopware/ping', []);
 
         $response->assertStatus(422)
@@ -472,7 +463,7 @@ class MigrationControllerTest extends TestCase
 
     public function test_ping_shopware_validates_port_range(): void
     {
-        $response = $this->actingAs($this->user, 'sanctum')
+        $response = $this->actsAsAuthenticated()
             ->postJson('/api/shopware/ping', [
                 'db_host' => '127.0.0.1',
                 'db_port' => 99999,
@@ -487,7 +478,7 @@ class MigrationControllerTest extends TestCase
 
     public function test_ping_woocommerce_validates_inputs(): void
     {
-        $response = $this->actingAs($this->user, 'sanctum')
+        $response = $this->actsAsAuthenticated()
             ->postJson('/api/woocommerce/ping', []);
 
         $response->assertStatus(422)
@@ -496,7 +487,7 @@ class MigrationControllerTest extends TestCase
 
     public function test_ping_woocommerce_validates_url(): void
     {
-        $response = $this->actingAs($this->user, 'sanctum')
+        $response = $this->actsAsAuthenticated()
             ->postJson('/api/woocommerce/ping', [
                 'base_url' => 'not-a-url',
                 'consumer_key' => 'ck_test',
@@ -509,7 +500,7 @@ class MigrationControllerTest extends TestCase
 
     public function test_ping_woocommerce_rejects_http_url(): void
     {
-        $response = $this->actingAs($this->user, 'sanctum')
+        $response = $this->actsAsAuthenticated()
             ->postJson('/api/woocommerce/ping', [
                 'base_url' => 'http://insecure.test',
                 'consumer_key' => 'ck_test',

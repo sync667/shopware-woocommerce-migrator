@@ -51,12 +51,12 @@ class TaxTransformerTest extends TestCase
             'rate' => 19.0,
         ];
 
-        $result = $this->transformer->transformRule($rule, 'Standard Rate');
+        $result = $this->transformer->transformRule($rule, 'Standard Rate', 'standard-rate');
 
         $this->assertEquals('DE', $result['country']);
         $this->assertEquals('19', $result['rate']);
         $this->assertEquals('Standard Rate', $result['name']);
-        $this->assertEquals('Standard Rate', $result['class']);
+        $this->assertEquals('standard-rate', $result['class']);
         $this->assertEquals(1, $result['priority']);
         $this->assertFalse($result['compound']);
         $this->assertTrue($result['shipping']);

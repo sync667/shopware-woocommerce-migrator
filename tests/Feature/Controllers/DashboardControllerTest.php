@@ -14,7 +14,7 @@ class DashboardControllerTest extends TestCase
     {
         $this->withoutVite();
 
-        $response = $this->get('/');
+        $response = $this->actsAsAuthenticated()->get('/');
 
         $response->assertStatus(200);
     }
@@ -30,7 +30,7 @@ class DashboardControllerTest extends TestCase
             'is_dry_run' => false,
         ]);
 
-        $response = $this->get('/');
+        $response = $this->actsAsAuthenticated()->get('/');
 
         $response->assertStatus(200)
             ->assertInertia(fn ($page) => $page
@@ -54,7 +54,7 @@ class DashboardControllerTest extends TestCase
             ]);
         }
 
-        $response = $this->get('/');
+        $response = $this->actsAsAuthenticated()->get('/');
 
         $response->assertStatus(200)
             ->assertInertia(fn ($page) => $page
@@ -83,7 +83,7 @@ class DashboardControllerTest extends TestCase
             'is_dry_run' => false,
         ]);
 
-        $response = $this->get('/');
+        $response = $this->actsAsAuthenticated()->get('/');
 
         $response->assertStatus(200)
             ->assertInertia(fn ($page) => $page
@@ -103,7 +103,7 @@ class DashboardControllerTest extends TestCase
             'is_dry_run' => false,
         ]);
 
-        $response = $this->get('/');
+        $response = $this->actsAsAuthenticated()->get('/');
 
         $response->assertStatus(200);
 
@@ -117,7 +117,7 @@ class DashboardControllerTest extends TestCase
     {
         $this->withoutVite();
 
-        $response = $this->get('/settings');
+        $response = $this->actsAsAuthenticated()->get('/settings');
 
         $response->assertStatus(200)
             ->assertInertia(fn ($page) => $page->component('Settings'));

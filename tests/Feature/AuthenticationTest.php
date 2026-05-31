@@ -2,7 +2,7 @@
 
 namespace Tests\Feature;
 
-use App\Models\User;
+use App\Models\AccessToken;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -10,106 +10,115 @@ class AuthenticationTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_user_can_register(): void
+    public function test_login_page_renders(): void
     {
-        $response = $this->postJson('/api/v1/register', [
-            'name' => 'Test User',
-            'email' => 'test@example.com',
-            'password' => 'password123',
-            'password_confirmation' => 'password123',
-        ]);
+        $this->withoutVite();
 
-        $response->assertStatus(201)
-            ->assertJsonStructure([
-                'message',
-                'user' => ['id', 'name', 'email'],
-                'token',
-            ]);
+        $response = $this->get('/login');
 
-        $this->assertDatabaseHas('users', [
-            'email' => 'test@example.com',
-        ]);
+        $response->assertOk()
+            ->assertInertia(fn ($page) => $page->component('Login'));
     }
 
-    public function test_user_cannot_register_with_existing_email(): void
+    public function test_validate_token_creates_session_for_valid_token(): void
     {
-        User::factory()->create(['email' => 'existing@example.com']);
+        $accessToken = AccessToken::generate('Test token');
 
-        $response = $this->postJson('/api/v1/register', [
-            'name' => 'Test User',
-            'email' => 'existing@example.com',
-            'password' => 'password123',
-            'password_confirmation' => 'password123',
+        $response = $this->postJson('/auth/validate', [
+            'token' => $accessToken->token,
         ]);
 
-        $response->assertStatus(422)
-            ->assertJsonValidationErrors(['email']);
+        $response->assertOk()
+            ->assertJson([
+                'success' => true,
+            ])
+            ->assertJsonStructure(['message', 'session_expires_at']);
+
+        $response->assertSessionHas('authenticated', true);
     }
 
-    public function test_user_can_login(): void
+    public function test_validate_token_marks_token_as_used(): void
     {
-        $user = User::factory()->create([
-            'email' => 'login@example.com',
-            'password' => bcrypt('password123'),
-        ]);
+        $accessToken = AccessToken::generate('Test token');
+        $this->assertNull($accessToken->last_used_at);
 
-        $response = $this->postJson('/api/v1/login', [
-            'email' => 'login@example.com',
-            'password' => 'password123',
-        ]);
+        $this->postJson('/auth/validate', ['token' => $accessToken->token])->assertOk();
 
-        $response->assertStatus(200)
-            ->assertJsonStructure([
-                'message',
-                'user',
-                'token',
-            ]);
+        $this->assertNotNull($accessToken->fresh()->last_used_at);
     }
 
-    public function test_user_cannot_login_with_invalid_credentials(): void
+    public function test_validate_token_rejects_invalid_token(): void
     {
-        User::factory()->create([
-            'email' => 'user@example.com',
-            'password' => bcrypt('password123'),
-        ]);
-
-        $response = $this->postJson('/api/v1/login', [
-            'email' => 'user@example.com',
-            'password' => 'wrong-password',
+        $response = $this->postJson('/auth/validate', [
+            'token' => 'nonexistent-token',
         ]);
 
         $response->assertStatus(401)
-            ->assertJson(['message' => 'Invalid login credentials']);
-    }
-
-    public function test_authenticated_user_can_get_profile(): void
-    {
-        $user = User::factory()->create();
-
-        $response = $this->actingAs($user, 'sanctum')
-            ->getJson('/api/v1/user');
-
-        $response->assertStatus(200)
-            ->assertJsonStructure([
-                'user' => ['id', 'name', 'email'],
+            ->assertJson([
+                'success' => false,
+                'error' => 'Invalid or expired access token',
             ]);
     }
 
-    public function test_unauthenticated_user_cannot_get_profile(): void
+    public function test_validate_token_rejects_expired_token(): void
     {
-        $response = $this->getJson('/api/v1/user');
+        $accessToken = AccessToken::create([
+            'token' => 'expired-token',
+            'name' => 'Expired',
+            'expires_at' => now()->subHour(),
+        ]);
+
+        $response = $this->postJson('/auth/validate', [
+            'token' => $accessToken->token,
+        ]);
 
         $response->assertStatus(401);
     }
 
-    public function test_user_can_logout(): void
+    public function test_validate_token_requires_token_field(): void
     {
-        $user = User::factory()->create();
+        $response = $this->postJson('/auth/validate', []);
 
-        $response = $this->actingAs($user, 'sanctum')
-            ->postJson('/api/v1/logout');
+        $response->assertStatus(422)
+            ->assertJsonPath('success', false)
+            ->assertJsonPath('error', 'The token field is required.');
+    }
 
-        $response->assertStatus(200)
-            ->assertJson(['message' => 'Successfully logged out']);
+    public function test_logout_destroys_session(): void
+    {
+        $response = $this->actsAsAuthenticated()
+            ->postJson('/auth/logout');
+
+        $response->assertOk()
+            ->assertJson(['success' => true]);
+
+        $response->assertSessionMissing('authenticated');
+    }
+
+    public function test_protected_api_returns_401_without_session(): void
+    {
+        // Route model binding runs before ValidateAccessToken in the web middleware stack,
+        // so we need a real migration record for the 401 to surface (otherwise we'd get 404).
+        $migration = \App\Models\MigrationRun::create([
+            'name' => 'M',
+            'settings' => ['shopware' => [], 'woocommerce' => [], 'wordpress' => []],
+            'status' => 'running',
+            'is_dry_run' => false,
+        ]);
+
+        $response = $this->getJson("/api/migrations/{$migration->id}/status");
+
+        $response->assertStatus(401)
+            ->assertJson([
+                'success' => false,
+                'error' => 'Authentication required',
+            ]);
+    }
+
+    public function test_protected_web_redirects_to_login_without_session(): void
+    {
+        $response = $this->get('/');
+
+        $response->assertRedirect('/login');
     }
 }
