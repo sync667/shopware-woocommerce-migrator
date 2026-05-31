@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\MigrationEntity;
 use GuzzleHttp\Client;
 use Illuminate\Support\Facades\Log;
 
@@ -13,10 +14,17 @@ class ImageMigrator
 
     protected string $shopwareBaseUrl;
 
-    public function __construct(WordPressMediaClient $wpMedia, string $shopwareBaseUrl = '', array $customHeaders = [])
-    {
+    protected ?int $migrationId;
+
+    public function __construct(
+        WordPressMediaClient $wpMedia,
+        string $shopwareBaseUrl = '',
+        array $customHeaders = [],
+        ?int $migrationId = null,
+    ) {
         $this->wpMedia = $wpMedia;
         $this->shopwareBaseUrl = rtrim($shopwareBaseUrl, '/');
+        $this->migrationId = $migrationId;
 
         $headers = array_merge([
             'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -35,11 +43,29 @@ class ImageMigrator
         $shopwareBaseUrl = $migration->setting('shopware.base_url', '');
         $customHeaders = $migration->setting('shopware.custom_headers', []);
 
-        return new static($wpMedia, $shopwareBaseUrl, is_array($customHeaders) ? $customHeaders : []);
+        return new static(
+            $wpMedia,
+            $shopwareBaseUrl,
+            is_array($customHeaders) ? $customHeaders : [],
+            $migration->id,
+        );
     }
 
-    public function migrate(string $imageUrl, string $filename, string $title = '', string $altText = ''): ?int
+    public function migrate(string $imageUrl, string $filename, string $title = '', string $altText = '', ?string $shopwareMediaId = null): ?int
     {
+        // Skip-and-reuse path: if this Shopware media was already uploaded by a previous
+        // migration of this tool (any run), the operator most likely doesn't want a
+        // duplicate copy in the WP media library. Verify the WP attachment still exists
+        // before reusing — operator may have cleaned WP manually since the last run.
+        if ($shopwareMediaId !== null && $shopwareMediaId !== '') {
+            $existing = $this->findPreviouslyUploadedAttachmentId($shopwareMediaId);
+            if ($existing !== null) {
+                $this->recordMediaMapping($shopwareMediaId, $existing);
+
+                return $existing;
+            }
+        }
+
         try {
             $response = $this->httpClient->get($imageUrl);
             $contents = $response->getBody()->getContents();
@@ -61,7 +87,13 @@ class ImageMigrator
             // Align the filename extension with the actual content type so WP accepts it.
             $filename = $this->alignExtension($filename, $mimeType);
 
-            return $this->wpMedia->upload($contents, $filename, $mimeType, $title, $altText);
+            $uploadedId = $this->wpMedia->upload($contents, $filename, $mimeType, $title, $altText);
+
+            if ($uploadedId !== null && $shopwareMediaId !== null && $shopwareMediaId !== '') {
+                $this->recordMediaMapping($shopwareMediaId, $uploadedId);
+            }
+
+            return $uploadedId;
         } catch (\Exception $e) {
             Log::error("Image migration failed: {$e->getMessage()}", [
                 'url' => $imageUrl,
@@ -119,6 +151,73 @@ class ImageMigrator
             ]);
 
             return null;
+        }
+    }
+
+    /**
+     * Returns a previously-uploaded WP attachment id for this Shopware media UUID, or
+     * null when none exists. Verifies the attachment is still present in WP — operator
+     * may have manually deleted it — so we don't return a dangling pointer.
+     */
+    protected function findPreviouslyUploadedAttachmentId(string $shopwareMediaId): ?int
+    {
+        try {
+            $rows = MigrationEntity::query()
+                ->where('entity_type', 'media')
+                ->where('shopware_id', $shopwareMediaId)
+                ->where('status', 'success')
+                ->whereNotNull('woo_id')
+                ->orderByDesc('id')
+                ->limit(5)
+                ->get(['woo_id']);
+        } catch (\Throwable $e) {
+            Log::debug("media-reuse lookup skipped: {$e->getMessage()}");
+
+            return null;
+        }
+
+        foreach ($rows as $row) {
+            $wooId = (int) $row->woo_id;
+            if ($wooId <= 0) {
+                continue;
+            }
+            try {
+                $existing = $this->wpMedia->get($wooId);
+                if (! empty($existing['id'])) {
+                    return (int) $existing['id'];
+                }
+            } catch (\Throwable) {
+                // Attachment is gone — try the next candidate.
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Persist the (shopware media id → WP attachment id) mapping so future migrations
+     * can reuse the upload and the cleanup job knows the attachment is ours.
+     */
+    protected function recordMediaMapping(string $shopwareMediaId, int $wooAttachmentId): void
+    {
+        if ($this->migrationId === null) {
+            return;
+        }
+
+        try {
+            MigrationEntity::updateOrCreate(
+                [
+                    'migration_id' => $this->migrationId,
+                    'entity_type' => 'media',
+                    'shopware_id' => $shopwareMediaId,
+                ],
+                [
+                    'woo_id' => $wooAttachmentId,
+                    'status' => 'success',
+                ]
+            );
+        } catch (\Throwable $e) {
+            Log::debug("media-state write skipped: {$e->getMessage()}");
         }
     }
 

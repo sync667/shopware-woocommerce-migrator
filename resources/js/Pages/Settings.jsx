@@ -58,6 +58,13 @@ export default function Settings() {
     // Product stream options
     const [streamsEnabled, setStreamsEnabled] = useState(false);
 
+    const [omnibusEnabled, setOmnibusEnabled] = useState(false);
+    const [newsletterEnabled, setNewsletterEnabled] = useState(false);
+    const [wishlistEnabled, setWishlistEnabled] = useState(false);
+
+    const [cleanupDeleteMedia, setCleanupDeleteMedia] = useState(false);
+    const [cleanupMediaMode, setCleanupMediaMode] = useState('migrated_only');
+
     // Shopware config options
     const [availableLanguages, setAvailableLanguages] = useState([]);
     const [loadingLanguages, setLoadingLanguages] = useState(false);
@@ -203,6 +210,35 @@ export default function Settings() {
                         setSyncMode(migration.sync_mode || 'full');
                         setConflictStrategy(migration.conflict_strategy || 'shopware_wins');
                         setCleanWoocommerce(migration.clean_woocommerce || false);
+
+                        // Optional-feature toggles
+                        const cmsOpts = settings.cms_options || {};
+                        if (cmsOpts.migrate_all || (cmsOpts.selected_ids && cmsOpts.selected_ids.length > 0)) {
+                            setCmsEnabled(true);
+                            setCmsMigrateAll(!!cmsOpts.migrate_all);
+                            if (Array.isArray(cmsOpts.selected_ids)) {
+                                setSelectedCmsPages(cmsOpts.selected_ids);
+                            }
+                        }
+                        if (settings.stream_options?.migrate_streams) {
+                            setStreamsEnabled(true);
+                        }
+                        if (settings.omnibus_options?.enabled) {
+                            setOmnibusEnabled(true);
+                        }
+                        if (settings.newsletter_options?.enabled) {
+                            setNewsletterEnabled(true);
+                        }
+                        if (settings.wishlist_options?.enabled) {
+                            setWishlistEnabled(true);
+                        }
+                        const cleanupOpts = settings.cleanup_options || {};
+                        if (typeof cleanupOpts.delete_media === 'boolean') {
+                            setCleanupDeleteMedia(cleanupOpts.delete_media);
+                        }
+                        if (cleanupOpts.media_mode) {
+                            setCleanupMediaMode(cleanupOpts.media_mode);
+                        }
 
                         // Show notification
                         alert(`Settings loaded from migration: ${migration.name}`);
@@ -414,6 +450,13 @@ export default function Settings() {
             } : null;
 
             const streamOptions = streamsEnabled ? { migrate_streams: true } : null;
+            const omnibusOptions = omnibusEnabled ? { enabled: true } : null;
+            const newsletterOptions = newsletterEnabled ? { enabled: true } : null;
+            const wishlistOptions = wishlistEnabled ? { enabled: true } : null;
+            const cleanupOptions = cleanWoocommerce ? {
+                delete_media: cleanupDeleteMedia,
+                media_mode: cleanupMediaMode,
+            } : null;
 
             // Filter out empty custom headers
             if (swConfig.custom_headers) {
@@ -446,6 +489,10 @@ export default function Settings() {
                     conflict_strategy: conflictStrategy,
                     cms_options: cmsOptions,
                     stream_options: streamOptions,
+                    omnibus_options: omnibusOptions,
+                    newsletter_options: newsletterOptions,
+                    wishlist_options: wishlistOptions,
+                    cleanup_options: cleanupOptions,
                     settings: { shopware: swConfig, woocommerce, wordpress: wpConfig },
                 }),
             });
@@ -547,12 +594,13 @@ export default function Settings() {
 
                 {/* Clean WooCommerce Option */}
                 <div className="mt-4 border-t border-gray-200 pt-4">
-                    <label className="flex items-start gap-3 cursor-pointer">
+                    <label className={`flex items-start gap-3 ${syncMode === 'delta' ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}>
                         <input
                             type="checkbox"
                             checked={cleanWoocommerce}
+                            disabled={syncMode === 'delta'}
                             onChange={(e) => setCleanWoocommerce(e.target.checked)}
-                            className="mt-1 rounded border-gray-300 text-red-600 focus:ring-red-500"
+                            className="mt-1 rounded border-gray-300 text-red-600 focus:ring-red-500 disabled:opacity-50"
                         />
                         <div className="flex-1">
                             <div className="flex items-center gap-2">
@@ -561,11 +609,81 @@ export default function Settings() {
                             </div>
                             <p className="mt-1 text-xs text-gray-500">
                                 <AlertCircle className="inline h-3 w-3 mr-1" />
-                                Delete all existing WooCommerce data before migration: products, categories, product attributes &amp; tags, customers, orders, coupons, reviews, tax rates &amp; classes, and shipping zones.
+                                Delete existing WooCommerce data before migration: products, categories, product attributes &amp; tags, customers, orders, coupons, reviews, tax rates &amp; classes, shipping zones, and (when CMS migration is enabled) matching WordPress pages.
                                 <span className="font-medium text-red-600"> This cannot be undone!</span>
                             </p>
+                            {syncMode === 'delta' && (
+                                <div className="mt-2 rounded-md bg-yellow-50 border border-yellow-200 px-3 py-2 text-xs text-yellow-800">
+                                    <strong>Disabled in Delta mode.</strong> Cleanup wipes everything; delta only re-imports
+                                    records changed since the last sync — combining them would leave the shop nearly empty.
+                                    Switch to <em>Full Migration</em> to enable cleanup.
+                                </div>
+                            )}
                         </div>
                     </label>
+
+                    {/* Media-cleanup sub-controls — only relevant when cleanup is enabled */}
+                    {cleanWoocommerce && syncMode !== 'delta' && (
+                        <div className="mt-4 ml-7 space-y-3 border-l-2 border-red-100 pl-4">
+                            <label className="flex items-start gap-3 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={cleanupDeleteMedia}
+                                    onChange={(e) => setCleanupDeleteMedia(e.target.checked)}
+                                    className="mt-1 rounded border-gray-300 text-red-600 focus:ring-red-500"
+                                />
+                                <div className="flex-1">
+                                    <span className="text-sm font-medium text-gray-900">Also delete media library attachments</span>
+                                    <p className="mt-1 text-xs text-gray-500">
+                                        WordPress media library is shared with pages, blog posts, theme demos, and operator
+                                        uploads. Leaving this off keeps every existing attachment intact and only product/category
+                                        images that were created by past migrations get re-uploaded if needed. Turn on only when
+                                        you really want to clear out media files too.
+                                    </p>
+                                </div>
+                            </label>
+
+                            {cleanupDeleteMedia && (
+                                <div className="ml-7 space-y-2">
+                                    <label className="flex items-start gap-2">
+                                        <input
+                                            type="radio"
+                                            name="media_mode"
+                                            checked={cleanupMediaMode === 'migrated_only'}
+                                            onChange={() => setCleanupMediaMode('migrated_only')}
+                                            className="mt-1 border-gray-300 text-blue-600 focus:ring-blue-500"
+                                        />
+                                        <div>
+                                            <span className="text-sm font-medium text-gray-900">Migrator-tracked attachments only</span>
+                                            <span className="ml-2 rounded bg-green-100 px-1.5 py-0.5 text-[11px] text-green-700">Recommended</span>
+                                            <p className="mt-0.5 text-xs text-gray-500">
+                                                Delete only attachments that this tool uploaded in past runs (tracked in the
+                                                migrator state table). Pre-existing blog images, hand-curated page heroes,
+                                                theme demo content stay untouched.
+                                            </p>
+                                        </div>
+                                    </label>
+                                    <label className="flex items-start gap-2">
+                                        <input
+                                            type="radio"
+                                            name="media_mode"
+                                            checked={cleanupMediaMode === 'all'}
+                                            onChange={() => setCleanupMediaMode('all')}
+                                            className="mt-1 border-gray-300 text-red-600 focus:ring-red-500"
+                                        />
+                                        <div>
+                                            <span className="text-sm font-medium text-gray-900">Every attachment in the media library</span>
+                                            <span className="ml-2 rounded bg-red-100 px-1.5 py-0.5 text-[11px] text-red-700">Dangerous</span>
+                                            <p className="mt-0.5 text-xs text-gray-500">
+                                                Wipe every file in <code>wp-content/uploads</code> regardless of who uploaded it.
+                                                Use only on throwaway / fresh WP installs.
+                                            </p>
+                                        </div>
+                                    </label>
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </div>
             </div>
 
@@ -633,9 +751,33 @@ export default function Settings() {
                         )}
                         <span className={streamsEnabled ? '' : 'text-gray-500'}>Product Streams (Optional)</span>
                     </div>
+                    <div className={`flex items-center gap-2 p-2 rounded ${omnibusEnabled ? 'bg-green-50' : 'bg-gray-100'}`}>
+                        {omnibusEnabled ? (
+                            <Check className="h-4 w-4 text-green-600" />
+                        ) : (
+                            <AlertCircle className="h-4 w-4 text-gray-400" />
+                        )}
+                        <span className={omnibusEnabled ? '' : 'text-gray-500'}>Omnibus Lowest Price (Optional)</span>
+                    </div>
+                    <div className={`flex items-center gap-2 p-2 rounded ${newsletterEnabled ? 'bg-green-50' : 'bg-gray-100'}`}>
+                        {newsletterEnabled ? (
+                            <Check className="h-4 w-4 text-green-600" />
+                        ) : (
+                            <AlertCircle className="h-4 w-4 text-gray-400" />
+                        )}
+                        <span className={newsletterEnabled ? '' : 'text-gray-500'}>Newsletter Recipients (Optional)</span>
+                    </div>
+                    <div className={`flex items-center gap-2 p-2 rounded ${wishlistEnabled ? 'bg-green-50' : 'bg-gray-100'}`}>
+                        {wishlistEnabled ? (
+                            <Check className="h-4 w-4 text-green-600" />
+                        ) : (
+                            <AlertCircle className="h-4 w-4 text-gray-400" />
+                        )}
+                        <span className={wishlistEnabled ? '' : 'text-gray-500'}>Customer Wishlists (Optional)</span>
+                    </div>
                 </div>
                 <p className="mt-3 text-xs text-gray-500">
-                    All entities are migrated automatically. CMS pages and product streams migration can be configured below.
+                    All entities are migrated automatically. Optional features can be enabled in the sections below.
                 </p>
             </div>
 
@@ -1239,6 +1381,90 @@ export default function Settings() {
                         <p className="mt-2 text-xs text-blue-600">
                             Note: This creates static category assignments based on the current stream snapshot.
                             To make categories dynamic, use the WooCommerce Dynamic Product Categories plugin after migration.
+                        </p>
+                    </div>
+                )}
+            </div>
+
+            {/* Omnibus Lowest Price (Polish DSP) */}
+            <div className={sectionClass}>
+                <div className="flex items-center justify-between mb-4">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                            type="checkbox"
+                            checked={omnibusEnabled}
+                            onChange={(e) => setOmnibusEnabled(e.target.checked)}
+                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className="text-lg font-medium text-gray-900">Migrate Omnibus Lowest Price (PL DSP)</span>
+                    </label>
+                </div>
+                {omnibusEnabled && (
+                    <div className="rounded-md bg-blue-50 border border-blue-200 p-3 text-sm text-blue-800">
+                        <p>
+                            Reads the latest 30-day-low entry from the <code>crehler_omnibus_prices</code> table
+                            (Crehler Omnibus plugin, used by Polish shops to satisfy the EU Omnibus Directive)
+                            and stores it on each product as the <code>_omnibus_lowest_price</code> meta.
+                        </p>
+                        <p className="mt-2 text-xs text-blue-600">
+                            Requires a matching WooCommerce-side plugin (e.g. <em>WooCommerce PL Omnibus</em>) to
+                            render the value next to promotional prices. If the source shop doesn&apos;t have the
+                            Crehler table, the job silently skips — safe to leave enabled defensively.
+                        </p>
+                    </div>
+                )}
+            </div>
+
+            {/* Newsletter Recipients */}
+            <div className={sectionClass}>
+                <div className="flex items-center justify-between mb-4">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                            type="checkbox"
+                            checked={newsletterEnabled}
+                            onChange={(e) => setNewsletterEnabled(e.target.checked)}
+                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className="text-lg font-medium text-gray-900">Export Newsletter Recipients</span>
+                    </label>
+                </div>
+                {newsletterEnabled && (
+                    <div className="rounded-md bg-blue-50 border border-blue-200 p-3 text-sm text-blue-800">
+                        <p>
+                            WooCommerce has no native newsletter store, so this exports all Shopware
+                            <code> newsletter_recipient </code> rows to a CSV file the operator imports into
+                            their target mail platform (MailPoet, Mailchimp, Klaviyo, etc.).
+                        </p>
+                        <p className="mt-2 text-xs text-blue-600">
+                            File will be written to <code>storage/app/migrations/&lt;id&gt;/newsletter_recipients.csv</code>.
+                        </p>
+                    </div>
+                )}
+            </div>
+
+            {/* Customer Wishlists */}
+            <div className={sectionClass}>
+                <div className="flex items-center justify-between mb-4">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                            type="checkbox"
+                            checked={wishlistEnabled}
+                            onChange={(e) => setWishlistEnabled(e.target.checked)}
+                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className="text-lg font-medium text-gray-900">Export Customer Wishlists</span>
+                    </label>
+                </div>
+                {wishlistEnabled && (
+                    <div className="rounded-md bg-blue-50 border border-blue-200 p-3 text-sm text-blue-800">
+                        <p>
+                            Each WC wishlist plugin uses a different storage schema, so this exports
+                            <code> customer_wishlist </code> + <code> customer_wishlist_product </code> as
+                            a flat CSV (one row per customer × product). Import into YITH or TI
+                            WooCommerce Wishlist after migration.
+                        </p>
+                        <p className="mt-2 text-xs text-blue-600">
+                            File will be written to <code>storage/app/migrations/&lt;id&gt;/wishlists.csv</code>.
                         </p>
                     </div>
                 )}

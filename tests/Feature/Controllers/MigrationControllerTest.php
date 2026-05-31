@@ -143,6 +143,82 @@ class MigrationControllerTest extends TestCase
         $this->assertTrue($response->json('migration.is_dry_run'));
     }
 
+    public function test_store_accepts_optional_feature_flags(): void
+    {
+        Queue::fake();
+
+        $payload = $this->validPayload([
+            'omnibus_options' => ['enabled' => true],
+            'newsletter_options' => ['enabled' => true],
+            'wishlist_options' => ['enabled' => false],
+        ]);
+
+        $response = $this->actsAsAuthenticated()->postJson('/api/migrations', $payload);
+        $response->assertStatus(201);
+
+        $migration = MigrationRun::find($response->json('migration.id'));
+        $this->assertTrue($migration->settings['omnibus_options']['enabled']);
+        $this->assertTrue($migration->settings['newsletter_options']['enabled']);
+        $this->assertFalse($migration->settings['wishlist_options']['enabled']);
+    }
+
+    public function test_store_rejects_cleanup_combined_with_delta(): void
+    {
+        $payload = $this->validPayload([
+            'clean_woocommerce' => true,
+            'sync_mode' => 'delta',
+        ]);
+
+        $response = $this->actsAsAuthenticated()->postJson('/api/migrations', $payload);
+
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors(['clean_woocommerce']);
+    }
+
+    public function test_store_accepts_cleanup_with_full_sync(): void
+    {
+        \Illuminate\Support\Facades\Queue::fake();
+
+        $payload = $this->validPayload([
+            'clean_woocommerce' => true,
+            'sync_mode' => 'full',
+            'cleanup_options' => [
+                'delete_media' => true,
+                'media_mode' => 'migrated_only',
+            ],
+        ]);
+
+        $response = $this->actsAsAuthenticated()->postJson('/api/migrations', $payload);
+        $response->assertStatus(201);
+
+        $migration = \App\Models\MigrationRun::find($response->json('migration.id'));
+        $this->assertTrue($migration->settings['cleanup_options']['delete_media']);
+        $this->assertSame('migrated_only', $migration->settings['cleanup_options']['media_mode']);
+    }
+
+    public function test_store_rejects_invalid_media_mode(): void
+    {
+        $payload = $this->validPayload([
+            'clean_woocommerce' => true,
+            'cleanup_options' => ['media_mode' => 'whatever'],
+        ]);
+
+        $response = $this->actsAsAuthenticated()->postJson('/api/migrations', $payload);
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors(['cleanup_options.media_mode']);
+    }
+
+    public function test_store_rejects_non_boolean_optional_flags(): void
+    {
+        $payload = $this->validPayload([
+            'omnibus_options' => ['enabled' => 'maybe'],
+        ]);
+
+        $response = $this->actsAsAuthenticated()->postJson('/api/migrations', $payload);
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors(['omnibus_options.enabled']);
+    }
+
     public function test_store_requires_authentication(): void
     {
         $response = $this->postJson('/api/migrations', $this->validPayload());

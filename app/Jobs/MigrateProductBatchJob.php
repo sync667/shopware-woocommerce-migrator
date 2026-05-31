@@ -147,6 +147,17 @@ class MigrateProductBatchJob implements ShouldQueue
                 $attributes[] = $manufacturerAttribute;
             }
 
+            $primaryCategoryWooId = null;
+            $mainCategoryShopwareId = $reader->fetchMainCategoryId($product->id);
+            if ($mainCategoryShopwareId !== null) {
+                $primaryCategoryWooId = $stateManager->get('category', $mainCategoryShopwareId, $this->migrationId);
+            }
+
+            $omnibusLowestPrice = null;
+            if ($migration->settings['omnibus_options']['enabled'] ?? false) {
+                $omnibusLowestPrice = $reader->fetchOmnibusLowestPrice($product->id);
+            }
+
             $data = $transformer->transform(
                 $product,
                 $categoryWooIds,
@@ -154,6 +165,8 @@ class MigrateProductBatchJob implements ShouldQueue
                 $taxClassSlug,
                 $attributes,
                 $tags,
+                $primaryCategoryWooId,
+                $omnibusLowestPrice,
             );
 
             $variants = $reader->fetchVariants($product->id);
@@ -187,7 +200,7 @@ class MigrateProductBatchJob implements ShouldQueue
                     continue;
                 }
                 $imageUrl = $imageMigrator->buildShopwareMediaUrl($m->media_id, $m->file_name, $m->file_extension, isset($m->uploaded_at) ? (int) $m->uploaded_at : null);
-                $wpImageId = $imageMigrator->migrate($imageUrl, "{$m->file_name}.{$m->file_extension}", $m->title ?? '', $m->alt ?? '');
+                $wpImageId = $imageMigrator->migrate($imageUrl, "{$m->file_name}.{$m->file_extension}", $m->title ?? '', $m->alt ?? '', $m->media_id);
                 if ($wpImageId) {
                     $imageIds[] = ['id' => $wpImageId, 'media_id' => $m->media_id];
                 }
@@ -256,7 +269,7 @@ class MigrateProductBatchJob implements ShouldQueue
                 $m = $media[0];
                 if (! empty($m->file_name) && ! empty($m->file_extension)) {
                     $imageUrl = $imageMigrator->buildShopwareMediaUrl($m->media_id, $m->file_name, $m->file_extension, isset($m->uploaded_at) ? (int) $m->uploaded_at : null);
-                    $wpImageId = $imageMigrator->migrate($imageUrl, "{$m->file_name}.{$m->file_extension}");
+                    $wpImageId = $imageMigrator->migrate($imageUrl, "{$m->file_name}.{$m->file_extension}", '', '', $m->media_id);
                     if ($wpImageId) {
                         $data['image'] = ['id' => $wpImageId];
                     }

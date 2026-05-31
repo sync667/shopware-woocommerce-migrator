@@ -17,6 +17,8 @@ class ProductTransformer
         string $taxClassSlug = '',
         array $attributes = [],
         array $tags = [],
+        ?int $primaryCategoryWooId = null,
+        ?string $omnibusLowestPrice = null,
     ): array {
         $prices = $this->parsePrices($product->price ?? '[]');
 
@@ -154,7 +156,30 @@ class ProductTransformer
             $data['meta_data'][] = ['key' => '_available', 'value' => (bool) $product->available];
         }
 
-        // Custom search keywords
+        // Cost of goods (Shopware `purchase_prices` JSON, same shape as `price`).
+        // Maps to WooCommerce "Cost of Goods" plugin meta `_wc_cog_cost`.
+        $cost = $this->extractGross($product->purchase_prices ?? null);
+        if ($cost !== null && $cost > 0) {
+            $data['meta_data'][] = ['key' => '_wc_cog_cost', 'value' => $this->formatMoney($cost)];
+        }
+
+        // release_date controls when the product becomes visible on the storefront.
+        if (! empty($product->release_date)) {
+            $data['meta_data'][] = ['key' => '_shopware_release_date', 'value' => (string) $product->release_date];
+        }
+
+        if ($primaryCategoryWooId !== null && $primaryCategoryWooId > 0) {
+            // Yoast Primary Category for the product taxonomy.
+            $data['meta_data'][] = ['key' => '_yoast_wpseo_primary_product_cat', 'value' => (string) $primaryCategoryWooId];
+        }
+
+        if ($omnibusLowestPrice !== null && $omnibusLowestPrice !== '') {
+            // Lowest 30-day price (Polish Omnibus directive compliance). The target shop
+            // needs a matching plugin (e.g. "WooCommerce PL Omnibus") to render it; the
+            // meta is inert otherwise.
+            $data['meta_data'][] = ['key' => '_omnibus_lowest_price', 'value' => $this->formatMoney((float) $omnibusLowestPrice)];
+        }
+
         if (! empty($product->keywords)) {
             $keywords = json_decode($product->keywords, true);
             if (is_array($keywords) && ! empty($keywords)) {
@@ -319,6 +344,28 @@ class ProductTransformer
     protected function formatMoney(float $value): string
     {
         return number_format($value, 2, '.', '');
+    }
+
+    /**
+     * Pull the `gross` value out of Shopware's price JSON shape
+     * `{"<currencyId>": {"gross": ..., "net": ...}}`. Used for both
+     * `purchase_prices` (cost of goods) and any other money JSON column.
+     */
+    protected function extractGross(mixed $raw): ?float
+    {
+        if (! is_string($raw) || $raw === '') {
+            return null;
+        }
+        $decoded = json_decode($raw, true);
+        if (! is_array($decoded) || $decoded === []) {
+            return null;
+        }
+        $entry = reset($decoded);
+        if (! is_array($entry) || ! isset($entry['gross'])) {
+            return null;
+        }
+
+        return (float) $entry['gross'];
     }
 
     /**

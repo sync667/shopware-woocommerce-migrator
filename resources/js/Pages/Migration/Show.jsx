@@ -34,6 +34,8 @@ const ENTITY_TYPES = [
     'seo_url',
     'cms_page',
     'product_stream',
+    'newsletter_recipient',
+    'customer_wishlist',
 ];
 
 function formatDuration(seconds) {

@@ -299,4 +299,68 @@ class ProductTransformerTest extends TestCase
         $this->assertSame('20.00', $result['regular_price']);
         $this->assertArrayNotHasKey('sale_price', $result);
     }
+
+    public function test_purchase_prices_emits_wc_cog_cost(): void
+    {
+        $product = $this->makeProduct([
+            'purchase_prices' => '{"cb7d2554b0ce847cd82f3ac9bd1c0dfca":{"gross":12.5,"net":10.16,"linked":true,"currencyId":"b7d2554b0ce847cd82f3ac9bd1c0dfca"}}',
+        ]);
+        $result = $this->transformer->transform($product);
+        $cost = collect($result['meta_data'])->firstWhere('key', '_wc_cog_cost');
+
+        $this->assertNotNull($cost);
+        $this->assertSame('12.50', $cost['value']);
+    }
+
+    public function test_purchase_prices_zero_or_null_skipped(): void
+    {
+        foreach (['{"x":{"gross":0}}', null, '', 'not-json'] as $v) {
+            $product = $this->makeProduct(['purchase_prices' => $v]);
+            $result = $this->transformer->transform($product);
+            $hasCost = collect($result['meta_data'])->contains(fn ($m) => $m['key'] === '_wc_cog_cost');
+            $this->assertFalse($hasCost, 'Should not emit _wc_cog_cost for value: '.var_export($v, true));
+        }
+    }
+
+    public function test_primary_category_emitted_as_yoast_meta(): void
+    {
+        $result = $this->transformer->transform(
+            $this->makeProduct(),
+            primaryCategoryWooId: 42,
+        );
+        $meta = collect($result['meta_data'])->firstWhere('key', '_yoast_wpseo_primary_product_cat');
+
+        $this->assertNotNull($meta);
+        $this->assertSame('42', $meta['value']);
+    }
+
+    public function test_omnibus_lowest_price_emitted_when_provided(): void
+    {
+        $result = $this->transformer->transform(
+            $this->makeProduct(),
+            omnibusLowestPrice: '41',
+        );
+        $meta = collect($result['meta_data'])->firstWhere('key', '_omnibus_lowest_price');
+
+        $this->assertNotNull($meta);
+        $this->assertSame('41.00', $meta['value']);
+    }
+
+    public function test_omnibus_lowest_price_omitted_when_null(): void
+    {
+        $result = $this->transformer->transform($this->makeProduct());
+        $hasOmnibus = collect($result['meta_data'])->contains(fn ($m) => $m['key'] === '_omnibus_lowest_price');
+
+        $this->assertFalse($hasOmnibus);
+    }
+
+    public function test_release_date_emitted_when_present(): void
+    {
+        $product = $this->makeProduct(['release_date' => '2026-06-01 09:00:00']);
+        $result = $this->transformer->transform($product);
+        $meta = collect($result['meta_data'])->firstWhere('key', '_shopware_release_date');
+
+        $this->assertNotNull($meta);
+        $this->assertSame('2026-06-01 09:00:00', $meta['value']);
+    }
 }

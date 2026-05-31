@@ -79,4 +79,105 @@ class CustomerTransformerTest extends TestCase
         $this->assertNotNull($hash);
         $this->assertSame('$2y$10$abcdefghijklmnopqrstuvwxyzABCDEFGH', $hash['value']);
     }
+
+    public function test_preserves_legacy_password_and_encoder(): void
+    {
+        $transformer = new CustomerTransformer;
+        $customer = (object) [
+            'email' => 'a@b.test',
+            'first_name' => 'A',
+            'last_name' => 'B',
+            'legacy_password' => 'abc123def',
+            'legacy_encoder' => 'Md5',
+        ];
+
+        $result = $transformer->transform($customer);
+        $metas = collect($result['meta_data']);
+
+        $this->assertSame('abc123def', $metas->firstWhere('key', '_shopware_legacy_password')['value']);
+        $this->assertSame('Md5', $metas->firstWhere('key', '_shopware_legacy_encoder')['value']);
+    }
+
+    public function test_vat_ids_first_value_becomes_billing_vat(): void
+    {
+        // Real production shape: customer.vat_ids is a JSON array of strings.
+        $transformer = new CustomerTransformer;
+        $customer = (object) [
+            'email' => 'b@b.test',
+            'first_name' => 'B',
+            'last_name' => 'B',
+            'vat_ids' => '["PL6731784893","DE123456789"]',
+        ];
+
+        $result = $transformer->transform($customer);
+        $metas = collect($result['meta_data']);
+
+        $this->assertSame('PL6731784893', $metas->firstWhere('key', '_billing_vat')['value']);
+        $this->assertSame('["PL6731784893","DE123456789"]', $metas->firstWhere('key', '_shopware_vat_ids')['value']);
+    }
+
+    public function test_vat_ids_handles_malformed_json(): void
+    {
+        $transformer = new CustomerTransformer;
+        $customer = (object) [
+            'email' => 'c@b.test',
+            'first_name' => 'C',
+            'last_name' => 'D',
+            'vat_ids' => 'not-json',
+        ];
+
+        $result = $transformer->transform($customer);
+        $hasVat = collect($result['meta_data'])->contains(fn ($m) => $m['key'] === '_billing_vat');
+
+        $this->assertFalse($hasVat);
+    }
+
+    public function test_address_concatenates_both_additional_lines(): void
+    {
+        $transformer = new CustomerTransformer;
+        $customer = (object) [
+            'email' => 'd@b.test',
+            'first_name' => 'D',
+            'last_name' => 'E',
+        ];
+
+        $billing = (object) [
+            'first_name' => 'D',
+            'last_name' => 'E',
+            'street' => 'ul. Marszałkowska 1',
+            'zipcode' => '00-001',
+            'city' => 'Warszawa',
+            'company' => '',
+            'additional_address_line1' => 'apt. 5B',
+            'additional_address_line2' => 'klatka 2',
+            'phone' => '+48123456789',
+            'country_iso' => 'PL',
+            'state_code' => 'PL-MZ',
+        ];
+
+        $result = $transformer->transform($customer, $billing);
+
+        $this->assertSame("apt. 5B\nklatka 2", $result['billing']['address_2']);
+    }
+
+    public function test_address_includes_vat_id_when_set(): void
+    {
+        $transformer = new CustomerTransformer;
+        $customer = (object) ['email' => 'e@b.test', 'first_name' => 'E', 'last_name' => 'F'];
+
+        $billing = (object) [
+            'first_name' => 'E',
+            'last_name' => 'F',
+            'street' => 'Foo 1',
+            'zipcode' => '00-001',
+            'city' => 'Warszawa',
+            'vat_id' => 'PL5213969319',
+            'country_iso' => 'PL',
+            'state_code' => '',
+        ];
+
+        $result = $transformer->transform($customer, $billing);
+
+        $this->assertSame('PL5213969319', $result['billing']['vat_id']);
+    }
 }

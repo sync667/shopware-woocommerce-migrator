@@ -14,6 +14,8 @@ import {
     Link,
     FileText,
     Layers,
+    Mail,
+    Heart,
 } from 'lucide-react';
 
 const ICONS = {
@@ -31,6 +33,8 @@ const ICONS = {
     seo_url: Link,
     cms_page: FileText,
     product_stream: Layers,
+    newsletter_recipient: Mail,
+    customer_wishlist: Heart,
 };
 
 const LABELS = {
@@ -48,6 +52,8 @@ const LABELS = {
     seo_url: 'SEO URLs',
     cms_page: 'CMS Pages',
     product_stream: 'Product Streams',
+    newsletter_recipient: 'Newsletter Recipients',
+    customer_wishlist: 'Wishlists',
 };
 
 export default function StepCard({ entityType, counts = {}, isActive = false }) {

@@ -20,10 +20,12 @@ class ManufacturerReader
             FROM product_manufacturer pm
             LEFT JOIN product_manufacturer_translation pmt
                 ON pmt.product_manufacturer_id = pm.id
+                AND pmt.product_manufacturer_version_id = pm.version_id
                 AND pmt.language_id = ?
             LEFT JOIN media m ON m.id = pm.media_id
+            WHERE pm.version_id = ?
             ORDER BY pmt.name ASC
-        ", [$this->db->languageIdBin()]);
+        ", [$this->db->languageIdBin(), $this->db->liveVersionIdBin()]);
     }
 
     public function fetchUpdatedSince(\DateTimeInterface $since): array
@@ -40,12 +42,15 @@ class ManufacturerReader
             FROM product_manufacturer pm
             LEFT JOIN product_manufacturer_translation pmt
                 ON pmt.product_manufacturer_id = pm.id
+                AND pmt.product_manufacturer_version_id = pm.version_id
                 AND pmt.language_id = ?
             LEFT JOIN media m ON m.id = pm.media_id
-            WHERE (pm.updated_at > ? OR pm.created_at > ?)
+            WHERE pm.version_id = ?
+              AND (pm.updated_at > ? OR pm.created_at > ?)
             ORDER BY pm.updated_at ASC, pm.created_at ASC
         ", [
             $this->db->languageIdBin(),
+            $this->db->liveVersionIdBin(),
             $since->format('Y-m-d H:i:s'),
             $since->format('Y-m-d H:i:s'),
         ]);

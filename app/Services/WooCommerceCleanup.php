@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\MigrationEntity;
 use App\Models\MigrationLog;
 use App\Models\MigrationRun;
 use App\Shopware\Readers\CmsPageReader;
@@ -15,7 +16,13 @@ class WooCommerceCleanup
         protected ?MigrationRun $migration = null
     ) {}
 
-    /** @return string[] */
+    /**
+     * Full list of cleanup entity types, in safe FK-deletion order.
+     * Used as a static reference for tooling — prefer entitiesFor($migration) when
+     * dispatching a real run because that variant honors per-migration safety flags.
+     *
+     * @return string[]
+     */
     public static function entities(): array
     {
         return [
@@ -33,6 +40,35 @@ class WooCommerceCleanup
             'pages',
             'media',
         ];
+    }
+
+    /**
+     * Returns the cleanup steps that should actually run for a given migration.
+     * Omits 'pages' when CMS migration is disabled (the operator can't possibly want
+     * the migrator to delete WP pages that won't be replaced) and omits 'media'
+     * unless the operator explicitly opted in via cleanup_options.delete_media.
+     *
+     * @return string[]
+     */
+    public static function entitiesFor(MigrationRun $migration): array
+    {
+        $cmsOptions = $migration->settings['cms_options'] ?? [];
+        $cmsEnabled = ! empty($cmsOptions['migrate_all'])
+            || (is_array($cmsOptions['selected_ids'] ?? null) && $cmsOptions['selected_ids'] !== []);
+
+        $cleanupOptions = $migration->settings['cleanup_options'] ?? [];
+        $deleteMedia = (bool) ($cleanupOptions['delete_media'] ?? false);
+
+        $entities = static::entities();
+
+        if (! $cmsEnabled) {
+            $entities = array_values(array_filter($entities, fn ($e) => $e !== 'pages'));
+        }
+        if (! $deleteMedia) {
+            $entities = array_values(array_filter($entities, fn ($e) => $e !== 'media'));
+        }
+
+        return $entities;
     }
 
     public function cleanEntity(string $entity): array
@@ -276,6 +312,18 @@ class WooCommerceCleanup
             return ['deleted' => 0, 'failed' => 0, 'skipped' => true];
         }
 
+        $cmsOptions = $this->migration->settings['cms_options'] ?? [];
+        $cmsEnabled = ! empty($cmsOptions['migrate_all'])
+            || (is_array($cmsOptions['selected_ids'] ?? null) && $cmsOptions['selected_ids'] !== []);
+
+        if (! $cmsEnabled) {
+            // Belt-and-suspenders guard — entitiesFor() should have already filtered
+            // 'pages' out of the dispatched job list when CMS migration is off.
+            $this->log('info', 'Skipping page cleanup: CMS migration is not enabled, so no Shopware pages target this WP — leaving all pages untouched.', null, 'cleanup');
+
+            return ['deleted' => 0, 'failed' => 0, 'skipped' => true];
+        }
+
         $deleted = 0;
         $failed = 0;
 
@@ -283,6 +331,8 @@ class WooCommerceCleanup
             $targetSlugs = $this->resolveShopwarePageSlugs();
 
             if (empty($targetSlugs)) {
+                $this->log('info', 'Skipping page cleanup: Shopware CMS produced an empty target slug list (no pages would collide).', null, 'cleanup');
+
                 return ['deleted' => 0, 'failed' => 0, 'skipped' => true];
             }
 
@@ -361,9 +411,13 @@ class WooCommerceCleanup
     }
 
     /**
-     * Permanently delete all media attachments from the WordPress media library.
-     * Products/categories are deleted first (via other entity cleanups), so their
-     * attached images become orphans — this removes them.
+     * Delete WordPress media attachments according to cleanup_options.media_mode:
+     *
+     *  - 'migrated_only' (default): only delete attachments the migrator has tracked
+     *    in MigrationEntity across ALL past runs. Operator-uploaded blog images,
+     *    hand-curated page hero shots, theme demo content, etc. stay put.
+     *  - 'all': nuke everything (the original behavior). Operator must explicitly
+     *    opt in via UI — there is no way to set this accidentally.
      */
     protected function deleteAllMedia(): array
     {
@@ -371,8 +425,70 @@ class WooCommerceCleanup
             return ['deleted' => 0, 'failed' => 0, 'skipped' => true];
         }
 
+        $mode = (string) ($this->migration?->settings['cleanup_options']['media_mode'] ?? 'migrated_only');
+
+        if ($mode === 'migrated_only') {
+            return $this->deleteMigratedMedia();
+        }
+
+        return $this->deleteAllMediaUnsafe();
+    }
+
+    /**
+     * Safe mode: collect every WP attachment ID the migrator has produced (in this run
+     * or any past run, across all migrations of this tool) and delete only those.
+     * Catches media referenced via:
+     *  - StateManager mapping rows (entity_type='media')
+     *  - Category/manufacturer mappings whose payload carries the WP image id
+     *  - Product/variation entities whose payload preserved the image list (dry runs)
+     */
+    protected function deleteMigratedMedia(): array
+    {
+        $ids = $this->collectMigratorOwnedMediaIds();
+
+        if ($ids === []) {
+            $this->log('info', 'Media cleanup (migrated_only): no previously-migrated attachments tracked — nothing to delete.', null, 'cleanup');
+
+            return ['deleted' => 0, 'failed' => 0, 'skipped' => true];
+        }
+
+        $this->log('info', 'Media cleanup (migrated_only): targeting '.count($ids).' attachments tracked from past migrations…', null, 'cleanup');
+
         $deleted = 0;
         $failed = 0;
+
+        try {
+            foreach (array_chunk($ids, 100) as $chunk) {
+                $result = $this->wordpress->batchDeleteMedia($chunk);
+                $deleted += $result['deleted'];
+                $failed += $result['failed'];
+
+                if ($result['deleted'] === 0 && $result['failed'] === count($chunk)) {
+                    $this->log('warning', "Media cleanup made no progress on a chunk of {$failed} ids, stopping.", null, 'cleanup');
+                    break;
+                }
+
+                $this->log('info', "Cleaning media (migrated_only): {$deleted} deleted so far, {$failed} failed", null, 'cleanup');
+            }
+
+            $this->log('info', "Finished cleaning media (migrated_only): {$deleted} deleted, {$failed} failed", null, 'cleanup');
+        } catch (\Exception $e) {
+            $this->log('error', "Media cleanup failed: {$e->getMessage()}", null, 'cleanup');
+        }
+
+        return ['deleted' => $deleted, 'failed' => $failed];
+    }
+
+    /**
+     * UNSAFE mode (cleanup_options.media_mode='all'): wipe everything in the WP media
+     * library. Preserved for operators who explicitly want a true clean-slate.
+     */
+    protected function deleteAllMediaUnsafe(): array
+    {
+        $deleted = 0;
+        $failed = 0;
+
+        $this->log('warning', "Media cleanup mode is 'all' — deleting EVERY attachment in the WP media library, including any uploaded outside the migrator.", null, 'cleanup');
 
         try {
             do {
@@ -403,6 +519,54 @@ class WooCommerceCleanup
         }
 
         return ['deleted' => $deleted, 'failed' => $failed];
+    }
+
+    /**
+     * Returns the set of WP attachment ids the migrator has ever produced.
+     *
+     * @return int[]
+     */
+    protected function collectMigratorOwnedMediaIds(): array
+    {
+        $ids = [];
+
+        // Direct media mappings — every successful image upload writes one.
+        $mediaMap = MigrationEntity::where('entity_type', 'media')
+            ->whereNotNull('woo_id')
+            ->pluck('woo_id')
+            ->all();
+        foreach ($mediaMap as $id) {
+            $ids[(int) $id] = true;
+        }
+
+        // Media referenced from category payloads (image id stored after upload).
+        $categoryRows = MigrationEntity::where('entity_type', 'category')
+            ->whereNotNull('payload')
+            ->get(['payload']);
+        foreach ($categoryRows as $row) {
+            $imgId = $row->payload['image']['id'] ?? null;
+            if (is_numeric($imgId) && (int) $imgId > 0) {
+                $ids[(int) $imgId] = true;
+            }
+        }
+
+        // Media referenced from manufacturer/product payloads (gallery + cover).
+        $productRows = MigrationEntity::whereIn('entity_type', ['product', 'variation', 'manufacturer'])
+            ->whereNotNull('payload')
+            ->get(['payload']);
+        foreach ($productRows as $row) {
+            $payload = $row->payload ?? [];
+            foreach ($payload['images'] ?? [] as $img) {
+                if (is_array($img) && isset($img['id']) && is_numeric($img['id'])) {
+                    $ids[(int) $img['id']] = true;
+                }
+            }
+            if (isset($payload['image']['id']) && is_numeric($payload['image']['id'])) {
+                $ids[(int) $payload['image']['id']] = true;
+            }
+        }
+
+        return array_keys($ids);
     }
 
     /**

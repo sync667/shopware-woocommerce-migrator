@@ -99,7 +99,9 @@ class MigrateCategoriesJob implements ShouldQueue
                     $wpImageId = $imageMigrator->migrate(
                         $imageUrl,
                         $category->media_file_name.'.'.$category->media_file_extension,
-                        $category->name
+                        $category->name,
+                        '',
+                        $category->media_id,
                     );
                     if ($wpImageId) {
                         $data['image'] = ['id' => $wpImageId];

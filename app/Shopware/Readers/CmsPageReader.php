@@ -25,10 +25,12 @@ class CmsPageReader
             FROM cms_page cp
             LEFT JOIN cms_page_translation cpt
                 ON cpt.cms_page_id = cp.id
+                AND cpt.cms_page_version_id = cp.version_id
                 AND cpt.language_id = ?
             WHERE cp.type IN ('page', 'landingpage')
+              AND cp.version_id = ?
             ORDER BY cp.type ASC, cpt.name ASC
-        ", [$this->db->languageIdBin()]);
+        ", [$this->db->languageIdBin(), $this->db->liveVersionIdBin()]);
     }
 
     /**
@@ -54,10 +56,12 @@ class CmsPageReader
             FROM cms_page cp
             LEFT JOIN cms_page_translation cpt
                 ON cpt.cms_page_id = cp.id
+                AND cpt.cms_page_version_id = cp.version_id
                 AND cpt.language_id = ?
             WHERE cp.id IN ({$placeholders})
+              AND cp.version_id = ?
             ORDER BY cp.type ASC, cpt.name ASC
-        ", array_merge([$this->db->languageIdBin()], $ids));
+        ", array_merge([$this->db->languageIdBin()], $ids, [$this->db->liveVersionIdBin()]));
     }
 
     /**
@@ -75,8 +79,9 @@ class CmsPageReader
                 background_media_mode
             FROM cms_section
             WHERE cms_page_id = UNHEX(?)
+              AND version_id = ?
             ORDER BY position ASC
-        ', [$pageId]);
+        ', [$pageId, $this->db->liveVersionIdBin()]);
     }
 
     /**
@@ -97,8 +102,9 @@ class CmsPageReader
                 background_color
             FROM cms_block
             WHERE cms_section_id = UNHEX(?)
+              AND version_id = ?
             ORDER BY position ASC
-        ', [$sectionId]);
+        ', [$sectionId, $this->db->liveVersionIdBin()]);
     }
 
     /**
@@ -116,9 +122,11 @@ class CmsPageReader
             FROM cms_slot cs
             LEFT JOIN cms_slot_translation cst
                 ON cst.cms_slot_id = cs.id
+                AND cst.cms_slot_version_id = cs.version_id
                 AND cst.language_id = ?
             WHERE cs.cms_block_id = UNHEX(?)
+              AND cs.version_id = ?
             ORDER BY cs.slot ASC
-        ", [$this->db->languageIdBin(), $blockId]);
+        ", [$this->db->languageIdBin(), $blockId, $this->db->liveVersionIdBin()]);
     }
 }

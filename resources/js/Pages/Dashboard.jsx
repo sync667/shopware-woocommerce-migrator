@@ -1,6 +1,15 @@
 import StepCard from '../Components/StepCard';
-import { FlaskConical, Settings, LogOut } from 'lucide-react';
+import { FlaskConical, Settings, LogOut, FileText, Layers, Tag, Mail, Heart, Trash2 } from 'lucide-react';
 import { logout } from '../utils/auth';
+
+const OPTION_BADGES = [
+    { key: 'cms_pages', label: 'CMS Pages', Icon: FileText },
+    { key: 'product_streams', label: 'Streams', Icon: Layers },
+    { key: 'omnibus', label: 'Omnibus', Icon: Tag },
+    { key: 'newsletter', label: 'Newsletter', Icon: Mail },
+    { key: 'wishlist', label: 'Wishlists', Icon: Heart },
+    { key: 'cleanup_media', label: 'Media wipe', Icon: Trash2, tone: 'danger' },
+];
 
 const ENTITY_TYPES = [
     'manufacturer',
@@ -74,33 +83,66 @@ export default function Dashboard({ migrations = [] }) {
                             No migration runs yet. Configure a new migration to get started.
                         </div>
                     )}
-                    {migrations.map((m) => (
-                        <a
-                            key={m.id}
-                            href={`/migrations/${m.id}`}
-                            className="flex items-center justify-between px-6 py-4 hover:bg-gray-50"
-                        >
-                            <div>
-                                <span className="font-medium text-gray-900">{m.name}</span>
-                                {m.is_dry_run && (
-                                    <span className="ml-2 inline-flex items-center gap-1 rounded bg-purple-100 px-2 py-0.5 text-xs text-purple-700">
-                                        <FlaskConical className="h-3 w-3" />
-                                        Dry Run
+                    {migrations.map((m) => {
+                        const enabledOptions = OPTION_BADGES.filter(({ key }) => m.options?.[key]);
+                        return (
+                            <a
+                                key={m.id}
+                                href={`/migrations/${m.id}`}
+                                className="flex items-center justify-between px-6 py-4 hover:bg-gray-50"
+                            >
+                                <div className="min-w-0 flex-1">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <span className="font-medium text-gray-900">{m.name}</span>
+                                        {m.is_dry_run && (
+                                            <span className="inline-flex items-center gap-1 rounded bg-purple-100 px-2 py-0.5 text-xs text-purple-700">
+                                                <FlaskConical className="h-3 w-3" />
+                                                Dry Run
+                                            </span>
+                                        )}
+                                        {m.sync_mode === 'delta' && (
+                                            <span className="inline-flex items-center rounded bg-indigo-100 px-2 py-0.5 text-xs text-indigo-700">
+                                                Delta
+                                            </span>
+                                        )}
+                                        {m.clean_woocommerce && (
+                                            <span className="inline-flex items-center gap-1 rounded bg-red-100 px-2 py-0.5 text-xs text-red-700">
+                                                <Trash2 className="h-3 w-3" />
+                                                Cleanup
+                                            </span>
+                                        )}
+                                    </div>
+                                    {enabledOptions.length > 0 && (
+                                        <div className="mt-1 flex flex-wrap gap-1.5">
+                                            {enabledOptions.map(({ key, label, Icon, tone }) => (
+                                                <span
+                                                    key={key}
+                                                    className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] ${
+                                                        tone === 'danger'
+                                                            ? 'bg-red-50 text-red-700'
+                                                            : 'bg-gray-100 text-gray-600'
+                                                    }`}
+                                                >
+                                                    <Icon className="h-3 w-3" />
+                                                    {label}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="ml-4 flex items-center gap-4">
+                                    <span
+                                        className={`rounded-full px-3 py-1 text-xs font-medium ${STATUS_COLORS[m.status] || STATUS_COLORS.pending}`}
+                                    >
+                                        {m.status}
                                     </span>
-                                )}
-                            </div>
-                            <div className="flex items-center gap-4">
-                                <span
-                                    className={`rounded-full px-3 py-1 text-xs font-medium ${STATUS_COLORS[m.status] || STATUS_COLORS.pending}`}
-                                >
-                                    {m.status}
-                                </span>
-                                <span className="text-xs text-gray-400">
-                                    {new Date(m.created_at).toLocaleString()}
-                                </span>
-                            </div>
-                        </a>
-                    ))}
+                                    <span className="text-xs text-gray-400 whitespace-nowrap">
+                                        {new Date(m.created_at).toLocaleString()}
+                                    </span>
+                                </div>
+                            </a>
+                        );
+                    })}
                 </div>
             </div>
         </div>

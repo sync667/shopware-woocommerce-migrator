@@ -41,7 +41,9 @@ class ProductReader
                 p.reference_unit,
                 p.shipping_free,
                 p.mark_as_topseller,
-                p.available
+                p.available,
+                p.purchase_prices,
+                p.release_date
             FROM product p
             LEFT JOIN product_translation pt
                 ON pt.product_id = p.id
@@ -87,6 +89,8 @@ class ProductReader
                 p.shipping_free,
                 p.mark_as_topseller,
                 p.available,
+                p.purchase_prices,
+                p.release_date,
                 pt.custom_fields,
                 p.created_at,
                 (SELECT MAX(pv.visibility)
@@ -236,6 +240,62 @@ class ProductReader
             WHERE ptag.product_id = UNHEX(?)
               AND ptag.product_version_id = ?
         ', [$productId, $this->db->liveVersionIdBin()]);
+    }
+
+    /**
+     * Returns the primary category id for a product on the chosen sales channel.
+     * Shopware exposes this via `main_category` — used by SEO plugins (Yoast etc.)
+     * to pick the "real" breadcrumb when a product is filed under several categories.
+     * Returns null when no main_category row exists.
+     */
+    public function fetchMainCategoryId(string $productId): ?string
+    {
+        // Most production rows have a non-null sales_channel_id (the field is sometimes
+        // declared NOT NULL by the plugin). NULL is preferred (= "all channels") when
+        // present, then sales_channel_id and category_id are used as deterministic
+        // tiebreakers so repeated migrations pick the same row.
+        $results = $this->db->select('
+            SELECT LOWER(HEX(mc.category_id)) AS category_id
+            FROM main_category mc
+            WHERE mc.product_id = UNHEX(?)
+              AND mc.product_version_id = ?
+            ORDER BY (mc.sales_channel_id IS NULL) DESC, mc.sales_channel_id ASC, mc.category_id ASC
+            LIMIT 1
+        ', [$productId, $this->db->liveVersionIdBin()]);
+
+        return $results[0]->category_id ?? null;
+    }
+
+    /**
+     * Reads the latest entry from the Crehler Omnibus plugin table (Polish "Dyrektywa
+     * Omnibus" — required to display the lowest 30-day price next to every promo price).
+     * The plugin table is optional; absence returns null and the migrator skips the field.
+     */
+    public function fetchOmnibusLowestPrice(string $productId): ?string
+    {
+        try {
+            $results = $this->db->select('
+                SELECT op.price_gross
+                FROM crehler_omnibus_prices op
+                WHERE op.product_id = UNHEX(?)
+                ORDER BY op.created_at DESC, op.id DESC
+                LIMIT 1
+            ', [$productId]);
+        } catch (\Throwable) {
+            return null;
+        }
+
+        $value = $results[0]->price_gross ?? null;
+        if (! is_string($value) || trim($value) === '') {
+            return null;
+        }
+        // The DSP regulation talks about the lowest price; a literal "0" is not a valid
+        // lowest price for a paid product (production has 224 such rows from staging tests).
+        if ((float) $value <= 0) {
+            return null;
+        }
+
+        return $value;
     }
 
     public function fetchCrossSells(string $productId): array

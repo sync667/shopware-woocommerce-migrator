@@ -34,6 +34,15 @@ class MigrationController extends Controller
             'cms_options.selected_ids' => 'nullable|array',
             'stream_options' => 'nullable|array',
             'stream_options.migrate_streams' => 'nullable|boolean',
+            'omnibus_options' => 'nullable|array',
+            'omnibus_options.enabled' => 'nullable|boolean',
+            'newsletter_options' => 'nullable|array',
+            'newsletter_options.enabled' => 'nullable|boolean',
+            'wishlist_options' => 'nullable|array',
+            'wishlist_options.enabled' => 'nullable|boolean',
+            'cleanup_options' => 'nullable|array',
+            'cleanup_options.delete_media' => 'nullable|boolean',
+            'cleanup_options.media_mode' => 'nullable|string|in:migrated_only,all',
             'settings' => 'required|array',
             'settings.shopware' => 'required|array',
             'settings.shopware.db_host' => 'required|string',
@@ -63,11 +72,24 @@ class MigrationController extends Controller
             'settings.wordpress.custom_headers.*' => 'nullable|string',
         ]);
 
+        // Cleanup is irreversible — never silently combine it with a delta sync, which
+        // would nuke everything and then only re-import the changed-since subset (i.e.
+        // a near-empty re-population). Operator must explicitly switch to full sync.
+        if (($validated['clean_woocommerce'] ?? false) && ($validated['sync_mode'] ?? 'full') === 'delta') {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'clean_woocommerce' => 'Cleanup cannot be combined with delta sync — switch sync_mode to "full" or uncheck "Clean WooCommerce Before Migration".',
+            ]);
+        }
+
         $migration = MigrationRun::create([
             'name' => $validated['name'],
             'settings' => array_merge($validated['settings'], [
                 'cms_options' => $validated['cms_options'] ?? [],
                 'stream_options' => $validated['stream_options'] ?? [],
+                'omnibus_options' => $validated['omnibus_options'] ?? [],
+                'newsletter_options' => $validated['newsletter_options'] ?? [],
+                'wishlist_options' => $validated['wishlist_options'] ?? [],
+                'cleanup_options' => $validated['cleanup_options'] ?? [],
             ]),
             'is_dry_run' => $validated['is_dry_run'] ?? false,
             'clean_woocommerce' => $validated['clean_woocommerce'] ?? false,
@@ -81,7 +103,7 @@ class MigrationController extends Controller
         $jobs = [];
 
         if (($validated['clean_woocommerce'] ?? false) && ! ($validated['is_dry_run'] ?? false)) {
-            foreach (\App\Services\WooCommerceCleanup::entities() as $entity) {
+            foreach (\App\Services\WooCommerceCleanup::entitiesFor($migration) as $entity) {
                 $jobs[] = new \App\Jobs\CleanWooCommerceJob($migration->id, $entity);
             }
         }
@@ -268,6 +290,10 @@ class MigrationController extends Controller
             ],
             'cms_options' => $settings['cms_options'] ?? [],
             'stream_options' => $settings['stream_options'] ?? [],
+            'omnibus_options' => $settings['omnibus_options'] ?? [],
+            'newsletter_options' => $settings['newsletter_options'] ?? [],
+            'wishlist_options' => $settings['wishlist_options'] ?? [],
+            'cleanup_options' => $settings['cleanup_options'] ?? [],
         ];
     }
 

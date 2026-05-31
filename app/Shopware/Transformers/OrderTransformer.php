@@ -109,18 +109,31 @@ class OrderTransformer
             $stateCode = substr($stateCode, strpos($stateCode, '-') + 1);
         }
 
-        return [
+        // Concatenate both additional address lines into WC's single address_2 slot.
+        $extraLines = array_filter([
+            $address->additional_address_line1 ?? null,
+            $address->additional_address_line2 ?? null,
+        ], static fn ($v) => is_string($v) && trim($v) !== '');
+        $address2 = implode("\n", $extraLines);
+
+        $data = [
             'first_name' => $address->first_name ?? '',
             'last_name' => $address->last_name ?? '',
             'company' => $address->company ?? '',
             'address_1' => $address->street ?? '',
-            'address_2' => $address->address_2 ?? '',
+            'address_2' => $address2,
             'city' => $address->city ?? '',
             'state' => $stateCode,
             'postcode' => $address->zipcode ?? '',
             'country' => $address->country_iso ?? '',
             'phone' => $address->phone ?? '',
         ];
+
+        if ($address->vat_id ?? '') {
+            $data['vat_id'] = $address->vat_id;
+        }
+
+        return $data;
     }
 
     protected function transformLineItems(array $lineItems): array

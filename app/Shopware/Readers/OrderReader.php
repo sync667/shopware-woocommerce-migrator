@@ -50,6 +50,7 @@ class OrderReader
                 LOWER(HEX(o.billing_address_id)) AS billing_address_id,
                 COALESCE(sms.technical_name, '') AS status,
                 o.custom_fields,
+                o.deep_link_code,
                 o.affiliate_code,
                 o.campaign_code
             FROM `order` o
@@ -108,7 +109,10 @@ class OrderReader
                 oa.zipcode,
                 oa.city,
                 oa.company,
-                oa.additional_address_line1 AS address_2,
+                oa.title,
+                oa.vat_id,
+                oa.additional_address_line1,
+                oa.additional_address_line2,
                 oa.phone_number AS phone,
                 COALESCE(co.iso, '') AS country_iso,
                 COALESCE(cs.short_code, '') AS state_code
@@ -133,7 +137,10 @@ class OrderReader
                 oa.zipcode,
                 oa.city,
                 oa.company,
-                oa.additional_address_line1 AS address_2,
+                oa.title,
+                oa.vat_id,
+                oa.additional_address_line1,
+                oa.additional_address_line2,
                 oa.phone_number AS phone,
                 COALESCE(co.iso, '') AS country_iso,
                 COALESCE(cs.short_code, '') AS state_code

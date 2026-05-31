@@ -125,6 +125,14 @@ class MigrateReviewsJob implements ShouldQueue
             $jobs[] = new MigrateProductStreamsJob($migrationId);
         }
 
+        if (! empty($migration->settings['newsletter_options']['enabled'])) {
+            $jobs[] = new MigrateNewsletterRecipientsJob($migrationId);
+        }
+
+        if (! empty($migration->settings['wishlist_options']['enabled'])) {
+            $jobs[] = new MigrateCustomerWishlistsJob($migrationId);
+        }
+
         $jobs[] = function () use ($migrationId) {
             $migration = MigrationRun::findOrFail($migrationId);
             if ($migration->status === 'running') {

@@ -92,6 +92,39 @@ class DashboardControllerTest extends TestCase
             );
     }
 
+    public function test_dashboard_emits_enabled_optional_features(): void
+    {
+        $this->withoutVite();
+
+        MigrationRun::create([
+            'name' => 'All Optionals',
+            'settings' => [
+                'shopware' => [], 'woocommerce' => [], 'wordpress' => [],
+                'cms_options' => ['migrate_all' => true],
+                'stream_options' => ['migrate_streams' => true],
+                'omnibus_options' => ['enabled' => true],
+                'newsletter_options' => ['enabled' => true],
+                'wishlist_options' => ['enabled' => false],
+            ],
+            'status' => 'completed',
+            'is_dry_run' => false,
+            'sync_mode' => 'delta',
+        ]);
+
+        $response = $this->actsAsAuthenticated()->get('/');
+
+        $response->assertStatus(200)
+            ->assertInertia(fn ($page) => $page
+                ->component('Dashboard')
+                ->where('migrations.0.sync_mode', 'delta')
+                ->where('migrations.0.options.cms_pages', true)
+                ->where('migrations.0.options.product_streams', true)
+                ->where('migrations.0.options.omnibus', true)
+                ->where('migrations.0.options.newsletter', true)
+                ->where('migrations.0.options.wishlist', false)
+            );
+    }
+
     public function test_dashboard_excludes_settings_from_migration_data(): void
     {
         $this->withoutVite();
