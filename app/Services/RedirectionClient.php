@@ -72,12 +72,56 @@ class RedirectionClient
             throw new RuntimeException("Failed to create Redirection group '{$name}': HTTP {$response->status()} {$response->body()}");
         }
 
+        // Prefer the id the plugin returned inline — list-and-match by name is
+        // fragile (pagination, name normalization, race with a concurrent create).
+        $id = $this->extractGroupId($response->json(), $name);
+        if ($id !== null) {
+            return $id;
+        }
+
+        // Fallback: re-query the list. This used to be the primary path and is
+        // kept for older Redirection releases that don't echo the created group.
         $id = $this->findGroupId($name);
         if ($id === null) {
-            throw new RuntimeException("Created Redirection group '{$name}' but could not locate its id");
+            throw new RuntimeException(
+                "Created Redirection group '{$name}' but could not locate its id. "
+                .'Response body: '.substr((string) $response->body(), 0, 500)
+            );
         }
 
         return $id;
+    }
+
+    /**
+     * Pull a group id out of a Redirection plugin response. The plugin has
+     * shipped a few different envelopes for the create-group endpoint:
+     *   - { id, name, moduleId, ... }            (flat — most modern releases)
+     *   - { item: { id, name, ... } }            (wrapped)
+     *   - { items: [ { id, name, ... }, ... ] }  (collection — older releases)
+     *
+     * @param  array<string, mixed>|null  $body
+     */
+    private function extractGroupId(?array $body, string $name): ?int
+    {
+        if (! is_array($body)) {
+            return null;
+        }
+
+        if (isset($body['id']) && (($body['name'] ?? $name) === $name)) {
+            return (int) $body['id'];
+        }
+        if (isset($body['item']['id']) && (($body['item']['name'] ?? $name) === $name)) {
+            return (int) $body['item']['id'];
+        }
+        if (isset($body['items']) && is_array($body['items'])) {
+            foreach ($body['items'] as $item) {
+                if (is_array($item) && ($item['name'] ?? null) === $name && isset($item['id'])) {
+                    return (int) $item['id'];
+                }
+            }
+        }
+
+        return null;
     }
 
     /**

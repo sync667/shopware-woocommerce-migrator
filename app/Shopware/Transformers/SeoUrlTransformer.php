@@ -52,6 +52,13 @@ class SeoUrlTransformer
         }
 
         $path = preg_replace('#/+#', '/', $path) ?? '';
+
+        // Preserve the trailing slash exactly as Shopware served it. Shopware
+        // emits category URLs with a trailing slash (/Cat/Sub/) and product URLs
+        // without — Google indexes them that way and browsers request them that
+        // way. The Redirection plugin matches byte-exact, so stripping the slash
+        // here breaks 361/362 category redirects in real-world data.
+        $hadTrailingSlash = str_ends_with($path, '/') && $path !== '/';
         $path = '/'.ltrim($path, '/');
         $path = rtrim($path, '/');
 
@@ -73,7 +80,7 @@ class SeoUrlTransformer
         }
         unset($segment);
 
-        return implode('/', $segments);
+        return implode('/', $segments).($hadTrailingSlash ? '/' : '');
     }
 
     private function buildTarget(string $entityType, ?int $wooId, ?string $wooSlug): string

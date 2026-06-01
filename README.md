@@ -4,20 +4,35 @@ A Laravel 12 web application with an Inertia.js + React dashboard that migrates 
 
 ## Features
 
-- **12-step ordered migration:** Manufacturers → Taxes → Categories → Products → Customers → Orders → Coupons → Reviews → Shipping Methods → Payment Methods → SEO URLs → CMS Pages
-- **Per-migration settings:** Each migration run stores its own source/target connection config — run multiple migrations with different settings
-- **Async job processing:** All migration tasks run via Laravel Queues with retry logic
-- **Real-time dashboard:** Live progress tracking with per-entity status cards, error logs, and pause/resume/cancel controls
-- **Dry run mode:** Preview what would be migrated without writing to WooCommerce
-- **Delta migration mode:** Incremental updates — migrate only records changed since the last run
-- **Conflict resolution:** Choose a strategy when the same entity exists in both stores (Shopware wins, WooCommerce wins, or manual)
-- **Duplicate handling:** Automatic detection and reuse of existing WooCommerce entities
-- **Resumable:** Failed or cancelled migrations can be re-run — already-migrated entities are skipped
-- **Image migration:** Downloads images from Shopware and uploads them to WordPress Media Library
-- **Password migration:** Supports direct bcrypt hash migration for WordPress ≥ 6.8
-- **SSH tunnel support:** Connect to a Shopware database through an SSH jump host
-- **Product streams:** Migrates Shopware dynamic product groups as WooCommerce product categories
-- **CMS pages:** Selective or full migration of Shopware CMS pages
+**Core migration**
+- **Ordered pipeline:** Manufacturers → Taxes → Categories → Products (+ variants, media, cross-sells) → Customers → Orders → Coupons → Reviews → Shipping Methods → Payment Methods → SEO URLs → (optional: CMS Pages, Product Streams, Newsletter, Wishlists)
+- **Per-migration settings:** every run stores its own source/target config and feature toggles
+- **Multi-storefront / multi-version safe:** all readers filter by `liveVersionIdBin()`; SEO URLs are deduplicated per `(path, foreign_key)` so multi-sales-channel shops don't produce duplicate redirects
+- **Async job processing:** Laravel Horizon queues with retry/backoff; `heavy` queue for cleanup and `products`/`customers`/`orders`/`coupons`/`reviews` queues for batched entities
+- **Resumable + idempotent:** failed or cancelled migrations can be re-run; already-migrated entities short out, retried order POSTs look up `_shopware_order_id` meta before re-creating
+- **Dry run mode:** preview without writing to WooCommerce
+- **Delta mode:** migrate only records changed since the last successful sync (watermark advances only after the whole batch completes)
+- **Conflict resolution:** Shopware wins / WooCommerce wins / Manual review strategies
+
+**Optional features** (operator opt-in)
+- **CMS Pages:** all or selected Shopware Experience World pages → WordPress pages
+- **Product Streams:** dynamic groups → static WC categories
+- **Omnibus pricing (Polish DSP):** reads `crehler_omnibus_prices` and writes `_omnibus_lowest_price` meta for the WooCommerce PL Omnibus plugin
+- **Newsletter export:** writes `storage/app/migrations/{id}/newsletter_recipients.csv` for MailPoet/Mailchimp/Klaviyo import
+- **Wishlist export:** flat CSV (one row per customer × product) for YITH or TI WooCommerce Wishlist
+
+**Safety**
+- **Cross-run media reuse:** the image migrator tracks every Shopware-media-id → WP-attachment-id mapping in `MigrationEntity`. Subsequent runs reuse existing attachments instead of re-uploading.
+- **Cleanup safety modes:** WP media library is **not** wiped by default; opt-in either to *migrator-tracked attachments only* (preserves blog images, theme demos, hand-curated content) or full nuke
+- **Delta+cleanup blocked:** controller returns 422 when these are combined (cleanup would erase data the delta has no chance to repopulate)
+- **Pages cleanup gated on CMS migration:** when CMS pages aren't being migrated, the `pages` cleanup step is never enqueued at all
+
+**Plumbing**
+- **Real-time dashboard:** live per-entity status cards, current step, ETA, last activity, recent errors/warnings
+- **Image migration:** downloads from Shopware (with anti-adblocker URL rewriting), validates real MIME via finfo, aligns extension, uploads to WP Media Library
+- **Password migration:** Shopware bcrypt hash preserved as `_shopware_password_hash` user meta + legacy SW5 hash + encoder preserved separately; customers get a forced reset on first login
+- **SSH tunnel:** connect to Shopware MySQL via a jump host (password or key)
+- **SQL dump upload:** import directly from a `.sql` / `.sql.gz` dump instead of connecting to Shopware live
 
 ## Tech Stack
 
@@ -168,67 +183,122 @@ php artisan shopware:migrate --cms-all [... other options]
 php artisan shopware:migrate --cms-ids=abc123,def456 [... other options]
 ```
 
+> **Note:** the optional features added in recent releases — Omnibus pricing, newsletter export, wishlist export, cleanup-safety modes (`delete_media`, `media_mode`) — are wired through the dashboard / `POST /api/migrations` payload but not yet exposed as `php artisan shopware:migrate` flags. Use the web UI to enable them, or POST directly to the API.
+
 ## Migration Steps
 
-| Step | Entity | Depends On |
-|------|--------|------------|
-| 1 | Manufacturers | — |
-| 2 | Tax Classes + Rates | — |
-| 3 | Categories | — |
-| 4 | Products (+ media + variants + streams) | Categories, Manufacturers, Taxes |
-| 5 | Customers | — |
-| 6 | Orders | Products, Customers |
-| 7 | Coupons | — |
-| 8 | Reviews | Products, Customers |
-| 9 | Shipping Methods | — |
-| 10 | Payment Methods | — |
-| 11 | SEO URLs | Products, Categories |
-| 12 | CMS Pages (optional) | — |
+The chain runs serially via `Bus::chain`, with each batched stage dispatching the next inside its `then()` callback:
+
+| Step | Entity | Required? | Depends On |
+|------|--------|-----------|------------|
+| 0 | Cleanup (configurable: orders, reviews, coupons, products, attributes, tags, categories, customers, taxes, shipping zones, pages, media) | opt-in | — |
+| 1 | Manufacturers | yes | — |
+| 2 | Tax Classes + Rates | yes | — |
+| 3 | Categories | yes | — |
+| 4 | Products (+ media + variants + main_category + cross-sells) | yes | Categories, Manufacturers, Taxes |
+| 5 | Customers | yes | — |
+| 6 | Orders | yes | Products, Customers |
+| 7 | Coupons | yes | — |
+| 8 | Reviews | yes | Products, Customers |
+| 9 | Shipping Methods | yes | — |
+| 10 | Payment Methods | yes | — |
+| 11 | SEO URLs (Redirection plugin + CSV) | yes | Products, Categories, CMS Pages |
+| 12 | CMS Pages | opt-in (`cms_options`) | — |
+| 13 | Product Streams → WC categories | opt-in (`stream_options`) | Products |
+| 14 | Newsletter recipients → CSV | opt-in (`newsletter_options`) | — |
+| 15 | Customer wishlists → CSV | opt-in (`wishlist_options`) | Customers, Products |
 
 ## Entity Coverage
 
-- **Products:** Name, SKU, descriptions, prices (regular + sale from `listPrice`), stock, weight (g→kg), dimensions (mm→cm), tax class, categories, tags, attributes (variant + descriptive), up-sells/cross-sells, images, variants
-- **Product Streams:** Shopware dynamic product groups → WooCommerce product categories
-- **Categories:** Name, description, sort order, images, hierarchy, meta title/description
-- **Customers:** Name, email, billing/shipping addresses, password hash migration
-- **Orders:** Order number, date, status mapping, line items, addresses, customer notes
-- **Manufacturers:** Name, image → WC product attribute terms
-- **Tax Classes:** Name, rates per country
-- **Coupons:** Code, discount type/amount, date range, usage limits
-- **Reviews:** Rating, author, comment, product link, approval status
-- **Shipping Methods:** Name → WooCommerce shipping zones/methods
-- **Payment Methods:** Name → WooCommerce payment gateways
-- **SEO URLs:** Shopware canonical URLs → WooCommerce slugs
-- **CMS Pages:** Shopware Experience World pages → WordPress pages (full or selective)
+- **Products:** name, SKU, descriptions, prices (regular + sale from `listPrice`, formatted with `number_format` to avoid float drift), stock (`manage_stock=true` always; `stock_status` derived from `is_closeout`+stock+available — fixes the inverted Shopware-6 semantics), weight (g→kg), dimensions (mm→cm), tax class, categories, tags, attributes (variant + descriptive), up-sells/cross-sells, images, variants. Variants carry `parent_woo_id` payload so order line items get both `product_id` and `variation_id`. Also: `purchase_prices` → `_wc_cog_cost` (Cost of Goods plugin), `release_date`, main_category → `_yoast_wpseo_primary_product_cat`, Omnibus lowest price (when opted in).
+- **Product Streams (opt-in):** Shopware dynamic product groups → WooCommerce product categories
+- **Categories:** name, description, sort order, images (with cross-run reuse), hierarchy (`level`-ordered in delta mode so parents migrate before children), Yoast meta title/description, **SEO long-text below grid** (resolved from `category_translation.custom_fields` or CMS-page slot text via `CategorySeoTextResolver`, version-id-filtered)
+- **Customers:** name, email, billing/shipping addresses (with `additional_address_line1` + `line2` concatenated into WC `address_2`, `vat_id` preserved), VAT IDs JSON → `_billing_vat` + `_shopware_vat_ids`, salutation, title, birthday, Shopware bcrypt password hash, legacy SW5 password + encoder, customer company. WC password generated server-side, `_requires_password_reset` flag set so customers reset on first login.
+- **Orders:** order number, date, status mapping, shipping line + tracking codes (single meta with all items, fixes WC dedup bug), customer notes, addresses (full set of fields), line items with proper `product_id`/`variation_id` linking, `deep_link_code` for guest-order recovery, affiliate/campaign codes, custom fields. Retries are idempotent via `_shopware_order_id` meta lookup (paginates up to 1000 candidate orders before deciding to POST).
+- **Manufacturers:** name, image → WC product attribute terms (version-id-filtered)
+- **Tax Classes:** name, rates per country
+- **Coupons:** code, discount type/amount (`number_format`-money), date range, usage limits. Individual promotion codes tracked per-code in StateManager so retries don't duplicate.
+- **Reviews:** rating, author, comment, product link, approval status
+- **Shipping Methods:** name → WooCommerce shipping zones/methods
+- **Payment Methods:** name → WooCommerce payment gateways
+- **SEO URLs:** Shopware canonical + alias URLs → Redirection plugin rules + CSV export with UTF-8 BOM. Multi-storefront deduplication (`ROW_NUMBER() OVER PARTITION BY seo_path_info, foreign_key`). Source paths percent-encoded for byte-exact browser matching.
+- **CMS Pages (opt-in):** Shopware Experience World pages → WordPress pages (all or selected)
+- **Newsletter Recipients (opt-in):** streamed CSV export for MailPoet/Mailchimp/Klaviyo import
+- **Customer Wishlists (opt-in):** flat CSV (one row per customer × product) for YITH/TI WooCommerce Wishlist
+- **Media:** every Shopware media ID → WP attachment ID mapping persisted in `MigrationEntity`. Subsequent runs reuse the attachment (after verifying it still exists in WP) instead of re-uploading.
 
 ## Architecture
 
 ```
 app/
-├── Console/Commands/MigrateShopwareCommand.php  # CLI fallback
+├── Console/Commands/MigrateShopwareCommand.php   # CLI fallback (currently API-parity-light; see CLI section)
 ├── Http/Controllers/
-│   ├── DashboardController.php                   # Inertia pages
-│   ├── MigrationController.php                   # Migration API
-│   └── LogController.php                         # Log endpoints
-├── Jobs/                                         # Async migration jobs (one per entity type)
-├── Models/                                       # MigrationRun, MigrationEntity, MigrationLog
-├── Services/                                     # ShopwareDB, WooCommerceClient, StateManager, etc.
+│   ├── DashboardController.php                    # Dashboard Inertia page
+│   ├── MigrationController.php                    # Migration API + status/redaction
+│   ├── ShopwareConfigController.php               # Language/version lookups
+│   ├── DumpUploadController.php                   # SQL dump upload
+│   └── LogController.php                          # Log endpoints
+├── Jobs/                                          # Async migration jobs, one per entity type
+│                                                  # plus batch variants for large entities
+├── Models/                                        # MigrationRun, MigrationEntity, MigrationLog
+├── Services/
+│   ├── ShopwareDB.php                             # Source DB connection + version/language helpers
+│   ├── WooCommerceClient.php                      # WC REST client + order-by-meta lookup
+│   ├── WordPressMediaClient.php                   # WP media + pages + comments client
+│   ├── ImageMigrator.php                          # Cross-run media reuse + upload pipeline
+│   ├── ContentMigrator.php                        # HTML body rewriting for migrated images
+│   ├── CategorySeoTextResolver.php                # Reads CMS-slot or custom-field SEO text per category
+│   ├── RedirectionClient.php                      # Redirection plugin API client
+│   ├── WooCommerceCleanup.php                     # Cleanup orchestration with safety modes
+│   ├── StateManager.php                           # MigrationEntity-backed mapping store
+│   ├── PasswordMigrator.php                       # Shopware bcrypt / legacy SW5 password handling
+│   ├── CancellationService.php                    # Per-migration cancel flag
+│   └── SSHTunnel.php                              # ssh -L jump-host tunnel manager
 └── Shopware/
-    ├── Readers/                                  # Pure DB query classes — no transformation
-    └── Transformers/                             # Pure data mapping — no I/O
+    ├── Readers/                                   # Pure DB query classes — no transformation
+    └── Transformers/                              # Pure data mapping — no I/O
 ```
 
 **Data flow per entity:**
 
 ```
 MigrateXxxJob (queue)
-  → Reader::fetchXxx()          reads raw rows from Shopware MySQL
-  → Transformer::transform()    maps Shopware fields to WooCommerce shape
-  → WooCommerceClient::post()   writes to WooCommerce REST API
-  → StateManager::set()         records shopware_id → woo_id mapping
+  → Reader::fetchXxx()          reads raw rows from Shopware MySQL (version-id-filtered)
+  → Transformer::transform()    maps Shopware fields to WooCommerce shape (pure function)
+  → WooCommerceClient::post()   writes to WooCommerce REST API (with idempotency lookup)
+  → StateManager::set()         records shopware_id → woo_id mapping for state + retries
 ```
 
-**Readers** are stateless query objects that translate Shopware's UUID-heavy schema (binary IDs, inherited fields, JSON columns) into plain PHP objects. **Transformers** are pure functions with no database or HTTP calls — easy to unit test in isolation. **Jobs** orchestrate the two and handle retries, dry-run mode, and progress logging.
+**Readers** are stateless query objects that translate Shopware's UUID-heavy schema (binary IDs, inherited fields, JSON columns) into plain PHP objects. They filter by `live_version_id` so draft/working versions of categories, CMS pages, products, manufacturers don't pollute migration output.
+
+**Transformers** are pure functions with no database or HTTP calls — easy to unit test in isolation.
+
+**Jobs** orchestrate the two and handle retries, dry-run mode, idempotency lookups, queue routing, and progress logging.
+
+**StateManager** stores `(migration_id, entity_type, shopware_id) → woo_id + payload` rows. The image migrator queries across **all migration runs** (not just the current) so re-running a migration over a WP install with prior runs doesn't re-upload media.
+
+## Cleanup — what gets deleted
+
+Set `clean_woocommerce=true` on a migration to delete WC data before the new import runs. **Cannot be combined with delta mode** (controller returns 422).
+
+| Entity | Always deleted? | Notes |
+|---|---|---|
+| Orders | yes | all orders, `force=true` |
+| Reviews | yes | falls back to WP comments API for orphaned review-comments |
+| Coupons | yes | including individual codes |
+| Products | yes | wipes variations too (WC stores them as child product rows) |
+| Product attributes / tags | yes | |
+| Categories | yes | `uncategorized` is preserved (WC core requirement) |
+| Customers | yes | `?reassign=0` so orders aren't reassigned to admin |
+| Tax rates | yes | |
+| Tax classes | yes | built-in `standard`/`reduced-rate`/`zero-rate` preserved |
+| Shipping zones | yes | zone 0 "Rest of the World" preserved |
+| **WordPress pages** | **only when CMS migration is enabled** | matched against the Shopware page slugs being imported — never touches unrelated WP pages |
+| **Media library** | **opt-in** via `cleanup_options.delete_media` | two modes: |
+|   | | • `migrated_only` (default + recommended): deletes only WP attachments tracked by past migrator runs — keeps blog images, theme demos, hand-curated heroes |
+|   | | • `all`: nukes every file in `wp-content/uploads` — only for fresh/throwaway WP installs |
+
+What's **never** touched by cleanup: WP users that aren't customers, plugins, themes, options, Yoast/SEO settings, posts (only pages), webhooks, the migrator's own MigrationRun/MigrationLog rows, anything in the Shopware source DB.
 
 ## Finding Shopware IDs
 
@@ -319,6 +389,16 @@ SELECT LOWER(HEX(id)) AS id, name FROM version WHERE name = 'Live';
 **Cleanup is slow / shows 0 progress for a long time**
 
 Media deletion uses the WordPress REST Batch API (WP 5.6+) in chunks of 25. If the batch endpoint is unavailable, it falls back to individual deletes — which is slower but still correct. Progress updates appear after every 100 items.
+
+In **migrated_only** mode (the default for media cleanup), the count of attachments deleted reflects only those tracked by past migration runs — so a first-time cleanup on a fresh WP install will correctly log `"no previously-migrated attachments tracked — nothing to delete"`.
+
+**Cleanup is silently doing nothing for pages**
+
+`pages` cleanup is only enqueued when the migration is also importing CMS pages (`cms_options.migrate_all=true` or non-empty `cms_options.selected_ids`). When CMS migration is off, the pages cleanup step is skipped on purpose to avoid touching unrelated WP pages.
+
+**`Error response from daemon: ports are not available: ...:8679 -> 127.0.0.1:0` (or similar)**
+
+A Docker Desktop / WSL2 port-binding quirk — Windows's dynamic port exclusion range has temporarily reserved the port. Either change `FORWARD_REDIS_PORT` (or the offending port) in `docker/local/.env` to a free port like `16379`, or restart WSL2 from an elevated PowerShell with `wsl --shutdown` and start Docker Desktop again.
 
 **`php artisan shopware:migrate` command not found**
 

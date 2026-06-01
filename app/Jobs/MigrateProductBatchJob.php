@@ -183,6 +183,9 @@ class MigrateProductBatchJob implements ShouldQueue
                         $variantOptions = $reader->fetchVariantOptions($variant->id);
                         $optionAttributes = $transformer->buildVariantOptionAttributes($variantOptions);
                         $variantData = $transformer->transformVariant($variant, $optionAttributes);
+                        // Carry the parent shopware id so downstream consumers (SEO URL
+                        // job, order line item resolver) can walk variant → parent.
+                        $variantData['parent_shopware_id'] = $product->id;
                         $stateManager->markSkipped('variation', $variant->id, $this->migrationId, $variantData);
                     } catch (\Throwable $e) {
                         $stateManager->markFailed('variation', $variant->id, $this->migrationId, $e->getMessage());
@@ -285,6 +288,7 @@ class MigrateProductBatchJob implements ShouldQueue
                 // variation — WC requires both ids for variation line items.
                 $stateManager->set('variation', $variant->id, $wooVariationId, $this->migrationId, [
                     'parent_woo_id' => $wooProductId,
+                    'parent_shopware_id' => $variant->parent_id ?? null,
                 ]);
                 $this->log('info', "Migrated variant '{$variant->sku}' → WC #{$wooVariationId}", $variant->id, 'variation');
             }

@@ -1,12 +1,28 @@
 #!/bin/bash
 
 # Docker Local Development Helper Script
-# Usage: ./mc.sh <command> [arguments]
+# Usage: ./local.sh <command> [arguments]   (preferred — runs from project root)
+#    or: ./mc.sh <command> [arguments]      (run from inside docker/local/)
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
+
+# Show the invocation name the operator actually typed in help/error output.
+# When run via ../../local.sh (the project-root wrapper) we want `./local.sh`,
+# not the internal `./mc.sh` path that would just confuse users.
+INVOKE_NAME="$(basename "${MC_INVOKED_AS:-${0}}")"
+
+# Load .env so port hints reflect the operator's actual config rather than
+# the docker-compose defaults. set -a exports every var sourced from the file
+# to subprocesses (docker compose handles its own loading too, this is for echo).
+if [ -f .env ]; then
+    set -a
+    # shellcheck disable=SC1091
+    . ./.env
+    set +a
+fi
 
 # Colors
 RED='\033[0;31m'
@@ -32,20 +48,21 @@ check_docker() {
 cmd_help() {
     echo -e "${BLUE}🐳 Docker Local Development Commands${NC}"
     echo ""
-    echo "Usage: ./mc.sh <command> [arguments]"
+    echo "Usage: ./${INVOKE_NAME} <command> [arguments]"
     echo ""
     echo "Container Management:"
     echo "  up              Start all containers"
     echo "  down            Stop all containers"
-    echo "  restart         Restart all containers"
-    echo "  build           Rebuild containers (no cache)"
+    echo "  restart         Restart all containers (config-only reload)"
+    echo "  build           Rebuild container images (no cache)"
+    echo "  rebuild         Full reset: down + build --no-cache + up"
     echo "  ps              Show container status"
     echo "  logs [service]  View logs (all or specific service)"
     echo "  clean           Stop containers and remove volumes"
     echo ""
     echo "Shell Access:"
     echo "  shell           Access app container shell"
-    echo "  psql            Access PostgreSQL CLI"
+    echo "  mysql           Access MySQL CLI (app database)"
     echo "  redis           Access Redis CLI"
     echo ""
     echo "Laravel Commands:"
@@ -78,9 +95,15 @@ cmd_up() {
     success "Containers started!"
     echo ""
     echo "🌐 Access points:"
-    echo "   - App:         http://localhost:${APP_PORT:-8080}"
-    echo "   - Vite (dev):  http://localhost:${FORWARD_VITE_PORT:-5173}"
-    echo "   - Mailpit:     http://localhost:${FORWARD_MAILPIT_DASHBOARD_PORT:-8025}"
+    echo "   - App:         http://localhost:${APP_PORT:-8780}"
+    echo "   - Vite (dev):  http://localhost:${FORWARD_VITE_PORT:-8773}"
+    echo "   - Mailpit:     http://localhost:${FORWARD_MAILPIT_DASHBOARD_PORT:-8726}"
+    echo ""
+    echo "🔌 Service ports (for external clients like MySQL Workbench, redis-cli):"
+    echo "   - MySQL:       localhost:${FORWARD_MYSQL_PORT:-8706}"
+    echo "   - MySQL test:  localhost:${FORWARD_MYSQL_TEST_PORT:-8707}"
+    echo "   - Redis:       localhost:${FORWARD_REDIS_PORT:-16379}"
+    echo "   - Mailpit SMTP: localhost:${FORWARD_MAILPIT_PORT:-8725}"
 }
 
 cmd_down() {
@@ -92,6 +115,20 @@ cmd_down() {
 cmd_restart() {
     cmd_down
     cmd_up
+}
+
+cmd_rebuild() {
+    check_docker
+    info "Full rebuild: down → build (no-cache) → up..."
+    docker compose down
+    docker compose build --no-cache
+    docker compose up -d
+    success "Rebuild complete!"
+    echo ""
+    echo "🌐 Access points:"
+    echo "   - App:         http://localhost:${APP_PORT:-8780}"
+    echo "   - Vite (dev):  http://localhost:${FORWARD_VITE_PORT:-8773}"
+    echo "   - Mailpit:     http://localhost:${FORWARD_MAILPIT_DASHBOARD_PORT:-8726}"
 }
 
 cmd_build() {
@@ -127,8 +164,11 @@ cmd_shell() {
     docker compose exec api sh
 }
 
-cmd_psql() {
-    docker compose exec pgsql psql -U "${DB_USERNAME:-laravel}" -d "${DB_DATABASE:-laravel}"
+cmd_mysql() {
+    docker compose exec mysql mysql \
+        -u "${DB_USERNAME:-laravel}" \
+        -p"${DB_PASSWORD:-secret}" \
+        "${DB_DATABASE:-laravel}"
 }
 
 cmd_redis() {
@@ -241,11 +281,12 @@ case "${1:-help}" in
     down) cmd_down ;;
     restart) cmd_restart ;;
     build) cmd_build ;;
+    rebuild) cmd_rebuild ;;
     ps) cmd_ps ;;
     logs) shift; cmd_logs "$@" ;;
     clean) cmd_clean ;;
     shell) cmd_shell ;;
-    psql) cmd_psql ;;
+    mysql) cmd_mysql ;;
     redis) cmd_redis ;;
     artisan) shift; cmd_artisan "$@" ;;
     migrate) cmd_migrate ;;
@@ -260,6 +301,6 @@ case "${1:-help}" in
     install) cmd_install ;;
     setup) cmd_setup ;;
     init) cmd_init ;;
-    *) error "Unknown command: $1. Run './mc.sh help' for usage." ;;
+    *) error "Unknown command: $1. Run './${INVOKE_NAME} help' for usage." ;;
 esac
 

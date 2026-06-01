@@ -105,43 +105,33 @@ class MigrateReviewsJob implements ShouldQueue
 
     public static function dispatchFinalChain(int $migrationId): void
     {
-        $migration = MigrationRun::findOrFail($migrationId);
-        $cmsOptions = $migration->settings['cms_options'] ?? [];
-
+        // The SEO URL step is now a Bus::batch dispatcher (MigrateSeoUrlsJob) — the
+        // jobs after it (CMS pages, streams, newsletter, wishlist, completion) run
+        // from the batch's then() callback in MigrateSeoUrlsJob::dispatchPostSeoChain.
+        // So this chain only contains the synchronous pre-SEO steps + the dispatcher.
         $jobs = [
             new MigrateShippingMethodsJob($migrationId),
             new MigratePaymentMethodsJob($migrationId),
             new MigrateSeoUrlsJob($migrationId),
         ];
 
-        if (! empty($cmsOptions['migrate_all'])) {
-            $jobs[] = new MigrateCmsPagesJob($migrationId);
-        } elseif (! empty($cmsOptions['selected_ids'])) {
-            $jobs[] = new MigrateCmsPagesJob($migrationId, $cmsOptions['selected_ids']);
-        }
+        Bus::chain($jobs)
+            ->catch(function (\Throwable $e) use ($migrationId) {
+                MigrationLog::create([
+                    'migration_id' => $migrationId,
+                    'entity_type' => 'system',
+                    'level' => 'error',
+                    'message' => 'Pre-SEO chain aborted: '.$e->getMessage(),
+                    'created_at' => now(),
+                ]);
 
-        $streamOptions = $migration->settings['stream_options'] ?? [];
-        if (! empty($streamOptions['migrate_streams'])) {
-            $jobs[] = new MigrateProductStreamsJob($migrationId);
-        }
-
-        if (! empty($migration->settings['newsletter_options']['enabled'])) {
-            $jobs[] = new MigrateNewsletterRecipientsJob($migrationId);
-        }
-
-        if (! empty($migration->settings['wishlist_options']['enabled'])) {
-            $jobs[] = new MigrateCustomerWishlistsJob($migrationId);
-        }
-
-        $jobs[] = function () use ($migrationId) {
-            $migration = MigrationRun::findOrFail($migrationId);
-            if ($migration->status === 'running') {
-                $migration->markCompleted();
-            }
-            app(\App\Services\CancellationService::class)->clear($migrationId);
-        };
-
-        Bus::chain($jobs)->dispatch();
+                $migration = MigrationRun::find($migrationId);
+                if ($migration && $migration->status === 'running') {
+                    $migration->markFailed();
+                }
+                app(\App\Services\CancellationService::class)->clear($migrationId);
+            })
+            ->dispatch();
     }
 
     protected function log(string $level, string $message, ?string $shopwareId = null): void

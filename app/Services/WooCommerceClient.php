@@ -54,6 +54,86 @@ class WooCommerceClient
         return new static($config);
     }
 
+    /**
+     * Probe the WC REST root to confirm the API is actually reachable and that
+     * authentication succeeded. Mirrors WordPressMediaClient::testApiAccess —
+     * checks status + Content-Type explicitly because a Cloudflare Access / Zero
+     * Trust block returns HTTP 200 with an HTML login page. Without this check,
+     * downstream `json_decode($html) ?? []` silently degrades into "empty array =
+     * success" and we report a working API when nothing is reaching WordPress.
+     *
+     * @return array{success: bool, error?: string, details?: array{status: int, content_type: string}}
+     */
+    public function testApiAccess(): array
+    {
+        try {
+            $response = $this->client->get('', ['http_errors' => true]);
+            $statusCode = $response->getStatusCode();
+            $contentType = $response->getHeaderLine('Content-Type');
+            $body = (string) $response->getBody();
+
+            if (stripos($contentType, 'application/json') === false) {
+                return [
+                    'success' => false,
+                    'error' => "WC API returned non-JSON response ({$statusCode}, {$contentType}) — likely a Cloudflare/Zero Trust HTML page or WP redirect. Body starts: ".substr(trim($body), 0, 120),
+                ];
+            }
+
+            $decoded = json_decode($body, true);
+            if (! is_array($decoded) || (empty($decoded['namespace']) && empty($decoded['routes']) && empty($decoded['store']))) {
+                return [
+                    'success' => false,
+                    'error' => "WC API returned unexpected JSON shape ({$statusCode}). Body: ".substr($body, 0, 200),
+                ];
+            }
+
+            return [
+                'success' => true,
+                'details' => ['status' => $statusCode, 'content_type' => $contentType],
+            ];
+        } catch (\GuzzleHttp\Exception\ClientException $e) {
+            $statusCode = $e->getResponse()->getStatusCode();
+            $body = (string) $e->getResponse()->getBody();
+
+            if ($statusCode === 302 || $statusCode === 403) {
+                return [
+                    'success' => false,
+                    'error' => "Access blocked ({$statusCode}) — Cloudflare Access/Zero Trust or WP forbidding the consumer key. Configure custom headers with a Service Token if behind CF, or check the WC user's role/permissions.",
+                ];
+            }
+
+            if ($statusCode === 401) {
+                return [
+                    'success' => false,
+                    'error' => 'Authentication failed (401) — check the WooCommerce consumer key/secret pair has Read/Write permission.',
+                ];
+            }
+
+            return [
+                'success' => false,
+                'error' => "WC API error ({$statusCode}): ".substr($body, 0, 200),
+            ];
+        } catch (\GuzzleHttp\Exception\TooManyRedirectsException $e) {
+            return [
+                'success' => false,
+                'error' => 'Too many redirects — likely blocked by Cloudflare Access. Configure custom headers with a Service Token.',
+            ];
+        } catch (\Throwable $e) {
+            $message = $e->getMessage();
+            if (stripos($message, 'cloudflare') !== false || stripos($message, 'redirect') !== false) {
+                return [
+                    'success' => false,
+                    'error' => 'Blocked by Zero Trust/Cloudflare Access — configure custom headers with Service Token credentials',
+                ];
+            }
+
+            return [
+                'success' => false,
+                'error' => 'Cannot connect to WooCommerce REST API: '.$message,
+            ];
+        }
+    }
+
     public function get(string $endpoint, array $query = []): array
     {
         try {

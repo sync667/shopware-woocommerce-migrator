@@ -126,16 +126,31 @@ class SeoUrlTransformerTest extends TestCase
         $this->assertSame('/no-leading-slash', $result['source']);
     }
 
-    public function test_source_normalization_strips_trailing_slash(): void
+    public function test_source_normalization_preserves_trailing_slash(): void
+    {
+        // Shopware emits category URLs with a trailing slash (/Cat/Sub/) and
+        // product URLs without. We preserve what Shopware served so the
+        // Redirection plugin's byte-exact match catches real browser requests.
+        $seoUrl = (object) [
+            'id' => 'a', 'foreign_key' => 'b', 'route_name' => 'frontend.navigation.page',
+            'seo_path_info' => '/Some-Category/', 'is_canonical' => 1,
+        ];
+
+        $result = $this->transformer->transform($seoUrl, 'category', 7, 'some-category');
+
+        $this->assertSame('/Some-Category/', $result['source']);
+    }
+
+    public function test_source_normalization_keeps_product_paths_without_trailing_slash(): void
     {
         $seoUrl = (object) [
             'id' => 'a', 'foreign_key' => 'b', 'route_name' => 'frontend.detail.page',
-            'seo_path_info' => '/has-trailing/', 'is_canonical' => 1,
+            'seo_path_info' => '/some-product', 'is_canonical' => 1,
         ];
 
         $result = $this->transformer->transform($seoUrl, 'product', 1, 'slug');
 
-        $this->assertSame('/has-trailing', $result['source']);
+        $this->assertSame('/some-product', $result['source']);
     }
 
     public function test_source_normalization_collapses_double_slashes(): void

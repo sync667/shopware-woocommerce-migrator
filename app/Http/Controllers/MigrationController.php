@@ -593,6 +593,18 @@ class MigrationController extends Controller
         try {
             $woo = new WooCommerceClient($config);
 
+            // Probe content-type + status BEFORE assuming the API works. Otherwise a
+            // Cloudflare Access HTML interstitial decodes to [] and silently looks
+            // like a successful empty response across every probe endpoint below.
+            $probe = $woo->testApiAccess();
+            if (! $probe['success']) {
+                if ($this->looksLikeCloudflareBlock($probe['error'])) {
+                    $probe['error'] .= ' — Configure custom headers with a Cloudflare Service Token or add this server\'s IP to the CF Access bypass list.';
+                }
+
+                return $probe;
+            }
+
             // Try multiple methods to get WooCommerce version
             $version = 'Unknown';
 
@@ -654,7 +666,12 @@ class MigrationController extends Controller
                 }
             }
 
-            $version = $version ?: 'Unknown';
+            // Distinguish "version banner not exposed by any probe endpoint" from
+            // "we never confirmed the API works" — the migration only needs the REST
+            // API to be reachable, the version string is a cosmetic detail.
+            if (! $version || $version === 'Unknown') {
+                $version = 'REST v3 reachable (version banner not exposed)';
+            }
 
             $details = ['version' => $version];
 
@@ -669,7 +686,6 @@ class MigrationController extends Controller
             $statusCode = $e->getResponse()->getStatusCode();
             $errorMessage = $e->getMessage();
 
-            // Detect Cloudflare Access or Zero Trust issues
             if ($statusCode === 302 || $statusCode === 403) {
                 return [
                     'success' => false,
@@ -691,8 +707,7 @@ class MigrationController extends Controller
         } catch (\Exception $e) {
             $errorMessage = $e->getMessage();
 
-            // Check if error message contains redirect/access keywords
-            if (stripos($errorMessage, 'cloudflare') !== false || stripos($errorMessage, 'access') !== false) {
+            if ($this->looksLikeCloudflareBlock($errorMessage)) {
                 return [
                     'success' => false,
                     'error' => 'Blocked by Zero Trust/Cloudflare Access - configure custom headers with Service Token credentials',
@@ -704,6 +719,36 @@ class MigrationController extends Controller
                 'error' => 'Connection failed: '.$errorMessage,
             ];
         }
+    }
+
+    /**
+     * Pattern-match Cloudflare / Zero-Trust block messages with enough specificity
+     * to not trip on the substring "access" embedded in unrelated text (e.g. "API
+     * accessible but authentication failed"). The earlier loose `stripos(...,'access')`
+     * heuristic generated misleading "configure Cloudflare" hints on plain WP
+     * application-password failures.
+     *
+     * @internal
+     */
+    protected function looksLikeCloudflareBlock(string $message): bool
+    {
+        $needles = [
+            'cloudflare',
+            'cf-access',
+            'cf access',
+            'zero trust',
+            'zero-trust',
+            'access denied',
+            'cf-ray',
+        ];
+        $haystack = strtolower($message);
+        foreach ($needles as $needle) {
+            if (str_contains($haystack, $needle)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     protected function testWordPressDetailed(array $config): array
@@ -723,8 +768,7 @@ class MigrationController extends Controller
 
             $apiTest = $wpMedia->testApiAccess();
             if (! $apiTest['success']) {
-                // Check if error indicates Cloudflare/Zero Trust blocking
-                if (stripos($apiTest['error'], 'cloudflare') !== false || stripos($apiTest['error'], 'access') !== false) {
+                if ($this->looksLikeCloudflareBlock($apiTest['error'])) {
                     $apiTest['error'] .= ' - Configure custom headers with Cloudflare Service Token';
                 }
 

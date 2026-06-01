@@ -58,6 +58,77 @@ class SeoUrlReader
         ', [$routeName, $this->db->languageIdBin(), '']);
     }
 
+    /**
+     * Fetch deduped seo_url rows as (id, seo_path_info) pairs. The dispatcher
+     * uses seo_path_info to detect cross-entity source collisions before chunking
+     * so the work-units it ships to batch workers are already a clean set.
+     *
+     * @return array<int, object>
+     */
+    public function fetchAllIds(): array
+    {
+        return $this->db->select('
+            SELECT id, seo_path_info
+            FROM (
+                SELECT
+                    LOWER(HEX(su.id)) AS id,
+                    su.seo_path_info,
+                    su.foreign_key,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY su.seo_path_info, su.foreign_key
+                        ORDER BY
+                            COALESCE(su.is_canonical, 0) DESC,
+                            (su.sales_channel_id IS NULL) DESC,
+                            su.created_at ASC,
+                            su.id ASC
+                    ) AS rn
+                FROM seo_url su
+                WHERE (su.route_name IN (?, ?, ?) OR su.route_name LIKE ?)
+                  AND su.is_deleted = 0
+                  AND su.language_id = ?
+                  AND su.seo_path_info IS NOT NULL
+                  AND su.seo_path_info != ?
+            ) t
+            WHERE rn = 1
+            ORDER BY id ASC
+        ', [
+            'frontend.detail.page',
+            'frontend.navigation.page',
+            'frontend.cms.page',
+            'frontend.cms.page%',
+            $this->db->languageIdBin(),
+            '',
+        ]);
+    }
+
+    /**
+     * Fetch full seo_url row data for the given IDs. Used by MigrateSeoUrlBatchJob
+     * to pull just the chunk it owns.
+     *
+     * @param  array<int, string>  $ids  lowercase-hex shopware seo_url ids
+     * @return array<int, object>
+     */
+    public function fetchByIds(array $ids): array
+    {
+        if ($ids === []) {
+            return [];
+        }
+
+        $placeholders = implode(',', array_fill(0, count($ids), 'UNHEX(?)'));
+
+        return $this->db->select("
+            SELECT
+                LOWER(HEX(su.id)) AS id,
+                LOWER(HEX(su.foreign_key)) AS foreign_key,
+                su.route_name,
+                su.path_info,
+                su.seo_path_info,
+                su.is_canonical
+            FROM seo_url su
+            WHERE su.id IN ({$placeholders})
+        ", $ids);
+    }
+
     public function fetchByForeignKey(string $foreignKey): array
     {
         return $this->db->select('

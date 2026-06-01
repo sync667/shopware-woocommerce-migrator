@@ -45,6 +45,14 @@ Route::middleware(\App\Http\Middleware\ValidateAccessToken::class)->group(functi
             Route::post('/validate', [\App\Http\Controllers\DumpUploadController::class, 'validateDump']);
             Route::post('/status', [\App\Http\Controllers\DumpUploadController::class, 'status']);
             Route::post('/cleanup', [\App\Http\Controllers\DumpUploadController::class, 'cleanup']);
+            Route::get('/active', [\App\Http\Controllers\DumpUploadController::class, 'listActive']);
+
+            // Chunked upload — recommended for multi-GB dumps. Frontend POSTs init,
+            // then a sequence of chunk requests, then complete.
+            Route::post('/upload/init', [\App\Http\Controllers\DumpUploadController::class, 'initChunked']);
+            Route::post('/upload/chunk', [\App\Http\Controllers\DumpUploadController::class, 'appendChunk']);
+            Route::post('/upload/complete', [\App\Http\Controllers\DumpUploadController::class, 'completeChunked']);
+            Route::post('/upload/abort', [\App\Http\Controllers\DumpUploadController::class, 'abortChunked']);
         });
     });
 });

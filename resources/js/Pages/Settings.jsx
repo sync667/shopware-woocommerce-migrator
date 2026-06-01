@@ -73,8 +73,11 @@ export default function Settings() {
     const [dbSourceMode, setDbSourceMode] = useState('direct'); // 'direct' or 'dump'
     const [dumpFile, setDumpFile] = useState(null);
     const [dumpUploading, setDumpUploading] = useState(false);
+    const [dumpProgress, setDumpProgress] = useState({ phase: 'idle', sent: 0, total: 0, message: '' });
     const [dumpResult, setDumpResult] = useState(null);
     const [dumpContainerName, setDumpContainerName] = useState(null);
+    const [activeDumps, setActiveDumps] = useState([]);
+    const [activeDumpsLoading, setActiveDumpsLoading] = useState(false);
 
     const [testResults, setTestResults] = useState(null);
     const [submitting, setSubmitting] = useState(false);
@@ -95,23 +98,89 @@ export default function Settings() {
 
         setDumpUploading(true);
         setDumpResult(null);
+        setDumpProgress({ phase: 'init', sent: 0, total: dumpFile.size, message: 'Starting upload…' });
+
+        let uploadId = null;
 
         try {
-            const formData = new FormData();
-            formData.append('dump_file', dumpFile);
-
-            const res = await fetch('/api/dump/upload', {
+            // Phase 1: open a chunked upload session.
+            const initRes = await fetch('/api/dump/upload/init', {
                 method: 'POST',
-                headers: { Accept: 'application/json' },
-                body: formData,
+                headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+                body: JSON.stringify({
+                    filename: dumpFile.name,
+                    size: dumpFile.size,
+                    mime: dumpFile.type || null,
+                }),
             });
-            const data = await res.json();
+            const initData = await initRes.json();
+            if (!initData.success) {
+                throw new Error(initData.error || 'Failed to start upload session');
+            }
+
+            uploadId = initData.upload_id;
+            const chunkSize = initData.chunk_size;
+            const totalChunks = Math.ceil(dumpFile.size / chunkSize);
+
+            // Phase 2: send every chunk in order. Retry each chunk up to 3 times so
+            // a transient network blip doesn't tank a multi-hour upload.
+            setDumpProgress({ phase: 'uploading', sent: 0, total: dumpFile.size, message: `0 / ${totalChunks} chunks` });
+
+            for (let i = 0; i < totalChunks; i++) {
+                const start = i * chunkSize;
+                const end = Math.min(start + chunkSize, dumpFile.size);
+                const blob = dumpFile.slice(start, end);
+                const form = new FormData();
+                form.append('upload_id', uploadId);
+                form.append('chunk_index', String(i));
+                form.append('chunk', blob, `chunk-${i}`);
+
+                let lastError = null;
+                for (let attempt = 0; attempt < 3; attempt++) {
+                    try {
+                        const r = await fetch('/api/dump/upload/chunk', {
+                            method: 'POST',
+                            headers: { Accept: 'application/json' },
+                            body: form,
+                        });
+                        const j = await r.json();
+                        if (!j.success) {
+                            throw new Error(j.error || `chunk ${i} rejected`);
+                        }
+                        setDumpProgress({
+                            phase: 'uploading',
+                            sent: j.received_bytes,
+                            total: j.total_size,
+                            message: `${i + 1} / ${totalChunks} chunks`,
+                        });
+                        lastError = null;
+                        break;
+                    } catch (err) {
+                        lastError = err;
+                        if (attempt < 2) {
+                            await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+                        }
+                    }
+                }
+                if (lastError) {
+                    throw lastError;
+                }
+            }
+
+            // Phase 3: finalize — server runs validate + extract + spawn container.
+            setDumpProgress({ phase: 'importing', sent: dumpFile.size, total: dumpFile.size, message: 'Importing into MySQL container…' });
+
+            const completeRes = await fetch('/api/dump/upload/complete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+                body: JSON.stringify({ upload_id: uploadId }),
+            });
+            const data = await completeRes.json();
 
             if (data.success) {
                 setDumpResult(data);
                 setDumpContainerName(data.container_name);
 
-                // Auto-fill Shopware connection details
                 setShopware((prev) => ({
                     ...prev,
                     db_host: data.connection.db_host,
@@ -121,7 +190,10 @@ export default function Settings() {
                     db_password: data.connection.db_password,
                 }));
 
-                // Auto-populate test results for Shopware
+                // Pick up the new container in the "Active dump containers" panel
+                // so the operator sees it listed (and can recover the password later).
+                loadActiveDumps();
+
                 setTestResults((prev) => ({
                     ...prev,
                     shopware: {
@@ -137,10 +209,55 @@ export default function Settings() {
                 setDumpResult({ success: false, error: data.error, validation: data.validation });
             }
         } catch (err) {
+            // Best-effort abort so we don't leak the session dir on the server.
+            if (uploadId) {
+                try {
+                    await fetch('/api/dump/upload/abort', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+                        body: JSON.stringify({ upload_id: uploadId }),
+                    });
+                } catch { /* swallow */ }
+            }
             setDumpResult({ success: false, error: err.message });
         }
 
         setDumpUploading(false);
+        setDumpProgress({ phase: 'idle', sent: 0, total: 0, message: '' });
+    };
+
+    const loadActiveDumps = async () => {
+        setActiveDumpsLoading(true);
+        try {
+            const res = await fetch('/api/dump/active', {
+                method: 'GET',
+                headers: { Accept: 'application/json' },
+            });
+            const data = await res.json();
+            setActiveDumps(Array.isArray(data?.containers) ? data.containers : []);
+        } catch {
+            setActiveDumps([]);
+        }
+        setActiveDumpsLoading(false);
+    };
+
+    const applyDumpContainer = (container) => {
+        setShopware((prev) => ({
+            ...prev,
+            db_host: container.host,
+            db_port: container.port,
+            db_database: container.database,
+            db_username: container.username,
+            db_password: container.password,
+        }));
+        setDumpContainerName(container.container_name);
+        setTestResults((prev) => ({
+            ...prev,
+            shopware: {
+                success: true,
+                details: { database: container.database, version: 'MySQL 8.0', tables_found: 0 },
+            },
+        }));
     };
 
     const handleDumpCleanup = async () => {
@@ -155,10 +272,18 @@ export default function Settings() {
             setDumpContainerName(null);
             setDumpResult(null);
             setDumpFile(null);
+            loadActiveDumps();
         } catch (err) {
             console.error('Cleanup failed:', err);
         }
     };
+
+    // Discover active dump containers on mount so a page reload doesn't lose the
+    // auto-populated password — operator can click "Use" on any listed container
+    // to refill the Shopware connection form.
+    useEffect(() => {
+        loadActiveDumps();
+    }, []);
 
     // Load settings from existing migration if cloning
     useEffect(() => {
@@ -829,6 +954,80 @@ export default function Settings() {
                             </p>
                         </div>
 
+                        {/* Active dump containers — lets the operator recover the auto-generated
+                            password after a page refresh by clicking "Use" on any running container. */}
+                        <div className="mb-4 rounded-lg border border-gray-200 bg-white p-4">
+                            <div className="mb-2 flex items-center justify-between">
+                                <h3 className="text-sm font-medium text-gray-900">Active dump containers</h3>
+                                <button
+                                    type="button"
+                                    onClick={loadActiveDumps}
+                                    disabled={activeDumpsLoading}
+                                    className="text-xs text-blue-600 hover:text-blue-800 disabled:opacity-50"
+                                >
+                                    {activeDumpsLoading ? 'Refreshing…' : 'Refresh'}
+                                </button>
+                            </div>
+                            {activeDumps.length === 0 && (
+                                <p className="text-xs text-gray-500">
+                                    No spawned dump containers. Upload a dump below to create one, or refresh after the import completes.
+                                </p>
+                            )}
+                            {activeDumps.length > 0 && (
+                                <div className="space-y-2">
+                                    {activeDumps.map((c) => (
+                                        <div
+                                            key={c.container_name}
+                                            className={`flex items-center justify-between gap-2 rounded border px-3 py-2 text-sm ${
+                                                c.status === 'running'
+                                                    ? 'border-green-200 bg-green-50'
+                                                    : 'border-gray-200 bg-gray-50'
+                                            }`}
+                                        >
+                                            <div className="min-w-0 flex-1">
+                                                <div className="flex items-center gap-2">
+                                                    <code className="text-xs">{c.container_name}</code>
+                                                    <span className={`rounded px-1.5 py-0.5 text-[11px] ${
+                                                        c.status === 'running'
+                                                            ? 'bg-green-100 text-green-700'
+                                                            : 'bg-gray-200 text-gray-600'
+                                                    }`}>{c.status}</span>
+                                                </div>
+                                                <div className="mt-1 text-xs text-gray-500">
+                                                    {c.host}:{c.port} · db <code>{c.database}</code> · user <code>{c.username}</code>
+                                                </div>
+                                            </div>
+                                            <div className="flex gap-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => applyDumpContainer(c)}
+                                                    disabled={c.status !== 'running'}
+                                                    className="rounded bg-blue-600 px-2 py-1 text-xs text-white hover:bg-blue-700 disabled:opacity-50"
+                                                >
+                                                    Use
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={async () => {
+                                                        if (!confirm(`Delete container ${c.container_name}? Any in-progress migration using it will fail.`)) return;
+                                                        await fetch('/api/dump/cleanup', {
+                                                            method: 'POST',
+                                                            headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+                                                            body: JSON.stringify({ container_name: c.container_name }),
+                                                        });
+                                                        await loadActiveDumps();
+                                                    }}
+                                                    className="rounded border border-red-300 bg-white px-2 py-1 text-xs text-red-700 hover:bg-red-50"
+                                                >
+                                                    Remove
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
                         {/* File Upload */}
                         <div className="mb-4">
                             <label className={labelClass}>Database Dump File</label>
@@ -888,9 +1087,38 @@ export default function Settings() {
                                 )}
                             </button>
                             {dumpUploading && (
-                                <p className="mt-2 text-xs text-gray-500">
-                                    This may take several minutes depending on the dump size. A Docker MySQL container is being created and the dump is being imported.
-                                </p>
+                                <div className="mt-3 space-y-2">
+                                    <div className="flex justify-between text-xs text-gray-600">
+                                        <span>
+                                            {dumpProgress.phase === 'init' && 'Starting…'}
+                                            {dumpProgress.phase === 'uploading' && `Uploading: ${dumpProgress.message}`}
+                                            {dumpProgress.phase === 'importing' && dumpProgress.message}
+                                        </span>
+                                        <span>
+                                            {dumpProgress.total > 0 && (
+                                                <>
+                                                    {(dumpProgress.sent / (1024 * 1024)).toFixed(0)} /{' '}
+                                                    {(dumpProgress.total / (1024 * 1024)).toFixed(0)} MB
+                                                    {' · '}
+                                                    {Math.round((dumpProgress.sent / dumpProgress.total) * 100)}%
+                                                </>
+                                            )}
+                                        </span>
+                                    </div>
+                                    <div className="h-2 w-full overflow-hidden rounded bg-gray-200">
+                                        <div
+                                            className="h-full rounded bg-blue-500 transition-all"
+                                            style={{
+                                                width: dumpProgress.total > 0
+                                                    ? `${Math.min(100, (dumpProgress.sent / dumpProgress.total) * 100)}%`
+                                                    : '0%',
+                                            }}
+                                        />
+                                    </div>
+                                    <p className="text-xs text-gray-500">
+                                        The dump is uploaded in 50 MB chunks and reassembled server-side. After upload, a Docker MySQL container is created and the dump is imported.
+                                    </p>
+                                </div>
                             )}
                         </div>
 

@@ -205,6 +205,17 @@ class DatabaseDumpService
         $password = Str::random(16);
         $dbName = 'shopware';
 
+        // Tuning for one-shot Shopware-sized (multi-GB) imports. The container is
+        // throwaway, so durability flags are deliberately loose:
+        //   - innodb_redo_log_capacity=4G stops "log_checkpointer lagging" warnings
+        //     that otherwise stall threads during the bulk INSERTs.
+        //   - innodb_buffer_pool_size=2G keeps more dirty pages in memory between
+        //     flushes (default 128 MB makes a multi-GB import disk-bound).
+        //   - innodb_flush_log_at_trx_commit=0 + innodb_doublewrite=OFF + sync_binlog=0
+        //     skip the durability writes we don't care about for a throwaway container.
+        //   - skip-log-bin: no replication, no binlog needed.
+        //   - max_allowed_packet=512M: prod dumps sometimes have large single INSERT
+        //     statements (e.g. cms_slot.config JSON, product.price JSON arrays).
         $result = Process::timeout(30)->run([
             'docker', 'run', '-d',
             '--name', $containerName,
@@ -213,8 +224,15 @@ class DatabaseDumpService
             '-p', $port.':3306',
             'mysql:8.0',
             '--default-authentication-plugin=mysql_native_password',
-            '--innodb-flush-log-at-trx-commit=0',
             '--max-connections=300',
+            '--innodb-redo-log-capacity=4294967296',
+            '--innodb-buffer-pool-size=2147483648',
+            '--innodb-log-buffer-size=134217728',
+            '--innodb-flush-log-at-trx-commit=0',
+            '--innodb-doublewrite=OFF',
+            '--sync-binlog=0',
+            '--skip-log-bin',
+            '--max-allowed-packet=536870912',
         ]);
 
         if (! $result->successful()) {
@@ -276,6 +294,106 @@ class DatabaseDumpService
             'running' => $status === 'running',
             'status' => $status,
         ];
+    }
+
+    /**
+     * List every spawned dump container with full connection details. Used by the
+     * Settings UI to recover from a page reload — the auto-populated password is
+     * lost from React state, so the operator needs a way to fetch it back.
+     *
+     * @return array<int, array{
+     *   container_name: string,
+     *   host: string,
+     *   port: int,
+     *   database: string,
+     *   username: string,
+     *   password: string,
+     *   status: string,
+     *   created_at: ?string
+     * }>
+     */
+    public function listActiveContainers(): array
+    {
+        if (! $this->isDockerAvailable()) {
+            return [];
+        }
+
+        // List by name prefix — we don't gate by label because the spawn flow
+        // doesn't tag containers. Includes stopped containers so the operator can
+        // still see "your last dump container exited unexpectedly".
+        $listResult = Process::timeout(10)->run([
+            'docker', 'ps', '-a',
+            '--filter', 'name=sw_dump_',
+            '--format', '{{.Names}}',
+        ]);
+
+        if (! $listResult->successful()) {
+            return [];
+        }
+
+        $names = array_values(array_filter(array_map(
+            'trim',
+            explode("\n", $listResult->output())
+        )));
+
+        if ($names === []) {
+            return [];
+        }
+
+        $host = $this->determineHost();
+        $containers = [];
+
+        foreach ($names as $name) {
+            $inspect = Process::timeout(10)->run(['docker', 'inspect', $name]);
+            if (! $inspect->successful()) {
+                continue;
+            }
+            $data = json_decode($inspect->output(), true);
+            if (! is_array($data) || ! isset($data[0])) {
+                continue;
+            }
+            $c = $data[0];
+
+            $port = null;
+            foreach ($c['NetworkSettings']['Ports']['3306/tcp'] ?? [] as $binding) {
+                if (! empty($binding['HostPort'])) {
+                    $port = (int) $binding['HostPort'];
+                    break;
+                }
+            }
+            if ($port === null) {
+                continue;
+            }
+
+            $password = null;
+            $database = 'shopware';
+            foreach ($c['Config']['Env'] ?? [] as $envVar) {
+                if (str_starts_with($envVar, 'MYSQL_ROOT_PASSWORD=')) {
+                    $password = substr($envVar, strlen('MYSQL_ROOT_PASSWORD='));
+                } elseif (str_starts_with($envVar, 'MYSQL_DATABASE=')) {
+                    $database = substr($envVar, strlen('MYSQL_DATABASE='));
+                }
+            }
+            if ($password === null) {
+                continue;
+            }
+
+            $containers[] = [
+                'container_name' => $name,
+                'host' => $host,
+                'port' => $port,
+                'database' => $database,
+                'username' => 'root',
+                'password' => $password,
+                'status' => $c['State']['Status'] ?? 'unknown',
+                'created_at' => $c['Created'] ?? null,
+            ];
+        }
+
+        // Newest first — operators usually want the dump they just uploaded.
+        usort($containers, fn ($a, $b) => strcmp($b['created_at'] ?? '', $a['created_at'] ?? ''));
+
+        return $containers;
     }
 
     /**
@@ -653,10 +771,17 @@ class DatabaseDumpService
         }
 
         try {
-            $result = Process::timeout(600)
+            // 2-hour ceiling. A 5 GB dump on tuned MySQL 8 typically runs 5-20 min;
+            // the cap is generous so a slow disk / busy machine doesn't kill the
+            // import partway through. Match the cleanup job timeout for symmetry.
+            $result = Process::timeout(7200)
                 ->input($handle)
                 ->run([
-                    'docker', 'exec', '-i', $containerName, 'mysql', '-h', '127.0.0.1', '-uroot', '-p'.$password, $dbName,
+                    'docker', 'exec', '-i', $containerName,
+                    'mysql', '-h', '127.0.0.1', '-uroot', '-p'.$password,
+                    '--max-allowed-packet=536870912',
+                    '--init-command=SET SESSION sql_mode="", SESSION foreign_key_checks=0, SESSION unique_checks=0, SESSION autocommit=0',
+                    $dbName,
                 ]);
         } finally {
             fclose($handle);

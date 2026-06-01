@@ -14,4 +14,7 @@ if [ ! -f "$DOCKER_SCRIPT" ]; then
     exit 1
 fi
 
+# Pass the wrapper's own name through so help/error text says ./local.sh
+# instead of the internal ./mc.sh path.
+export MC_INVOKED_AS="local.sh"
 exec bash "$DOCKER_SCRIPT" "$@"

@@ -60,44 +60,70 @@ class WordPressMediaClient
      */
     public function testApiAccess(): array
     {
+        // Probe `/wp/v2/media?per_page=1` rather than `/users/me`. The media route
+        // maps to the `upload_files` capability — exactly what the migration needs.
+        // The `/users/me` route is restricted to admin callers by several common
+        // hardening setups (Wordfence, iThemes, REST-restricting plugins) which
+        // return 200 with a `{"code":"rest_user_invalid_id"}` body for non-admins,
+        // making the basic-auth probe fail even when credentials are valid.
         try {
-            // Test authentication by getting current user
-            $response = $this->client->get('users/me');
-            $user = json_decode($response->getBody()->getContents(), true);
+            $response = $this->client->get('media', [
+                'query' => ['per_page' => 1, 'context' => 'edit'],
+                'http_errors' => true,
+            ]);
 
-            if (empty($user['id'])) {
+            $statusCode = $response->getStatusCode();
+            $body = (string) $response->getBody();
+            $contentType = $response->getHeaderLine('Content-Type');
+
+            if (stripos($contentType, 'application/json') === false) {
                 return [
                     'success' => false,
-                    'error' => 'API accessible but authentication failed - check username and application password',
+                    'error' => "API returned non-JSON response ({$statusCode}, {$contentType}) — likely a Cloudflare/Zero Trust HTML page or WP redirect. Body starts: ".substr(trim($body), 0, 120),
                 ];
             }
 
-            return [
-                'success' => true,
-                'user' => $user['name'] ?? 'Unknown',
-                'user_id' => $user['id'],
-            ];
-        } catch (\GuzzleHttp\Exception\ClientException $e) {
-            $statusCode = $e->getResponse()->getStatusCode();
+            $decoded = json_decode($body, true);
 
-            // Detect Cloudflare Access or Zero Trust blocking
-            if ($statusCode === 302 || $statusCode === 403) {
+            // The `edit` context requires `edit_posts` for media; if the caller lacks
+            // it, WP returns 401 (handled below) — not a 200 with an empty array.
+            // A 200 with a JSON array (even empty) means basic auth succeeded.
+            if (is_array($decoded)) {
                 return [
-                    'success' => false,
-                    'error' => "Access blocked ({$statusCode}) - likely Cloudflare Access or Zero Trust. Configure custom headers with Service Token.",
-                ];
-            }
-
-            if ($statusCode === 401) {
-                return [
-                    'success' => false,
-                    'error' => 'Authentication failed (401) - check username and application password are correct',
+                    'success' => true,
+                    'user' => $this->resolveAuthedUserName(),
                 ];
             }
 
             return [
                 'success' => false,
-                'error' => "API error ({$statusCode}): ".$e->getMessage(),
+                'error' => "API returned unexpected JSON shape ({$statusCode}). Body: ".substr($body, 0, 200),
+            ];
+        } catch (\GuzzleHttp\Exception\ClientException $e) {
+            $statusCode = $e->getResponse()->getStatusCode();
+            $body = (string) $e->getResponse()->getBody();
+
+            if ($statusCode === 302 || $statusCode === 403) {
+                $detail = $this->extractRestErrorCode($body);
+
+                return [
+                    'success' => false,
+                    'error' => "Access blocked ({$statusCode}".($detail ? ", {$detail}" : '').') — Cloudflare Access/Zero Trust or a WP role lacking upload_files. Configure custom headers with a Service Token if behind CF.',
+                ];
+            }
+
+            if ($statusCode === 401) {
+                $detail = $this->extractRestErrorCode($body);
+
+                return [
+                    'success' => false,
+                    'error' => 'Authentication failed (401'.($detail ? ", {$detail}" : '').') — check the WP username (login, not email) and that the application password was pasted with its spaces.',
+                ];
+            }
+
+            return [
+                'success' => false,
+                'error' => "API error ({$statusCode}): ".substr($body, 0, 200),
             ];
         } catch (\GuzzleHttp\Exception\TooManyRedirectsException $e) {
             return [
@@ -107,7 +133,6 @@ class WordPressMediaClient
         } catch (\Exception $e) {
             $errorMessage = $e->getMessage();
 
-            // Check for redirect or access-related errors
             if (stripos($errorMessage, 'redirect') !== false || stripos($errorMessage, 'cloudflare') !== false) {
                 return [
                     'success' => false,
@@ -120,6 +145,28 @@ class WordPressMediaClient
                 'error' => 'Cannot connect to WordPress REST API: '.$errorMessage,
             ];
         }
+    }
+
+    protected function resolveAuthedUserName(): string
+    {
+        try {
+            $response = $this->client->get('users/me');
+            $user = json_decode((string) $response->getBody(), true);
+
+            return is_array($user) ? ($user['name'] ?? 'Unknown') : 'Unknown';
+        } catch (\Throwable) {
+            return 'Unknown';
+        }
+    }
+
+    protected function extractRestErrorCode(string $body): ?string
+    {
+        $decoded = json_decode($body, true);
+        if (! is_array($decoded)) {
+            return null;
+        }
+
+        return $decoded['code'] ?? null;
     }
 
     public function upload(string $fileContents, string $filename, string $mimeType, string $title = '', string $altText = ''): ?int

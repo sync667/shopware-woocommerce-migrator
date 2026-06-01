@@ -210,6 +210,123 @@ class DatabaseDumpServiceTest extends TestCase
         $this->service->cleanupFiles('/nonexistent/path/'.uniqid());
     }
 
+    /**
+     * Build a Closure-style Process::fake matcher. Pattern-keyed fakes only match
+     * when the command is invoked as a string — our service uses argv arrays for
+     * shell-safety, so we dispatch in PHP.
+     */
+    private function fakeDocker(array $handlers): \Closure
+    {
+        return function ($process) use ($handlers) {
+            $cmd = is_array($process->command) ? implode(' ', $process->command) : (string) $process->command;
+            foreach ($handlers as $prefix => $result) {
+                if (str_starts_with($cmd, $prefix)) {
+                    return $result;
+                }
+            }
+
+            return \Illuminate\Support\Facades\Process::result(output: '', exitCode: 1);
+        };
+    }
+
+    public function test_list_active_containers_returns_running_dump_containers(): void
+    {
+        $inspectJson = json_encode([[
+            'State' => ['Status' => 'running'],
+            'Created' => '2026-06-01T13:00:00Z',
+            'Config' => ['Env' => [
+                'MYSQL_ROOT_PASSWORD=secret123',
+                'MYSQL_DATABASE=shopware',
+                'PATH=/usr/local/sbin:/usr/local/bin',
+            ]],
+            'NetworkSettings' => ['Ports' => [
+                '3306/tcp' => [['HostIp' => '0.0.0.0', 'HostPort' => '33060']],
+            ]],
+        ]]);
+
+        \Illuminate\Support\Facades\Process::fake($this->fakeDocker([
+            'docker info' => \Illuminate\Support\Facades\Process::result(output: 'ok'),
+            'docker ps' => \Illuminate\Support\Facades\Process::result(output: "sw_dump_test123\n"),
+            'docker inspect' => \Illuminate\Support\Facades\Process::result(output: $inspectJson),
+        ]));
+
+        $containers = $this->service->listActiveContainers();
+
+        $this->assertCount(1, $containers);
+        $this->assertSame('sw_dump_test123', $containers[0]['container_name']);
+        $this->assertSame(33060, $containers[0]['port']);
+        $this->assertSame('shopware', $containers[0]['database']);
+        $this->assertSame('root', $containers[0]['username']);
+        $this->assertSame('secret123', $containers[0]['password']);
+        $this->assertSame('running', $containers[0]['status']);
+    }
+
+    public function test_list_active_containers_returns_empty_when_none_running(): void
+    {
+        \Illuminate\Support\Facades\Process::fake($this->fakeDocker([
+            'docker info' => \Illuminate\Support\Facades\Process::result(output: 'ok'),
+            'docker ps' => \Illuminate\Support\Facades\Process::result(output: ''),
+        ]));
+
+        $this->assertSame([], $this->service->listActiveContainers());
+    }
+
+    public function test_list_active_containers_sorts_newest_first(): void
+    {
+        $older = json_encode([[
+            'State' => ['Status' => 'running'],
+            'Created' => '2026-06-01T09:00:00Z',
+            'Config' => ['Env' => ['MYSQL_ROOT_PASSWORD=a', 'MYSQL_DATABASE=shopware']],
+            'NetworkSettings' => ['Ports' => ['3306/tcp' => [['HostPort' => '33060']]]],
+        ]]);
+        $newer = json_encode([[
+            'State' => ['Status' => 'running'],
+            'Created' => '2026-06-01T15:00:00Z',
+            'Config' => ['Env' => ['MYSQL_ROOT_PASSWORD=b', 'MYSQL_DATABASE=shopware']],
+            'NetworkSettings' => ['Ports' => ['3306/tcp' => [['HostPort' => '33061']]]],
+        ]]);
+
+        \Illuminate\Support\Facades\Process::fake($this->fakeDocker([
+            'docker info' => \Illuminate\Support\Facades\Process::result(output: 'ok'),
+            'docker ps' => \Illuminate\Support\Facades\Process::result(output: "sw_dump_old\nsw_dump_new\n"),
+            'docker inspect sw_dump_old' => \Illuminate\Support\Facades\Process::result(output: $older),
+            'docker inspect sw_dump_new' => \Illuminate\Support\Facades\Process::result(output: $newer),
+        ]));
+
+        $containers = $this->service->listActiveContainers();
+
+        $this->assertCount(2, $containers);
+        $this->assertSame('sw_dump_new', $containers[0]['container_name']);
+        $this->assertSame('sw_dump_old', $containers[1]['container_name']);
+    }
+
+    public function test_list_active_containers_skips_containers_without_password(): void
+    {
+        $bad = json_encode([[
+            'State' => ['Status' => 'running'],
+            'Created' => '2026-06-01T13:00:00Z',
+            'Config' => ['Env' => ['MYSQL_DATABASE=shopware']],
+            'NetworkSettings' => ['Ports' => ['3306/tcp' => [['HostPort' => '33060']]]],
+        ]]);
+
+        \Illuminate\Support\Facades\Process::fake($this->fakeDocker([
+            'docker info' => \Illuminate\Support\Facades\Process::result(output: 'ok'),
+            'docker ps' => \Illuminate\Support\Facades\Process::result(output: "sw_dump_corrupt\n"),
+            'docker inspect' => \Illuminate\Support\Facades\Process::result(output: $bad),
+        ]));
+
+        $this->assertSame([], $this->service->listActiveContainers());
+    }
+
+    public function test_list_active_containers_returns_empty_when_docker_unavailable(): void
+    {
+        \Illuminate\Support\Facades\Process::fake($this->fakeDocker([
+            'docker info' => \Illuminate\Support\Facades\Process::result(output: '', exitCode: 1),
+        ]));
+
+        $this->assertSame([], $this->service->listActiveContainers());
+    }
+
     private function cleanupDirectory(string $dir): void
     {
         $items = glob($dir.'/{,.}[!.,!..]*', GLOB_BRACE);

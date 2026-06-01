@@ -38,12 +38,22 @@ class StateManager
         return $entity?->woo_id;
     }
 
+    /**
+     * Returns true when this (entity, shopware_id) pair has already been processed
+     * by the current migration — either successfully written to WooCommerce
+     * (`success`) or recorded as a dry-run preview (`skipped`). Both states mean
+     * "don't redo this row on retry"; only `pending` / `failed` should re-run.
+     *
+     * This is the resumption primitive: a SEO URL job that got killed mid-stream
+     * can be re-dispatched and will skip every row it already wrote state for,
+     * instead of starting over from row 0.
+     */
     public function alreadyMigrated(string $entityType, string $shopwareId, int $migrationId): bool
     {
         return MigrationEntity::where('migration_id', $migrationId)
             ->where('entity_type', $entityType)
             ->where('shopware_id', $shopwareId)
-            ->where('status', 'success')
+            ->whereIn('status', ['success', 'skipped'])
             ->exists();
     }
 

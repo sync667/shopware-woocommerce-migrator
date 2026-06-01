@@ -49,6 +49,37 @@ class StateManagerTest extends TestCase
         $this->assertTrue($this->stateManager->alreadyMigrated('product', 'abc123', $migration->id));
     }
 
+    public function test_already_migrated_counts_skipped_for_resume(): void
+    {
+        // Dry runs mark every processed row as `skipped`. A killed-and-retried job
+        // must see those rows as already-done so it resumes where it left off
+        // instead of restarting from row 0.
+        $migration = MigrationRun::create([
+            'name' => 'Resume Test',
+            'settings' => ['shopware' => [], 'woocommerce' => [], 'wordpress' => []],
+            'status' => 'running',
+        ]);
+
+        $this->stateManager->markSkipped('seo_url', 'urlA', $migration->id, ['skip_reason' => 'dry_run']);
+        $this->assertTrue($this->stateManager->alreadyMigrated('seo_url', 'urlA', $migration->id));
+    }
+
+    public function test_already_migrated_excludes_pending_and_failed(): void
+    {
+        $migration = MigrationRun::create([
+            'name' => 'Pending/Failed Test',
+            'settings' => ['shopware' => [], 'woocommerce' => [], 'wordpress' => []],
+            'status' => 'running',
+        ]);
+
+        // pending = will run; failed = should retry on next attempt.
+        $this->stateManager->markPending('product', 'pending-id', $migration->id);
+        $this->stateManager->markFailed('product', 'failed-id', $migration->id, 'simulated');
+
+        $this->assertFalse($this->stateManager->alreadyMigrated('product', 'pending-id', $migration->id));
+        $this->assertFalse($this->stateManager->alreadyMigrated('product', 'failed-id', $migration->id));
+    }
+
     public function test_get_map(): void
     {
         $migration = MigrationRun::create([

@@ -2,11 +2,13 @@
 
 namespace App\Console\Commands;
 
+use App\Jobs\CleanWooCommerceJob;
 use App\Jobs\MigrateCategoriesJob;
 use App\Jobs\MigrateManufacturersJob;
 use App\Jobs\MigrateProductsJob;
 use App\Jobs\MigrateTaxesJob;
 use App\Models\MigrationRun;
+use App\Services\WooCommerceCleanup;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Bus;
 
@@ -37,7 +39,14 @@ class MigrateShopwareCommand extends Command
         {--wp-username= : WordPress username}
         {--wp-app-password= : WordPress application password}
         {--cms-all : Migrate all CMS pages}
-        {--cms-ids= : Migrate specific CMS pages by ID (comma-separated)}';
+        {--cms-ids= : Migrate specific CMS pages by ID (comma-separated)}
+        {--migrate-streams : Migrate Shopware product streams as WooCommerce categories}
+        {--migrate-omnibus : Migrate Crehler Omnibus lowest-price meta (PL DSP compliance)}
+        {--migrate-newsletter : Export newsletter recipients to CSV}
+        {--migrate-wishlists : Export customer wishlists to CSV}
+        {--clean : Delete WooCommerce data before migration (DESTRUCTIVE — incompatible with --mode=delta)}
+        {--clean-delete-media : Also delete media library attachments during cleanup (requires --clean)}
+        {--clean-media-mode=migrated_only : Media cleanup scope when --clean-delete-media is set: migrated_only or all}';
 
     protected $description = 'Run Shopware → WooCommerce migration via CLI';
 
@@ -53,6 +62,20 @@ class MigrateShopwareCommand extends Command
         $conflictStrategy = $this->option('conflict');
         if (! in_array($conflictStrategy, ['shopware_wins', 'woo_wins', 'manual'])) {
             $this->error("Invalid conflict strategy: {$conflictStrategy}");
+
+            return Command::FAILURE;
+        }
+
+        $clean = (bool) $this->option('clean');
+        if ($clean && $mode === 'delta') {
+            $this->error('--clean cannot be combined with --mode=delta. Cleanup would wipe everything, then delta would only re-import the changed-since subset.');
+
+            return Command::FAILURE;
+        }
+
+        $mediaMode = (string) $this->option('clean-media-mode');
+        if (! in_array($mediaMode, ['migrated_only', 'all'], true)) {
+            $this->error("Invalid --clean-media-mode: {$mediaMode}. Must be 'migrated_only' or 'all'.");
 
             return Command::FAILURE;
         }
@@ -104,8 +127,17 @@ class MigrateShopwareCommand extends Command
             'name' => $this->option('name'),
             'settings' => array_merge($settings, [
                 'cms_options' => $this->buildCmsOptions(),
+                'stream_options' => $this->option('migrate-streams') ? ['migrate_streams' => true] : [],
+                'omnibus_options' => $this->option('migrate-omnibus') ? ['enabled' => true] : [],
+                'newsletter_options' => $this->option('migrate-newsletter') ? ['enabled' => true] : [],
+                'wishlist_options' => $this->option('migrate-wishlists') ? ['enabled' => true] : [],
+                'cleanup_options' => $clean ? [
+                    'delete_media' => (bool) $this->option('clean-delete-media'),
+                    'media_mode' => $mediaMode,
+                ] : [],
             ]),
             'is_dry_run' => (bool) $this->option('dry-run'),
+            'clean_woocommerce' => $clean,
             'sync_mode' => $mode,
             'conflict_strategy' => $conflictStrategy,
             'status' => 'pending',
@@ -126,21 +158,44 @@ class MigrateShopwareCommand extends Command
 
         $migration->markRunning();
 
-        // Build job chain — ProductsJob dispatches CustomerJob batch,
-        // which then dispatches the remaining chain (orders, coupons, reviews,
-        // shipping, payment, SEO, CMS, completion) via dispatchRemainingChain().
-        $jobs = [
+        $jobs = [];
+
+        if ($clean && ! $migration->is_dry_run) {
+            $cleanupSteps = WooCommerceCleanup::entitiesFor($migration);
+            $this->warn('⚠️  Cleanup enabled — will delete '.implode(', ', $cleanupSteps).' before migration starts.');
+            foreach ($cleanupSteps as $entity) {
+                $jobs[] = new CleanWooCommerceJob($migration->id, $entity);
+            }
+        }
+
+        // ProductsJob dispatches the CustomerJob batch, which then dispatches the
+        // remaining chain (orders, coupons, reviews, shipping, payment, SEO, CMS,
+        // streams, newsletter, wishlist, completion) via dispatchRemainingChain().
+        $jobs = array_merge($jobs, [
             new MigrateManufacturersJob($migration->id),
             new MigrateTaxesJob($migration->id),
             new MigrateCategoriesJob($migration->id),
             new MigrateProductsJob($migration->id),
-        ];
+        ]);
 
         if ($this->option('cms-all')) {
             $this->info('CMS pages: Migrating all pages');
         } elseif ($cmsIds = $this->option('cms-ids')) {
             $ids = array_map('trim', explode(',', $cmsIds));
             $this->info('CMS pages: Migrating '.count($ids).' selected page(s)');
+        }
+
+        if ($this->option('migrate-streams')) {
+            $this->info('Product streams: enabled');
+        }
+        if ($this->option('migrate-omnibus')) {
+            $this->info('Omnibus lowest price: enabled');
+        }
+        if ($this->option('migrate-newsletter')) {
+            $this->info('Newsletter export: enabled');
+        }
+        if ($this->option('migrate-wishlists')) {
+            $this->info('Wishlist export: enabled');
         }
 
         Bus::chain($jobs)->catch(function (\Throwable $e) use ($migration) {

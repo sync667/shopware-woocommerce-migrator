@@ -283,6 +283,22 @@ return [
             'timeout' => 600,
             'nice' => 0,
         ],
+        // SEO URL processing iterates ~90k rows in one job; needs a long worker
+        // timeout (default queue's 60s cliff was killing it mid-iteration on
+        // anything but the fastest dumps). 2-hour ceiling matches the job's own
+        // $timeout property.
+        'supervisor-seo' => [
+            'connection' => 'redis',
+            'queue' => ['seo'],
+            'balance' => 'simple',
+            'maxProcesses' => 1,
+            'maxTime' => 0,
+            'maxJobs' => 0,
+            'memory' => 512,
+            'tries' => 3,
+            'timeout' => 7200,
+            'nice' => 0,
+        ],
     ],
 
     'environments' => [
@@ -312,6 +328,9 @@ return [
             'supervisor-reviews' => [
                 'maxProcesses' => 2,
             ],
+            'supervisor-seo' => [
+                'maxProcesses' => 1,
+            ],
         ],
 
         'local' => [
@@ -339,6 +358,9 @@ return [
             ],
             'supervisor-reviews' => [
                 'maxProcesses' => 2,
+            ],
+            'supervisor-seo' => [
+                'maxProcesses' => 1,
             ],
         ],
     ],
