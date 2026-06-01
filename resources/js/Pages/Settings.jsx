@@ -4,6 +4,28 @@ import { guides } from '../Components/SetupGuides';
 import { ArrowLeft, Play, FlaskConical, Loader2, ChevronDown, ChevronUp, Check, X, AlertCircle, HelpCircle, LogOut, Upload, Database, FileUp } from 'lucide-react';
 import { logout } from '../utils/auth';
 
+// Sanitize a custom-headers map: trim whitespace and strip an accidental
+// "Header-Name:" prefix if the operator pasted the label along with the value
+// (e.g. pasting "CF-Access-Client-Id: abc.access" into the Client-Id field).
+// CF Access then sees "Header: Header: value" and rejects the request — the
+// HTML interstitial is identical to "no header set", which is confusing.
+function sanitizeHeaders(headers) {
+    if (!headers || typeof headers !== 'object') return {};
+    return Object.fromEntries(
+        Object.entries(headers)
+            .map(([name, value]) => {
+                if (typeof value !== 'string') return [name, value];
+                let cleaned = value.trim();
+                const prefix = `${name}:`;
+                if (cleaned.toLowerCase().startsWith(prefix.toLowerCase())) {
+                    cleaned = cleaned.slice(prefix.length).trim();
+                }
+                return [name, cleaned];
+            })
+            .filter(([, v]) => v && (typeof v !== 'string' || v.trim() !== ''))
+    );
+}
+
 export default function Settings() {
     // Check if cloning from existing migration
     const urlParams = new URLSearchParams(window.location.search);
@@ -394,11 +416,8 @@ export default function Settings() {
                 };
             }
 
-            // Filter out empty custom headers
             if (swConfig.custom_headers) {
-                swConfig.custom_headers = Object.fromEntries(
-                    Object.entries(swConfig.custom_headers).filter(([_, v]) => v && v.trim() !== '')
-                );
+                swConfig.custom_headers = sanitizeHeaders(swConfig.custom_headers);
                 if (Object.keys(swConfig.custom_headers).length === 0) {
                     delete swConfig.custom_headers;
                 }
@@ -406,9 +425,7 @@ export default function Settings() {
 
             const wpConfig = { ...wordpress };
             if (wpConfig.custom_headers) {
-                wpConfig.custom_headers = Object.fromEntries(
-                    Object.entries(wpConfig.custom_headers).filter(([_, v]) => v && v.trim() !== '')
-                );
+                wpConfig.custom_headers = sanitizeHeaders(wpConfig.custom_headers);
                 if (Object.keys(wpConfig.custom_headers).length === 0) {
                     delete wpConfig.custom_headers;
                 }
@@ -583,11 +600,8 @@ export default function Settings() {
                 media_mode: cleanupMediaMode,
             } : null;
 
-            // Filter out empty custom headers
             if (swConfig.custom_headers) {
-                swConfig.custom_headers = Object.fromEntries(
-                    Object.entries(swConfig.custom_headers).filter(([_, v]) => v && v.trim() !== '')
-                );
+                swConfig.custom_headers = sanitizeHeaders(swConfig.custom_headers);
                 if (Object.keys(swConfig.custom_headers).length === 0) {
                     delete swConfig.custom_headers;
                 }
@@ -595,9 +609,7 @@ export default function Settings() {
 
             const wpConfig = { ...wordpress };
             if (wpConfig.custom_headers) {
-                wpConfig.custom_headers = Object.fromEntries(
-                    Object.entries(wpConfig.custom_headers).filter(([_, v]) => v && v.trim() !== '')
-                );
+                wpConfig.custom_headers = sanitizeHeaders(wpConfig.custom_headers);
                 if (Object.keys(wpConfig.custom_headers).length === 0) {
                     delete wpConfig.custom_headers;
                 }

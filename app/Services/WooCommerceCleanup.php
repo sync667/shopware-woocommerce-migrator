@@ -531,40 +531,51 @@ class WooCommerceCleanup
         $ids = [];
 
         // Direct media mappings — every successful image upload writes one.
-        $mediaMap = MigrationEntity::where('entity_type', 'media')
+        MigrationEntity::where('entity_type', 'media')
             ->whereNotNull('woo_id')
-            ->pluck('woo_id')
-            ->all();
-        foreach ($mediaMap as $id) {
-            $ids[(int) $id] = true;
-        }
+            ->select(['woo_id'])
+            ->chunk(2000, function ($rows) use (&$ids) {
+                foreach ($rows as $row) {
+                    $id = (int) $row->woo_id;
+                    if ($id > 0) {
+                        $ids[$id] = true;
+                    }
+                }
+            });
 
         // Media referenced from category payloads (image id stored after upload).
-        $categoryRows = MigrationEntity::where('entity_type', 'category')
+        // chunk() instead of get() — past production runs with N dry-run replays
+        // produce tens of thousands of rows whose JSON payloads are each multi-KB.
+        // Loading them all at once OOM'd a 256MB worker mid-cleanup on mig#56.
+        MigrationEntity::where('entity_type', 'category')
             ->whereNotNull('payload')
-            ->get(['payload']);
-        foreach ($categoryRows as $row) {
-            $imgId = $row->payload['image']['id'] ?? null;
-            if (is_numeric($imgId) && (int) $imgId > 0) {
-                $ids[(int) $imgId] = true;
-            }
-        }
-
-        // Media referenced from manufacturer/product payloads (gallery + cover).
-        $productRows = MigrationEntity::whereIn('entity_type', ['product', 'variation', 'manufacturer'])
-            ->whereNotNull('payload')
-            ->get(['payload']);
-        foreach ($productRows as $row) {
-            $payload = $row->payload ?? [];
-            foreach ($payload['images'] ?? [] as $img) {
-                if (is_array($img) && isset($img['id']) && is_numeric($img['id'])) {
-                    $ids[(int) $img['id']] = true;
+            ->select(['payload'])
+            ->chunk(500, function ($rows) use (&$ids) {
+                foreach ($rows as $row) {
+                    $imgId = $row->payload['image']['id'] ?? null;
+                    if (is_numeric($imgId) && (int) $imgId > 0) {
+                        $ids[(int) $imgId] = true;
+                    }
                 }
-            }
-            if (isset($payload['image']['id']) && is_numeric($payload['image']['id'])) {
-                $ids[(int) $payload['image']['id']] = true;
-            }
-        }
+            });
+
+        // Media referenced from manufacturer/product/variation payloads.
+        MigrationEntity::whereIn('entity_type', ['product', 'variation', 'manufacturer'])
+            ->whereNotNull('payload')
+            ->select(['payload'])
+            ->chunk(500, function ($rows) use (&$ids) {
+                foreach ($rows as $row) {
+                    $payload = $row->payload ?? [];
+                    foreach ($payload['images'] ?? [] as $img) {
+                        if (is_array($img) && isset($img['id']) && is_numeric($img['id'])) {
+                            $ids[(int) $img['id']] = true;
+                        }
+                    }
+                    if (isset($payload['image']['id']) && is_numeric($payload['image']['id'])) {
+                        $ids[(int) $payload['image']['id']] = true;
+                    }
+                }
+            });
 
         return array_keys($ids);
     }

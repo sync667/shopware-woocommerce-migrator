@@ -299,6 +299,41 @@ return [
             'timeout' => 7200,
             'nice' => 0,
         ],
+        // Serial single-job migration steps (manufacturers, taxes, categories,
+        // shipping, payment methods) iterate hundreds of rows in one execution.
+        // The default 60s worker timeout SIGTERM'd them mid-iteration as soon as
+        // real WC API latency kicked in — see mig #57 manufacturers freezing at
+        // 175/229. Dedicated supervisor with 3600s ceiling matches each job's
+        // own $timeout property.
+        'supervisor-migration' => [
+            'connection' => 'redis',
+            'queue' => ['migration'],
+            'balance' => 'simple',
+            'maxProcesses' => 1,
+            'maxTime' => 0,
+            'maxJobs' => 0,
+            'memory' => 256,
+            'tries' => 3,
+            'timeout' => 3600,
+            'nice' => 0,
+        ],
+        // Pre-migration cleanup walks the whole target store deleting orders,
+        // customers, products, media etc. and on large shops also runs a
+        // collectMigratorOwnedMediaIds() scan over thousands of past entity rows.
+        // Needs its own supervisor so it doesn't get capped by supervisor-back's
+        // 300s timeout (which silently killed mig #56's media cleanup mid-scan).
+        'supervisor-cleanup' => [
+            'connection' => 'redis',
+            'queue' => ['cleanup'],
+            'balance' => 'simple',
+            'maxProcesses' => 1,
+            'maxTime' => 0,
+            'maxJobs' => 0,
+            'memory' => 512,
+            'tries' => 3,
+            'timeout' => 7200,
+            'nice' => 0,
+        ],
     ],
 
     'environments' => [
@@ -331,6 +366,12 @@ return [
             'supervisor-seo' => [
                 'maxProcesses' => 1,
             ],
+            'supervisor-cleanup' => [
+                'maxProcesses' => 1,
+            ],
+            'supervisor-migration' => [
+                'maxProcesses' => 1,
+            ],
         ],
 
         'local' => [
@@ -360,6 +401,12 @@ return [
                 'maxProcesses' => 2,
             ],
             'supervisor-seo' => [
+                'maxProcesses' => 1,
+            ],
+            'supervisor-cleanup' => [
+                'maxProcesses' => 1,
+            ],
+            'supervisor-migration' => [
                 'maxProcesses' => 1,
             ],
         ],

@@ -24,7 +24,10 @@ class MigratePaymentMethodsJob implements ShouldQueue
 
     public int $timeout = 3600; // 1 hour timeout for large migrations
 
-    public function __construct(protected int $migrationId) {}
+    public function __construct(protected int $migrationId)
+    {
+        $this->onQueue('migration');
+    }
 
     public function handle(StateManager $stateManager): void
     {

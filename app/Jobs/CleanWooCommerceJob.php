@@ -19,7 +19,10 @@ class CleanWooCommerceJob implements ShouldQueue
         public int $migrationId,
         public string $entity
     ) {
-        $this->onQueue('heavy');
+        // Use a dedicated queue rather than `heavy` (shared with supervisor-back,
+        // whose 300s worker timeout overrode the job's own 7200s and SIGTERM'd
+        // mid-cleanup on big shops — see mig #56 media cleanup OOM).
+        $this->onQueue('cleanup');
     }
 
     public function handle(): void
