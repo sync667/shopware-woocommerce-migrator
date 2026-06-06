@@ -10,6 +10,8 @@ class ProductReader
 
     public function fetchAllParents(): array
     {
+        [$maxVisibilitySql, $params] = $this->maxVisibilityClause();
+
         return $this->db->select("
             SELECT
                 LOWER(HEX(p.id)) AS id,
@@ -27,6 +29,7 @@ class ProductReader
                 LOWER(HEX(p.tax_id)) AS tax_id,
                 LOWER(HEX(p.product_manufacturer_id)) AS manufacturer_id,
                 LOWER(HEX(p.product_media_id)) AS cover_id,
+                LOWER(HEX(p.main_variant_id)) AS main_variant_id,
                 COALESCE(pt.name, '') AS name,
                 COALESCE(pt.description, '') AS description,
                 COALESCE(pt.meta_title, '') AS meta_title,
@@ -43,20 +46,55 @@ class ProductReader
                 p.mark_as_topseller,
                 p.available,
                 p.purchase_prices,
-                p.release_date
+                p.release_date,
+                COALESCE(dtt.name, '') AS delivery_time_name,
+                {$maxVisibilitySql} AS max_visibility
             FROM product p
             LEFT JOIN product_translation pt
                 ON pt.product_id = p.id
                 AND pt.product_version_id = p.version_id
                 AND pt.language_id = ?
+            LEFT JOIN delivery_time_translation dtt
+                ON dtt.delivery_time_id = p.delivery_time_id
+                AND dtt.language_id = ?
             WHERE p.version_id = ?
               AND p.parent_id IS NULL
             ORDER BY pt.name ASC
-        ", [$this->db->languageIdBin(), $this->db->liveVersionIdBin()]);
+        ", array_merge($params, [$this->db->languageIdBin(), $this->db->languageIdBin(), $this->db->liveVersionIdBin()]));
+    }
+
+    /** @return array{0:string,1:array<int,mixed>} sql, params_to_prepend */
+    protected function maxVisibilityClause(): array
+    {
+        $primary = $this->db->primarySalesChannel();
+
+        if ($primary === null) {
+            return [
+                '(SELECT MAX(pv.visibility)
+                  FROM product_visibility pv
+                  WHERE pv.product_id = p.id
+                    AND pv.product_version_id = p.version_id)',
+                [],
+            ];
+        }
+
+        return [
+            '(SELECT MAX(pv.visibility)
+              FROM product_visibility pv
+              JOIN sales_channel_translation sct
+                ON sct.sales_channel_id = pv.sales_channel_id
+                AND sct.language_id = ?
+              WHERE pv.product_id = p.id
+                AND pv.product_version_id = p.version_id
+                AND sct.name = ?)',
+            [$this->db->languageIdBin(), $primary],
+        ];
     }
 
     public function fetchOne(string $productId): ?object
     {
+        [$maxVisibilitySql, $params] = $this->maxVisibilityClause();
+
         $results = $this->db->select("
             SELECT
                 LOWER(HEX(p.id)) AS id,
@@ -74,6 +112,7 @@ class ProductReader
                 LOWER(HEX(p.tax_id)) AS tax_id,
                 LOWER(HEX(p.product_manufacturer_id)) AS manufacturer_id,
                 LOWER(HEX(p.product_media_id)) AS cover_id,
+                LOWER(HEX(p.main_variant_id)) AS main_variant_id,
                 COALESCE(pt.name, '') AS name,
                 COALESCE(pt.description, '') AS description,
                 COALESCE(pt.meta_title, '') AS meta_title,
@@ -93,18 +132,19 @@ class ProductReader
                 p.release_date,
                 pt.custom_fields,
                 p.created_at,
-                (SELECT MAX(pv.visibility)
-                 FROM product_visibility pv
-                 WHERE pv.product_id = p.id
-                   AND pv.product_version_id = p.version_id) AS max_visibility
+                COALESCE(dtt.name, '') AS delivery_time_name,
+                {$maxVisibilitySql} AS max_visibility
             FROM product p
             LEFT JOIN product_translation pt
                 ON pt.product_id = p.id
                 AND pt.product_version_id = p.version_id
                 AND pt.language_id = ?
+            LEFT JOIN delivery_time_translation dtt
+                ON dtt.delivery_time_id = p.delivery_time_id
+                AND dtt.language_id = ?
             WHERE p.id = UNHEX(?)
               AND p.version_id = ?
-        ", [$this->db->languageIdBin(), $productId, $this->db->liveVersionIdBin()]);
+        ", array_merge($params, [$this->db->languageIdBin(), $this->db->languageIdBin(), $productId, $this->db->liveVersionIdBin()]));
 
         return $results[0] ?? null;
     }
@@ -300,13 +340,18 @@ class ProductReader
 
     public function fetchCrossSells(string $productId): array
     {
-        // Supports both static (crossSelling) and dynamic (productStream) cross-sell types.
-        // For productStream, products are resolved from product_stream_mapping (Shopware's cache).
+        // productList = manual list, productStream = dynamic (resolved via product_stream_mapping).
+        // pct.name is the operator-defined group label ("ZOBACZ RÓWNIEŻ", etc.) used
+        // to split into WC upsell vs cross-sell at migrator settings level.
         return $this->db->select('
             SELECT DISTINCT
                 LOWER(HEX(COALESCE(pcsa.product_id, psm.product_id))) AS target_product_id,
-                pcs.type
+                pcs.type,
+                COALESCE(pct.name, \'\') AS group_name
             FROM product_cross_selling pcs
+            LEFT JOIN product_cross_selling_translation pct
+                ON pct.product_cross_selling_id = pcs.id
+                AND pct.language_id = ?
             LEFT JOIN product_cross_selling_assigned_products pcsa
                 ON pcsa.cross_selling_id = pcs.id
                 AND pcs.type != \'productStream\'
@@ -316,8 +361,9 @@ class ProductReader
                 AND psm.product_version_id = ?
             WHERE pcs.product_id = UNHEX(?)
               AND pcs.product_version_id = ?
+              AND pcs.active = 1
               AND (pcsa.product_id IS NOT NULL OR psm.product_id IS NOT NULL)
-        ', [$this->db->liveVersionIdBin(), $productId, $this->db->liveVersionIdBin()]);
+        ', [$this->db->languageIdBin(), $this->db->liveVersionIdBin(), $productId, $this->db->liveVersionIdBin()]);
     }
 
     public function fetchVariantOptions(string $variantId): array
@@ -369,6 +415,7 @@ class ProductReader
                 LOWER(HEX(p.tax_id)) AS tax_id,
                 LOWER(HEX(p.product_manufacturer_id)) AS manufacturer_id,
                 LOWER(HEX(p.product_media_id)) AS cover_id,
+                LOWER(HEX(p.main_variant_id)) AS main_variant_id,
                 COALESCE(pt.name, '') AS name,
                 COALESCE(pt.description, '') AS description,
                 COALESCE(pt.meta_title, '') AS meta_title,
@@ -385,17 +432,22 @@ class ProductReader
                 p.mark_as_topseller,
                 p.available,
                 p.updated_at,
-                p.created_at
+                p.created_at,
+                COALESCE(dtt.name, '') AS delivery_time_name
             FROM product p
             LEFT JOIN product_translation pt
                 ON pt.product_id = p.id
                 AND pt.product_version_id = p.version_id
                 AND pt.language_id = ?
+            LEFT JOIN delivery_time_translation dtt
+                ON dtt.delivery_time_id = p.delivery_time_id
+                AND dtt.language_id = ?
             WHERE p.version_id = ?
               AND p.parent_id IS NULL
               AND (p.updated_at > ? OR p.created_at > ?)
             ORDER BY p.updated_at ASC, p.created_at ASC
         ", [
+            $this->db->languageIdBin(),
             $this->db->languageIdBin(),
             $this->db->liveVersionIdBin(),
             $since->format('Y-m-d H:i:s'),

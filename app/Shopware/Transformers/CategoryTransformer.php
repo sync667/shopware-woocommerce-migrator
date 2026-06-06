@@ -41,6 +41,16 @@ class CategoryTransformer
             $data['meta_data'][] = ['key' => '_yoast_wpseo_metadesc', 'value' => $category->meta_description];
         }
 
+        $keywords = trim((string) ($category->keywords ?? ''));
+        if ($keywords !== '') {
+            $list = array_values(array_filter(array_map('trim', explode(',', $keywords))));
+            if ($list !== []) {
+                $data['meta_data'][] = ['key' => '_yoast_wpseo_focuskw', 'value' => $list[0]];
+                $data['meta_data'][] = ['key' => 'rank_math_focus_keyword', 'value' => $list[0]];
+                $data['meta_data'][] = ['key' => '_shopware_category_keywords', 'value' => implode(', ', $list)];
+            }
+        }
+
         return $data;
     }
 }

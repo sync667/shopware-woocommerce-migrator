@@ -35,4 +35,16 @@ return [
         'enabled' => env('SHOPWARE_CATEGORY_SEO_ENABLED', true),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Product visibility — primary sales channel
+    |--------------------------------------------------------------------------
+    |
+    | Scopes product catalog_visibility to one channel name. Null = MAX across
+    | all channels (single-channel shops).
+    |
+    */
+
+    'primary_sales_channel' => env('MIGRATION_PRIMARY_SALES_CHANNEL'),
+
 ];

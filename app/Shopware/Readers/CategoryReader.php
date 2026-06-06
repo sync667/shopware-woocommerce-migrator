@@ -24,6 +24,7 @@ class CategoryReader
                 ct.custom_fields AS translation_custom_fields,
                 COALESCE(ct.meta_title, '') AS meta_title,
                 COALESCE(ct.meta_description, '') AS meta_description,
+                COALESCE(ct.keywords, '') AS keywords,
                 COALESCE(m.file_name, '') AS media_file_name,
                 COALESCE(m.file_extension, '') AS media_file_extension,
                 FLOOR(UNIX_TIMESTAMP(m.uploaded_at)) AS media_uploaded_at
@@ -55,6 +56,7 @@ class CategoryReader
                 ct.custom_fields AS translation_custom_fields,
                 COALESCE(ct.meta_title, '') AS meta_title,
                 COALESCE(ct.meta_description, '') AS meta_description,
+                COALESCE(ct.keywords, '') AS keywords,
                 COALESCE(m.file_name, '') AS media_file_name,
                 COALESCE(m.file_extension, '') AS media_file_extension,
                 FLOOR(UNIX_TIMESTAMP(m.uploaded_at)) AS media_uploaded_at,

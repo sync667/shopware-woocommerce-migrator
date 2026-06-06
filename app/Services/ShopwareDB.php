@@ -82,6 +82,14 @@ class ShopwareDB
         return rtrim($this->config['base_url'] ?? '', '/');
     }
 
+    public function primarySalesChannel(): ?string
+    {
+        $value = $this->config['primary_sales_channel'] ?? config('migration.primary_sales_channel');
+        $value = is_string($value) ? trim($value) : null;
+
+        return $value === '' ? null : $value;
+    }
+
     public function ping(): bool
     {
         try {

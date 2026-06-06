@@ -49,6 +49,101 @@ class ProductTransformerTest extends TestCase
         $this->assertEquals('simple', $result['type']);
     }
 
+    private function visibilityProduct(?int $maxVisibility): object
+    {
+        return (object) [
+            'name' => 'Probe',
+            'sku' => 'SKU-VIS',
+            'active' => true,
+            'description' => '',
+            'stock' => 0,
+            'manage_stock' => false,
+            'weight' => 0,
+            'width' => 0,
+            'height' => 0,
+            'depth' => 0,
+            'price' => '[]',
+            'type' => 'product',
+            'meta_title' => '',
+            'meta_description' => '',
+            'max_visibility' => $maxVisibility,
+        ];
+    }
+
+    public function test_keywords_emit_yoast_and_rankmath_focus_meta(): void
+    {
+        $product = (object) [
+            'name' => 'Probe',
+            'sku' => 'SKU-KW',
+            'active' => true,
+            'description' => '',
+            'stock' => 0,
+            'manage_stock' => false,
+            'weight' => 0, 'width' => 0, 'height' => 0, 'depth' => 0,
+            'price' => '[]',
+            'type' => 'product',
+            'meta_title' => '', 'meta_description' => '',
+            'keywords' => json_encode(['pompa zatapialna', 'pompa zanurzeniowa', 'evak'], JSON_UNESCAPED_UNICODE),
+        ];
+
+        $result = $this->transformer->transform($product);
+
+        $meta = collect($result['meta_data']);
+        $this->assertSame('pompa zatapialna, pompa zanurzeniowa, evak', $meta->firstWhere('key', '_custom_search_keywords')['value']);
+        $this->assertSame('pompa zatapialna', $meta->firstWhere('key', '_yoast_wpseo_focuskw')['value']);
+        $this->assertSame('pompa zatapialna', $meta->firstWhere('key', 'rank_math_focus_keyword')['value']);
+
+        $synonyms = json_decode($meta->firstWhere('key', '_yoast_wpseo_keywordsynonyms')['value'], true);
+        $this->assertSame(['pompa zanurzeniowa', 'evak'], $synonyms);
+    }
+
+    public function test_single_keyword_skips_synonyms_meta(): void
+    {
+        $product = (object) [
+            'name' => 'Probe', 'sku' => 'SKU-1KW', 'active' => true, 'description' => '',
+            'stock' => 0, 'manage_stock' => false, 'weight' => 0, 'width' => 0, 'height' => 0, 'depth' => 0,
+            'price' => '[]', 'type' => 'product', 'meta_title' => '', 'meta_description' => '',
+            'keywords' => json_encode(['solo'], JSON_UNESCAPED_UNICODE),
+        ];
+
+        $result = $this->transformer->transform($product);
+
+        $meta = collect($result['meta_data']);
+        $this->assertSame('solo', $meta->firstWhere('key', '_yoast_wpseo_focuskw')['value']);
+        $this->assertNull($meta->firstWhere('key', '_yoast_wpseo_keywordsynonyms'));
+    }
+
+    public function test_visibility_30_becomes_visible(): void
+    {
+        $result = $this->transformer->transform($this->visibilityProduct(30));
+        $this->assertSame('visible', $result['catalog_visibility']);
+    }
+
+    public function test_visibility_20_becomes_search(): void
+    {
+        $result = $this->transformer->transform($this->visibilityProduct(20));
+        $this->assertSame('search', $result['catalog_visibility']);
+    }
+
+    public function test_visibility_10_link_only_becomes_hidden(): void
+    {
+        $result = $this->transformer->transform($this->visibilityProduct(10));
+        $this->assertSame('hidden', $result['catalog_visibility']);
+    }
+
+    public function test_missing_visibility_row_becomes_hidden(): void
+    {
+        // Bug fix: WC defaults missing catalog_visibility to `visible`.
+        $result = $this->transformer->transform($this->visibilityProduct(null));
+        $this->assertSame('hidden', $result['catalog_visibility']);
+    }
+
+    public function test_visibility_zero_becomes_hidden(): void
+    {
+        $result = $this->transformer->transform($this->visibilityProduct(0));
+        $this->assertSame('hidden', $result['catalog_visibility']);
+    }
+
     public function test_transforms_inactive_product_to_draft(): void
     {
         $product = (object) [

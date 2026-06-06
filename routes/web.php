@@ -39,6 +39,7 @@ Route::middleware(\App\Http\Middleware\ValidateAccessToken::class)->group(functi
         Route::post('/product-streams/list', [\App\Http\Controllers\MigrationController::class, 'listProductStreams']);
         Route::post('/shopware/languages', [\App\Http\Controllers\ShopwareConfigController::class, 'getLanguages']);
         Route::post('/shopware/live-version', [\App\Http\Controllers\ShopwareConfigController::class, 'getLiveVersionId']);
+        Route::post('/shopware/sales-channels', [\App\Http\Controllers\ShopwareConfigController::class, 'getSalesChannels']);
 
         Route::prefix('dump')->group(function () {
             Route::post('/upload', [\App\Http\Controllers\DumpUploadController::class, 'upload']);

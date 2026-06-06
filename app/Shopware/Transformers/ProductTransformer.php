@@ -63,14 +63,21 @@ class ProductTransformer
             'categories' => array_map(fn ($id) => ['id' => $id], $categoryWooIds),
         ];
 
-        // Map Shopware visibility to WooCommerce catalog_visibility
-        $maxVisibility = (int) ($product->max_visibility ?? 0);
-        if ($maxVisibility >= 30) {
-            $data['catalog_visibility'] = 'visible';
-        } elseif ($maxVisibility >= 10) {
-            $data['catalog_visibility'] = 'search';
-        } elseif ($maxVisibility === 0 && isset($product->max_visibility)) {
+        // Shopware: 30=All, 20=Search, 10=Link-only, 0/NULL=no row. NULL means
+        // the primary channel has no visibility row → must emit `hidden` explicitly,
+        // else WC defaults to visible.
+        $rawVisibility = $product->max_visibility ?? null;
+        if ($rawVisibility === null) {
             $data['catalog_visibility'] = 'hidden';
+        } else {
+            $maxVisibility = (int) $rawVisibility;
+            if ($maxVisibility >= 30) {
+                $data['catalog_visibility'] = 'visible';
+            } elseif ($maxVisibility >= 20) {
+                $data['catalog_visibility'] = 'search';
+            } else {
+                $data['catalog_visibility'] = 'hidden';
+            }
         }
 
         // Product creation date
@@ -183,7 +190,21 @@ class ProductTransformer
         if (! empty($product->keywords)) {
             $keywords = json_decode($product->keywords, true);
             if (is_array($keywords) && ! empty($keywords)) {
-                $data['meta_data'][] = ['key' => '_custom_search_keywords', 'value' => implode(', ', $keywords)];
+                $joined = implode(', ', $keywords);
+                $data['meta_data'][] = ['key' => '_custom_search_keywords', 'value' => $joined];
+
+                // Focus keyphrase for Yoast / RankMath — they read these directly on
+                // their own filters. First keyword is the operator's primary intent.
+                $first = (string) $keywords[0];
+                $data['meta_data'][] = ['key' => '_yoast_wpseo_focuskw', 'value' => $first];
+                $data['meta_data'][] = ['key' => 'rank_math_focus_keyword', 'value' => $first];
+
+                if (count($keywords) > 1) {
+                    // Yoast Premium reads keyphrase synonyms from this; free version
+                    // ignores it but the data survives a Premium upgrade.
+                    $synonyms = array_slice($keywords, 1);
+                    $data['meta_data'][] = ['key' => '_yoast_wpseo_keywordsynonyms', 'value' => json_encode($synonyms, JSON_UNESCAPED_UNICODE)];
+                }
             }
         }
 
