@@ -4,11 +4,7 @@ import { guides } from '../Components/SetupGuides';
 import { ArrowLeft, Play, FlaskConical, Loader2, ChevronDown, ChevronUp, Check, X, AlertCircle, HelpCircle, LogOut, Upload, Database, FileUp } from 'lucide-react';
 import { logout } from '../utils/auth';
 
-// Sanitize a custom-headers map: trim whitespace and strip an accidental
-// "Header-Name:" prefix if the operator pasted the label along with the value
-// (e.g. pasting "CF-Access-Client-Id: abc.access" into the Client-Id field).
-// CF Access then sees "Header: Header: value" and rejects the request — the
-// HTML interstitial is identical to "no header set", which is confusing.
+// Strips trailing whitespace and an accidental "Header-Name:" paste prefix.
 function sanitizeHeaders(headers) {
     if (!headers || typeof headers !== 'object') return {};
     return Object.fromEntries(
@@ -40,6 +36,8 @@ export default function Settings() {
         db_password: '',
         language_id: '',
         live_version_id: '',
+        primary_sales_channel: '',
+        upsell_group_names: [],
         base_url: '',
         ssh: null,
         custom_headers: {},
@@ -57,7 +55,16 @@ export default function Settings() {
         base_url: '',
         consumer_key: '',
         consumer_secret: '',
+        db_host: '',
+        db_port: 3306,
+        db_database: '',
+        db_username: '',
+        db_password: '',
+        table_prefix: 'wp_',
+        db_ssh: null,
+        preserve_order_ids: false,
     });
+    const [wooDbEnabled, setWooDbEnabled] = useState(false);
     const [wordpress, setWordpress] = useState({
         username: '',
         app_password: '',
@@ -89,6 +96,7 @@ export default function Settings() {
 
     // Shopware config options
     const [availableLanguages, setAvailableLanguages] = useState([]);
+    const [availableSalesChannels, setAvailableSalesChannels] = useState([]);
     const [loadingLanguages, setLoadingLanguages] = useState(false);
 
     // Database dump upload mode
@@ -336,6 +344,14 @@ export default function Settings() {
                                     locale_code: null,
                                 }]);
                             }
+                            if (settings.shopware.primary_sales_channel) {
+                                setAvailableSalesChannels([{
+                                    id: 'cloned',
+                                    name: settings.shopware.primary_sales_channel,
+                                    active: 1,
+                                    visibility_rows: 0,
+                                }]);
+                            }
                         }
 
                         if (settings.woocommerce) {
@@ -523,6 +539,21 @@ export default function Settings() {
 
             if (versionData.success && !shopware.live_version_id) {
                 updateShopware('live_version_id', versionData.live_version_id);
+            }
+
+            const chanLang = shopware.language_id || langData?.languages?.[0]?.id || '';
+            const chanRes = await fetch('/api/shopware/sales-channels', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ...swConfig, language_id: chanLang }),
+            });
+            const chanData = await chanRes.json();
+
+            if (chanData.success) {
+                setAvailableSalesChannels(chanData.sales_channels);
+                if (!shopware.primary_sales_channel && chanData.sales_channels.length > 0) {
+                    updateShopware('primary_sales_channel', chanData.sales_channels[0].name);
+                }
             }
         } catch (err) {
             alert('Failed to load Shopware configuration: ' + err.message);
@@ -1334,6 +1365,48 @@ export default function Settings() {
                         </div>
                     </div>
                 )}
+
+                {/* Primary Sales Channel — drives WooCommerce catalog_visibility. */}
+                {availableSalesChannels.length > 0 && (
+                    <div className="mt-4 p-4 bg-green-50 rounded-md border border-green-200">
+                        <label className={labelClass}>
+                            Primary Sales Channel
+                        </label>
+                        <select
+                            value={shopware.primary_sales_channel || ''}
+                            onChange={(e) => updateShopware('primary_sales_channel', e.target.value)}
+                            className={inputClass}
+                        >
+                            <option value="">(any channel — use MAX visibility across all)</option>
+                            {availableSalesChannels.map(c => (
+                                <option key={c.id} value={c.name}>
+                                    {c.name}{c.active ? '' : ' (inactive)'} — {c.visibility_rows} product visibilit{c.visibility_rows === 1 ? 'y' : 'ies'}
+                                </option>
+                            ))}
+                        </select>
+                        <p className="mt-2 text-xs text-gray-600">
+                            WooCommerce <code>catalog_visibility</code> is scoped to this channel only. A
+                            product needs a <code>product_visibility</code> row here with level 30 to land as
+                            publicly visible — anything else (no row, search only, link-only) becomes hidden.
+                            Leave blank to use the legacy "any channel" behavior (single-storefront shops).
+                        </p>
+                    </div>
+                )}
+
+                <div className="mt-4 p-4 bg-gray-50 rounded-md">
+                    <label className={labelClass}>Cross-sell group names that should map to WC upsells</label>
+                    <textarea
+                        rows={2}
+                        value={(shopware.upsell_group_names || []).join('\n')}
+                        onChange={(e) => updateShopware('upsell_group_names', e.target.value.split('\n').map(s => s.trim()).filter(Boolean))}
+                        className={inputClass}
+                        placeholder={'ZOBACZ RÓWNIEŻ\nDOBIERZ AKCESORIA!'}
+                    />
+                    <p className="mt-2 text-xs text-gray-600">
+                        One Shopware cross-selling group name per line. Anything matching here becomes WC <code>upsell_ids</code>;
+                        everything else becomes <code>cross_sell_ids</code>. Leave blank to send all cross-sells to <code>cross_sell_ids</code>.
+                    </p>
+                </div>
             </div>
 
             {/* WooCommerce Target */}
@@ -1356,6 +1429,64 @@ export default function Settings() {
                         <input type="password" value={woocommerce.consumer_secret} onChange={(e) => updateWoo('consumer_secret', e.target.value)} className={inputClass} placeholder="cs_..." />
                     </div>
                 </div>
+
+                <button
+                    type="button"
+                    onClick={() => setWooDbEnabled(!wooDbEnabled)}
+                    className="mt-4 flex items-center gap-2 text-sm font-medium text-gray-700 hover:text-gray-900"
+                >
+                    {wooDbEnabled ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                    Direct MySQL access (optional — enables bulk SEO meta + exact timestamps + post id watermark)
+                </button>
+
+                {wooDbEnabled && (
+                    <div className="mt-3 p-4 bg-yellow-50 border border-yellow-200 rounded-md">
+                        <p className="mb-3 text-xs text-yellow-800">
+                            Use carefully. The migrator uses these credentials for targeted bulk UPDATEs (Yoast SEO meta, exact post_date, AUTO_INCREMENT bump). Read-only operations like the order-number watermark report also live here. Read & write privilege required on the WP database.
+                        </p>
+                        <div className="grid grid-cols-4 gap-3">
+                            <div className="col-span-3">
+                                <label className={labelClass}>Host</label>
+                                <input type="text" value={woocommerce.db_host} onChange={(e) => updateWoo('db_host', e.target.value)} className={inputClass} placeholder="127.0.0.1" />
+                            </div>
+                            <div>
+                                <label className={labelClass}>Port</label>
+                                <input type="number" value={woocommerce.db_port} onChange={(e) => updateWoo('db_port', parseInt(e.target.value || 3306))} className={inputClass} />
+                            </div>
+                            <div className="col-span-2">
+                                <label className={labelClass}>Database</label>
+                                <input type="text" value={woocommerce.db_database} onChange={(e) => updateWoo('db_database', e.target.value)} className={inputClass} placeholder="wordpress" />
+                            </div>
+                            <div>
+                                <label className={labelClass}>Username</label>
+                                <input type="text" value={woocommerce.db_username} onChange={(e) => updateWoo('db_username', e.target.value)} className={inputClass} />
+                            </div>
+                            <div>
+                                <label className={labelClass}>Password</label>
+                                <input type="password" value={woocommerce.db_password} onChange={(e) => updateWoo('db_password', e.target.value)} className={inputClass} />
+                            </div>
+                            <div className="col-span-2">
+                                <label className={labelClass}>Table prefix</label>
+                                <input type="text" value={woocommerce.table_prefix} onChange={(e) => updateWoo('table_prefix', e.target.value)} className={inputClass} placeholder="wp_" />
+                            </div>
+                            <div className="col-span-4 flex items-start gap-2 mt-2">
+                                <input
+                                    id="preserve_order_ids"
+                                    type="checkbox"
+                                    checked={!!woocommerce.preserve_order_ids}
+                                    onChange={(e) => updateWoo('preserve_order_ids', e.target.checked)}
+                                    className="mt-1"
+                                />
+                                <label htmlFor="preserve_order_ids" className="text-xs text-gray-700">
+                                    <span className="font-medium">Preserve Shopware order IDs</span>
+                                    <span className="block text-gray-500">
+                                        Renumber each migrated order's wp_posts.ID to match its Shopware order_number (e.g. WC order #21034 instead of #25001). Runs a pre-flight collision check first — aborts the orders phase cleanly if any non-order posts already occupy that ID range.
+                                    </span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* WordPress Media */}
@@ -1787,6 +1918,30 @@ export default function Settings() {
                                 )}
                                 {testResults.woocommerce?.error && (
                                     <div className="text-sm text-red-700 ml-7">{testResults.woocommerce.error}</div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* WooCommerce DB Results */}
+                        {testResults.woocommerce_db && (
+                            <div className={`p-4 rounded-md ${testResults.woocommerce_db?.success ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
+                                <div className="flex items-center gap-2 mb-2">
+                                    {testResults.woocommerce_db?.success ? (
+                                        <Check className="h-5 w-5 text-green-600" />
+                                    ) : (
+                                        <X className="h-5 w-5 text-red-600" />
+                                    )}
+                                    <span className="font-medium">WooCommerce MySQL</span>
+                                </div>
+                                {testResults.woocommerce_db?.success && testResults.woocommerce_db.details && (
+                                    <div className="text-sm text-gray-700 ml-7">
+                                        <div>✓ Database: {testResults.woocommerce_db.details.database}</div>
+                                        <div>✓ Prefix: <code>{testResults.woocommerce_db.details.table_prefix}</code></div>
+                                        <div>✓ Existing orders: {testResults.woocommerce_db.details.existing_orders}</div>
+                                    </div>
+                                )}
+                                {testResults.woocommerce_db?.error && (
+                                    <div className="text-sm text-red-700 ml-7">{testResults.woocommerce_db.error}</div>
                                 )}
                             </div>
                         )}

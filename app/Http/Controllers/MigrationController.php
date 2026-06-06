@@ -52,6 +52,9 @@ class MigrationController extends Controller
             'settings.shopware.db_password' => 'required|string',
             'settings.shopware.language_id' => 'required|string',
             'settings.shopware.live_version_id' => 'required|string',
+            'settings.shopware.primary_sales_channel' => 'nullable|string',
+            'settings.shopware.upsell_group_names' => 'nullable|array',
+            'settings.shopware.upsell_group_names.*' => 'string',
             'settings.shopware.base_url' => 'required|string|url|starts_with:https://',
             'settings.shopware.ssh' => 'nullable|array',
             'settings.shopware.ssh.host' => 'required_with:settings.shopware.ssh|string',
@@ -65,6 +68,19 @@ class MigrationController extends Controller
             'settings.woocommerce.base_url' => 'required|string|url|starts_with:https://',
             'settings.woocommerce.consumer_key' => 'required|string',
             'settings.woocommerce.consumer_secret' => 'required|string',
+            'settings.woocommerce.db_host' => 'nullable|string',
+            'settings.woocommerce.db_port' => 'nullable|integer|min:1|max:65535',
+            'settings.woocommerce.db_database' => 'nullable|string',
+            'settings.woocommerce.db_username' => 'nullable|string',
+            'settings.woocommerce.db_password' => 'nullable|string',
+            'settings.woocommerce.table_prefix' => 'nullable|string|regex:/^[A-Za-z0-9_]+$/',
+            'settings.woocommerce.preserve_order_ids' => 'nullable|boolean',
+            'settings.woocommerce.db_ssh' => 'nullable|array',
+            'settings.woocommerce.db_ssh.host' => 'required_with:settings.woocommerce.db_ssh|string',
+            'settings.woocommerce.db_ssh.port' => 'nullable|integer',
+            'settings.woocommerce.db_ssh.username' => 'required_with:settings.woocommerce.db_ssh|string',
+            'settings.woocommerce.db_ssh.password' => 'nullable|string',
+            'settings.woocommerce.db_ssh.key' => 'nullable|string',
             'settings.wordpress' => 'required|array',
             'settings.wordpress.username' => 'required|string',
             'settings.wordpress.app_password' => 'required|string',
@@ -268,6 +284,8 @@ class MigrationController extends Controller
                 'db_password' => $redact($settings['shopware']['db_password'] ?? null),
                 'language_id' => $settings['shopware']['language_id'] ?? null,
                 'live_version_id' => $settings['shopware']['live_version_id'] ?? null,
+                'primary_sales_channel' => $settings['shopware']['primary_sales_channel'] ?? null,
+                'upsell_group_names' => $settings['shopware']['upsell_group_names'] ?? [],
                 'base_url' => $settings['shopware']['base_url'] ?? null,
                 'ssh' => isset($settings['shopware']['ssh']) ? [
                     'host' => $settings['shopware']['ssh']['host'] ?? null,
@@ -282,6 +300,20 @@ class MigrationController extends Controller
                 'base_url' => $settings['woocommerce']['base_url'] ?? null,
                 'consumer_key' => $redact($settings['woocommerce']['consumer_key'] ?? null),
                 'consumer_secret' => $redact($settings['woocommerce']['consumer_secret'] ?? null),
+                'db_host' => $settings['woocommerce']['db_host'] ?? null,
+                'db_port' => $settings['woocommerce']['db_port'] ?? null,
+                'db_database' => $settings['woocommerce']['db_database'] ?? null,
+                'db_username' => $settings['woocommerce']['db_username'] ?? null,
+                'db_password' => $redact($settings['woocommerce']['db_password'] ?? null),
+                'table_prefix' => $settings['woocommerce']['table_prefix'] ?? null,
+                'preserve_order_ids' => (bool) ($settings['woocommerce']['preserve_order_ids'] ?? false),
+                'db_ssh' => isset($settings['woocommerce']['db_ssh']) ? [
+                    'host' => $settings['woocommerce']['db_ssh']['host'] ?? null,
+                    'port' => $settings['woocommerce']['db_ssh']['port'] ?? null,
+                    'username' => $settings['woocommerce']['db_ssh']['username'] ?? null,
+                    'password' => $redact($settings['woocommerce']['db_ssh']['password'] ?? null),
+                    'key' => $redact($settings['woocommerce']['db_ssh']['key'] ?? null),
+                ] : null,
             ],
             'wordpress' => [
                 'username' => $settings['wordpress']['username'] ?? null,
@@ -409,6 +441,7 @@ class MigrationController extends Controller
             'shopware.db_username' => 'required|string',
             'shopware.db_password' => 'required|string',
             'shopware.language_id' => 'nullable|string',
+            'shopware.primary_sales_channel' => 'nullable|string',
             'shopware.ssh' => 'nullable|array',
             'shopware.ssh.host' => 'required_with:shopware.ssh|string',
             'shopware.ssh.port' => 'nullable|integer',
@@ -421,6 +454,13 @@ class MigrationController extends Controller
             'woocommerce.base_url' => 'nullable|string',
             'woocommerce.consumer_key' => 'nullable|string',
             'woocommerce.consumer_secret' => 'nullable|string',
+            'woocommerce.db_host' => 'nullable|string',
+            'woocommerce.db_port' => 'nullable|integer',
+            'woocommerce.db_database' => 'nullable|string',
+            'woocommerce.db_username' => 'nullable|string',
+            'woocommerce.db_password' => 'nullable|string',
+            'woocommerce.table_prefix' => 'nullable|string',
+            'woocommerce.db_ssh' => 'nullable|array',
             'wordpress' => 'nullable|array',
             'wordpress.username' => 'nullable|string',
             'wordpress.app_password' => 'nullable|string',
@@ -430,8 +470,13 @@ class MigrationController extends Controller
         $results = [
             'shopware' => $this->testShopwareDetailed($validated['shopware']),
             'woocommerce' => null,
+            'woocommerce_db' => null,
             'wordpress' => null,
         ];
+
+        if (! empty($validated['woocommerce']['db_host'])) {
+            $results['woocommerce_db'] = $this->testWooCommerceDB($validated['woocommerce']);
+        }
 
         $customHeaders = $validated['wordpress']['custom_headers'] ?? [];
 
@@ -605,7 +650,7 @@ class MigrationController extends Controller
                 return $probe;
             }
 
-            // Try multiple methods to get WooCommerce version
+            // Try multiple methods to get the version
             $version = 'Unknown';
 
             // Method 1: Try root endpoint
@@ -749,6 +794,43 @@ class MigrationController extends Controller
         }
 
         return false;
+    }
+
+    protected function testWooCommerceDB(array $config): array
+    {
+        try {
+            $db = new \App\Services\WooCommerceDB([
+                'db_host' => $config['db_host'] ?? '',
+                'db_port' => $config['db_port'] ?? 3306,
+                'db_database' => $config['db_database'] ?? '',
+                'db_username' => $config['db_username'] ?? '',
+                'db_password' => $config['db_password'] ?? '',
+                'table_prefix' => $config['table_prefix'] ?? 'wp_',
+                'ssh' => $config['db_ssh'] ?? null,
+            ]);
+
+            $row = $db->select(
+                'SELECT COUNT(*) AS c FROM '.$db->table('posts').' WHERE post_type = ?',
+                ['shop_order']
+            );
+            $orders = (int) ($row[0]->c ?? 0);
+
+            $db->disconnect();
+
+            return [
+                'success' => true,
+                'details' => [
+                    'database' => $config['db_database'],
+                    'table_prefix' => $config['table_prefix'] ?? 'wp_',
+                    'existing_orders' => $orders,
+                ],
+            ];
+        } catch (\Throwable $e) {
+            return [
+                'success' => false,
+                'error' => $e->getMessage(),
+            ];
+        }
     }
 
     protected function testWordPressDetailed(array $config): array
