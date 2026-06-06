@@ -67,6 +67,42 @@ class OrderTransformerTest extends TestCase
         $this->assertEquals('SW-10001', $meta->firstWhere('key', '_shopware_order_number')['value']);
     }
 
+    public function test_emits_order_number_meta_for_display_filter(): void
+    {
+        $order = (object) [
+            'order_number' => '21038',
+            'order_date' => '2025-04-01 09:00:00',
+            'status' => 'completed',
+        ];
+
+        $result = $this->transformer->transform($order, null, null);
+
+        $meta = collect($result['meta_data']);
+        $display = $meta->firstWhere('key', '_order_number');
+        $idempotency = $meta->firstWhere('key', '_shopware_order_number');
+
+        $this->assertNotNull($display);
+        $this->assertSame('21038', $display['value']);
+        $this->assertSame('string', gettype($display['value']));
+
+        $this->assertNotNull($idempotency);
+        $this->assertSame('21038', $idempotency['value']);
+    }
+
+    public function test_order_number_meta_handles_missing_source_gracefully(): void
+    {
+        $order = (object) [
+            'order_date' => '2025-04-01 09:00:00',
+            'status' => 'pending',
+        ];
+
+        $result = $this->transformer->transform($order, null, null);
+
+        $display = collect($result['meta_data'])->firstWhere('key', '_order_number');
+        $this->assertNotNull($display);
+        $this->assertSame('', $display['value']);
+    }
+
     public function test_transforms_line_items(): void
     {
         $order = (object) [

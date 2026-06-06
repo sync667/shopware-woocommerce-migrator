@@ -145,6 +145,8 @@ class MigrateOrderBatchJob implements ShouldQueue
                     $wooId = $result['id'] ?? null;
 
                     if ($wooId) {
+                        $wooId = $this->maybeRenumberOrder($migration, (int) $wooId, $order);
+
                         $stateManager->set('order', $order->id, $wooId, $this->migrationId);
                         $this->log('info', "Migrated order '{$order->order_number}' → WC #{$wooId}", $order->id);
                     }
@@ -153,6 +155,42 @@ class MigrateOrderBatchJob implements ShouldQueue
                     $this->log('error', "Failed: {$e->getMessage()}", $orderId);
                 }
             }
+        } finally {
+            $db->disconnect();
+        }
+    }
+
+    /**
+     * Renumber the just-created WC order to its Shopware order_number when
+     * preserve_order_ids is on + WC DB configured + the number is purely
+     * numeric. Returns the resulting WC id (renumbered or original auto id on
+     * failure). Failures are logged as warnings — the migration continues.
+     */
+    protected function maybeRenumberOrder(\App\Models\MigrationRun $migration, int $autoId, object $order): int
+    {
+        $woo = $migration->woocommerceSettings();
+        if (empty($woo['preserve_order_ids']) || ! is_numeric($order->order_number ?? null)) {
+            return $autoId;
+        }
+
+        $targetId = (int) $order->order_number;
+        if ($targetId === $autoId) {
+            return $autoId;
+        }
+
+        $db = \App\Services\WooCommerceDB::fromMigration($migration);
+        if (! $db->isConfigured()) {
+            return $autoId;
+        }
+
+        try {
+            $db->renumberOrder($autoId, $targetId);
+
+            return $targetId;
+        } catch (\Throwable $e) {
+            $this->log('warning', "Renumber {$autoId}→{$targetId} skipped: {$e->getMessage()}", $order->id);
+
+            return $autoId;
         } finally {
             $db->disconnect();
         }

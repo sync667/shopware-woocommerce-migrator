@@ -31,6 +31,10 @@ class OrderTransformer
             'shipping' => $shippingAddress ? $this->transformAddress($shippingAddress) : [],
             'line_items' => $this->transformLineItems($lineItems),
             'meta_data' => [
+                // `_order_number` drives the display via woocommerce_order_number filter.
+                // `_shopware_order_number` stays separate as the idempotency key — admin
+                // edits to the displayed number must not break re-import lookups.
+                ['key' => '_order_number', 'value' => (string) ($order->order_number ?? '')],
                 ['key' => '_shopware_order_number', 'value' => $order->order_number ?? ''],
                 ['key' => '_shopware_order_id', 'value' => $order->id ?? ''],
             ],
