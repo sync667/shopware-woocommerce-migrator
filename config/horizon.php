@@ -283,10 +283,7 @@ return [
             'timeout' => 600,
             'nice' => 0,
         ],
-        // SEO URL processing iterates ~90k rows in one job; needs a long worker
-        // timeout (default queue's 60s cliff was killing it mid-iteration on
-        // anything but the fastest dumps). 2-hour ceiling matches the job's own
-        // $timeout property.
+        // Long-running serial workloads — own supervisors so $timeout sticks.
         'supervisor-seo' => [
             'connection' => 'redis',
             'queue' => ['seo'],
@@ -299,12 +296,6 @@ return [
             'timeout' => 7200,
             'nice' => 0,
         ],
-        // Serial single-job migration steps (manufacturers, taxes, categories,
-        // shipping, payment methods) iterate hundreds of rows in one execution.
-        // The default 60s worker timeout SIGTERM'd them mid-iteration as soon as
-        // real WC API latency kicked in — see mig #57 manufacturers freezing at
-        // 175/229. Dedicated supervisor with 3600s ceiling matches each job's
-        // own $timeout property.
         'supervisor-migration' => [
             'connection' => 'redis',
             'queue' => ['migration'],
@@ -317,11 +308,6 @@ return [
             'timeout' => 3600,
             'nice' => 0,
         ],
-        // Pre-migration cleanup walks the whole target store deleting orders,
-        // customers, products, media etc. and on large shops also runs a
-        // collectMigratorOwnedMediaIds() scan over thousands of past entity rows.
-        // Needs its own supervisor so it doesn't get capped by supervisor-back's
-        // 300s timeout (which silently killed mig #56's media cleanup mid-scan).
         'supervisor-cleanup' => [
             'connection' => 'redis',
             'queue' => ['cleanup'],

@@ -27,9 +27,7 @@ class MigrateManufacturersJob implements ShouldQueue
 
     public function __construct(protected int $migrationId)
     {
-        // Dedicated `migration` queue so the worker timeout matches this job's own
-        // — supervisor-main's 60s cliff was killing it after ~40 of ~230 manufacturers
-        // when each WC API createOrFind takes ~1.5s. Same fix as supervisor-seo.
+        // Dedicated queue — supervisor-main's 60s timeout would override $timeout.
         $this->onQueue('migration');
     }
 

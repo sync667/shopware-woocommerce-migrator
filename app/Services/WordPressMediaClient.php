@@ -60,12 +60,8 @@ class WordPressMediaClient
      */
     public function testApiAccess(): array
     {
-        // Probe `/wp/v2/media?per_page=1` rather than `/users/me`. The media route
-        // maps to the `upload_files` capability — exactly what the migration needs.
-        // The `/users/me` route is restricted to admin callers by several common
-        // hardening setups (Wordfence, iThemes, REST-restricting plugins) which
-        // return 200 with a `{"code":"rest_user_invalid_id"}` body for non-admins,
-        // making the basic-auth probe fail even when credentials are valid.
+        // Probe /media not /users/me — hardening plugins often restrict /users to admin
+        // and return 200 with rest_user_invalid_id, masking valid creds as auth failure.
         try {
             $response = $this->client->get('media', [
                 'query' => ['per_page' => 1, 'context' => 'edit'],
@@ -84,10 +80,6 @@ class WordPressMediaClient
             }
 
             $decoded = json_decode($body, true);
-
-            // The `edit` context requires `edit_posts` for media; if the caller lacks
-            // it, WP returns 401 (handled below) — not a 200 with an empty array.
-            // A 200 with a JSON array (even empty) means basic auth succeeded.
             if (is_array($decoded)) {
                 return [
                     'success' => true,

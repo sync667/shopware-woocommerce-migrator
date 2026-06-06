@@ -55,12 +55,8 @@ class WooCommerceClient
     }
 
     /**
-     * Probe the WC REST root to confirm the API is actually reachable and that
-     * authentication succeeded. Mirrors WordPressMediaClient::testApiAccess —
-     * checks status + Content-Type explicitly because a Cloudflare Access / Zero
-     * Trust block returns HTTP 200 with an HTML login page. Without this check,
-     * downstream `json_decode($html) ?? []` silently degrades into "empty array =
-     * success" and we report a working API when nothing is reaching WordPress.
+     * Content-type aware probe — CF Access returns 200 HTML which would
+     * json_decode to [] and look like a successful empty response otherwise.
      *
      * @return array{success: bool, error?: string, details?: array{status: int, content_type: string}}
      */

@@ -530,7 +530,6 @@ class WooCommerceCleanup
     {
         $ids = [];
 
-        // Direct media mappings — every successful image upload writes one.
         MigrationEntity::where('entity_type', 'media')
             ->whereNotNull('woo_id')
             ->select(['woo_id'])
@@ -543,10 +542,8 @@ class WooCommerceCleanup
                 }
             });
 
-        // Media referenced from category payloads (image id stored after upload).
-        // chunk() instead of get() — past production runs with N dry-run replays
-        // produce tens of thousands of rows whose JSON payloads are each multi-KB.
-        // Loading them all at once OOM'd a 256MB worker mid-cleanup on mig#56.
+        // chunk() — past dry-run replays accumulate tens of thousands of rows
+        // with multi-KB JSON payloads. Loading all at once OOM'd a 256MB worker.
         MigrationEntity::where('entity_type', 'category')
             ->whereNotNull('payload')
             ->select(['payload'])
@@ -559,7 +556,6 @@ class WooCommerceCleanup
                 }
             });
 
-        // Media referenced from manufacturer/product/variation payloads.
         MigrationEntity::whereIn('entity_type', ['product', 'variation', 'manufacturer'])
             ->whereNotNull('payload')
             ->select(['payload'])
