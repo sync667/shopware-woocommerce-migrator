@@ -73,7 +73,7 @@ class MigrateProductsJob implements ShouldQueue
             if ($isDelta) {
                 $migration->update(['last_sync_at' => now()]);
             }
-            MigrateCustomersJob::dispatch($migrationId);
+            LinkCrossSellsJob::dispatch($migrationId);
 
             return;
         }
@@ -92,7 +92,7 @@ class MigrateProductsJob implements ShouldQueue
                     // next run's window and silently drops them on a later delta sync.
                     MigrationRun::where('id', $migrationId)->update(['last_sync_at' => now()]);
                 }
-                MigrateCustomersJob::dispatch($migrationId);
+                LinkCrossSellsJob::dispatch($migrationId);
             })
             ->catch(function (\Illuminate\Bus\Batch $batch, \Throwable $e) use ($migrationId) {
                 MigrationLog::create([

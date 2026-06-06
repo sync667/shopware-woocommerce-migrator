@@ -147,6 +147,16 @@ class MigrateProductBatchJob implements ShouldQueue
                 $attributes[] = $manufacturerAttribute;
             }
 
+            if (! empty($product->delivery_time_name)) {
+                $attributes[] = [
+                    'name' => 'Delivery time',
+                    'options' => [(string) $product->delivery_time_name],
+                    'visible' => true,
+                    'variation' => false,
+                    'position' => count($attributes),
+                ];
+            }
+
             $primaryCategoryWooId = null;
             $mainCategoryShopwareId = $reader->fetchMainCategoryId($product->id);
             if ($mainCategoryShopwareId !== null) {
@@ -172,6 +182,19 @@ class MigrateProductBatchJob implements ShouldQueue
             $variants = $reader->fetchVariants($product->id);
             if (! empty($variants)) {
                 $data['type'] = 'variable';
+
+                // Shopware main_variant_id → WC default_attributes preselects the dropdown.
+                $mainVariantId = $product->main_variant_id ?? null;
+                if ($mainVariantId !== null && $mainVariantId !== '') {
+                    try {
+                        $defaultOptions = $reader->fetchVariantOptions($mainVariantId);
+                        if (! empty($defaultOptions)) {
+                            $data['default_attributes'] = $transformer->buildVariantOptionAttributes($defaultOptions);
+                        }
+                    } catch (\Throwable $e) {
+                        $this->log('warning', "Could not resolve main_variant_id options ({$mainVariantId}): {$e->getMessage()}", $product->id);
+                    }
+                }
             }
 
             if ($migration->is_dry_run) {
@@ -239,10 +262,9 @@ class MigrateProductBatchJob implements ShouldQueue
                 $this->migrateVariant($variant, $wooProductId, $reader, $transformer, $woo, $imageMigrator, $stateManager);
             }
 
-            $crossSells = $reader->fetchCrossSells($product->id);
-            if (! empty($crossSells)) {
-                $this->migrateCrossSells($crossSells, $wooProductId, $woo, $stateManager);
-            }
+            // Cross-sells are linked in a separate job (LinkCrossSellsJob) AFTER the
+            // products batch completes — otherwise forward refs to products in other
+            // batches get silently dropped (their state mappings don't exist yet).
         } catch (\Throwable $e) {
             $stateManager->markFailed('product', $product->id, $this->migrationId, $e->getMessage());
             $this->log('error', "Failed: {$e->getMessage()}", $product->id);
@@ -295,41 +317,6 @@ class MigrateProductBatchJob implements ShouldQueue
         } catch (\Throwable $e) {
             $stateManager->markFailed('variation', $variant->id, $this->migrationId, $e->getMessage());
             $this->log('error', "Variant failed: {$e->getMessage()}", $variant->id, 'variation');
-        }
-    }
-
-    protected function migrateCrossSells(array $crossSells, int $wooProductId, WooCommerceClient $woo, StateManager $stateManager): void
-    {
-        $upsellIds = [];
-        $crossSellIds = [];
-
-        foreach ($crossSells as $cs) {
-            $wooTargetId = $stateManager->get('product', $cs->target_product_id, $this->migrationId);
-            if (! $wooTargetId) {
-                continue;
-            }
-
-            if ($cs->type === 'upsell') {
-                $upsellIds[] = $wooTargetId;
-            } else {
-                $crossSellIds[] = $wooTargetId;
-            }
-        }
-
-        $updateData = [];
-        if (! empty($upsellIds)) {
-            $updateData['upsell_ids'] = $upsellIds;
-        }
-        if (! empty($crossSellIds)) {
-            $updateData['cross_sell_ids'] = $crossSellIds;
-        }
-
-        if (! empty($updateData)) {
-            try {
-                $woo->put("products/{$wooProductId}", $updateData);
-            } catch (\Exception $e) {
-                $this->log('warning', "Cross-sell update failed: {$e->getMessage()}");
-            }
         }
     }
 
