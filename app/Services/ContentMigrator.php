@@ -37,6 +37,8 @@ class ContentMigrator
 
         $this->processImages($xpath);
         $this->processIframes($xpath);
+        $this->removeUnsafeNodes($xpath);
+        $this->stripDangerousAttributes($xpath);
 
         $body = $dom->getElementsByTagName('body')->item(0);
         if (! $body) {
@@ -48,7 +50,53 @@ class ContentMigrator
             $processedHtml .= $dom->saveHTML($node);
         }
 
-        return $this->cleanHtml($processedHtml);
+        return trim($processedHtml);
+    }
+
+    /**
+     * Drop tags that have no business in a product description: scripting,
+     * embedded plugins, form controls, head-only elements. Everything else —
+     * including legacy formatting tags like font, center, mark, kbd, details —
+     * is kept so Shopware's authored styling survives.
+     */
+    protected function removeUnsafeNodes(DOMXPath $xpath): void
+    {
+        // Scripting, binary plugins, head-only nodes — removing these drops any
+        // text payload they had, which is fine because they shouldn't carry any.
+        // Form controls are deliberately NOT in this list: they're inert without
+        // their owning form's submit handler and stripping them eats inline copy
+        // like the literal text inside a styled <button>Buy now</button>.
+        $disallowed = ['script', 'style', 'object', 'embed', 'link', 'meta', 'base', 'noscript'];
+        $expression = '//'.implode('|//', $disallowed);
+        foreach (iterator_to_array($xpath->query($expression)) as $node) {
+            $node->parentNode?->removeChild($node);
+        }
+    }
+
+    /**
+     * Strip event handlers and javascript: URLs from every node. Preserves
+     * class, style, id, data-* and similar formatting attributes.
+     */
+    protected function stripDangerousAttributes(DOMXPath $xpath): void
+    {
+        foreach ($xpath->query('//*[@*]') as $node) {
+            $toRemove = [];
+            foreach ($node->attributes as $attr) {
+                $name = strtolower($attr->name);
+                $value = $attr->value;
+                if (str_starts_with($name, 'on')) {
+                    $toRemove[] = $attr->name;
+
+                    continue;
+                }
+                if (in_array($name, ['href', 'src', 'xlink:href'], true) && stripos(ltrim($value), 'javascript:') === 0) {
+                    $node->setAttribute($attr->name, '#');
+                }
+            }
+            foreach ($toRemove as $name) {
+                $node->removeAttribute($name);
+            }
+        }
     }
 
     /**
@@ -129,39 +177,6 @@ class ContentMigrator
             || str_contains($url, 'youtu.be')
             || str_contains($url, 'vimeo.com')
             || str_contains($url, 'dailymotion.com');
-    }
-
-    /**
-     * Clean and sanitize HTML while preserving formatting
-     */
-    protected function cleanHtml(string $html): string
-    {
-        $allowedTags = [
-            'p', 'br', 'strong', 'b', 'em', 'i', 'u', 'strike', 's',
-            'a', 'ul', 'ol', 'li',
-            'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-            'table', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td',
-            'div', 'span', 'blockquote', 'pre', 'code',
-            'img', 'figure', 'figcaption',
-            'iframe', 'video', 'audio', 'source',
-            'hr', 'sup', 'sub',
-        ];
-
-        $allowedTagsStr = '<'.implode('><', $allowedTags).'>';
-
-        $html = strip_tags($html, $allowedTagsStr);
-
-        return $this->removeDangerousAttributes($html);
-    }
-
-    /**
-     * Remove potentially dangerous HTML attributes
-     */
-    protected function removeDangerousAttributes(string $html): string
-    {
-        $html = preg_replace('/\s*on\w+\s*=\s*["\'][^"\']*["\']/i', '', $html);
-
-        return preg_replace('/href\s*=\s*["\']javascript:[^"\']*["\']/i', 'href="#"', $html);
     }
 
     /**

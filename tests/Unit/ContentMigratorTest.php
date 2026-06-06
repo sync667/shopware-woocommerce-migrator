@@ -131,6 +131,90 @@ class ContentMigratorTest extends TestCase
         $this->assertStringContainsString('Safe content', $result);
     }
 
+    public function test_preserves_legacy_font_tag_with_colors(): void
+    {
+        $html = '<p>This is <font color="#FF0000">RED text</font> inline</p>';
+        $result = $this->contentMigrator->processHtmlContent($html);
+        $this->assertStringContainsString('<font color="#FF0000">RED text</font>', $result);
+    }
+
+    public function test_preserves_center_tag(): void
+    {
+        $html = '<center><p>Centered paragraph</p></center>';
+        $result = $this->contentMigrator->processHtmlContent($html);
+        $this->assertStringContainsString('<center>', $result);
+        $this->assertStringContainsString('Centered paragraph', $result);
+    }
+
+    public function test_preserves_modern_html5_inline_tags(): void
+    {
+        $html = '<p>Press <kbd>Ctrl</kbd>+<kbd>S</kbd> to <mark>save</mark>.</p>'
+            .'<p>Was <del>broken</del> now <ins>fixed</ins>.</p>';
+
+        $result = $this->contentMigrator->processHtmlContent($html);
+
+        foreach (['<kbd>Ctrl</kbd>', '<mark>save</mark>', '<del>broken</del>', '<ins>fixed</ins>'] as $needle) {
+            $this->assertStringContainsString($needle, $result);
+        }
+    }
+
+    public function test_preserves_details_summary(): void
+    {
+        $html = '<details><summary>Click me</summary><p>Hidden body</p></details>';
+        $result = $this->contentMigrator->processHtmlContent($html);
+        $this->assertStringContainsString('<details>', $result);
+        $this->assertStringContainsString('<summary>Click me</summary>', $result);
+        $this->assertStringContainsString('Hidden body', $result);
+    }
+
+    public function test_preserves_inline_styles_class_id_data_attrs(): void
+    {
+        $html = '<p id="p1" class="lead" style="font-size: 18px;" data-track="yes">styled</p>';
+        $result = $this->contentMigrator->processHtmlContent($html);
+        $this->assertStringContainsString('id="p1"', $result);
+        $this->assertStringContainsString('class="lead"', $result);
+        $this->assertStringContainsString('style="font-size: 18px;"', $result);
+        $this->assertStringContainsString('data-track="yes"', $result);
+    }
+
+    public function test_preserves_nested_inline_styles(): void
+    {
+        $html = '<div style="background: #eee;"><span style="color: red;">red on grey</span></div>';
+        $result = $this->contentMigrator->processHtmlContent($html);
+        $this->assertStringContainsString('style="background: #eee;"', $result);
+        $this->assertStringContainsString('style="color: red;"', $result);
+    }
+
+    public function test_preserves_button_text_even_though_form_is_inert(): void
+    {
+        // Buttons in product descriptions usually carry literal copy ("Buy",
+        // "Download"). Stripping the element nukes that copy. We keep the
+        // element (it just won't fire anything because on* attrs are scrubbed).
+        $html = '<button data-action="buy" class="btn" onclick="track()">Buy</button>';
+        $result = $this->contentMigrator->processHtmlContent($html);
+        $this->assertStringContainsString('Buy', $result);
+        $this->assertStringContainsString('<button', $result);
+        $this->assertStringNotContainsString('onclick', $result);
+        $this->assertStringContainsString('data-action="buy"', $result);
+    }
+
+    public function test_strips_style_and_meta_link_base_noscript_tags(): void
+    {
+        $html = '<style>body { display: none }</style>'
+            .'<link rel="stylesheet" href="/nope.css">'
+            .'<meta http-equiv="refresh" content="0;url=evil">'
+            .'<base href="https://evil.example.com">'
+            .'<noscript>fallback</noscript>'
+            .'<p>survivor</p>';
+
+        $result = $this->contentMigrator->processHtmlContent($html);
+
+        foreach (['<style', '<link', '<meta', '<base', '<noscript'] as $needle) {
+            $this->assertStringNotContainsString($needle, $result);
+        }
+        $this->assertStringContainsString('survivor', $result);
+    }
+
     public function test_preserves_links(): void
     {
         $html = '<p>Check out <a href="https://example.com">this link</a></p>';
