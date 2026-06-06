@@ -244,6 +244,34 @@ class ProductTransformerTest extends TestCase
         $this->assertEquals('0.5', $result['weight']);
     }
 
+    public function test_variant_emits_menu_order_from_display_order(): void
+    {
+        $variant = (object) [
+            'sku' => 'Remiza10896.2',
+            'stock' => 5,
+            'manage_stock' => true,
+            'weight' => 0,
+            'price' => '[]',
+            'display_order' => 2,
+        ];
+
+        $result = $this->transformer->transformVariant($variant);
+
+        $this->assertSame(2, $result['menu_order']);
+    }
+
+    public function test_variant_menu_order_defaults_to_zero_when_missing(): void
+    {
+        $variant = (object) [
+            'sku' => 'SKU-NO-ORDER', 'stock' => 0, 'manage_stock' => false,
+            'weight' => 0, 'price' => '[]',
+        ];
+
+        $result = $this->transformer->transformVariant($variant);
+
+        $this->assertSame(0, $result['menu_order']);
+    }
+
     public function test_handles_categories_and_tags(): void
     {
         $product = (object) [

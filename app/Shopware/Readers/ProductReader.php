@@ -154,6 +154,13 @@ class ProductReader
         // Shopware 6 variants inherit NULL fields from the parent product.
         // All fields marked @Inherited() in ProductDefinition are COALESCED here
         // so that variants which have not overridden a field get the parent's value.
+        //
+        // Display order: derived from MIN(product_configurator_setting.position)
+        // across the variant's option values (operator-set on the parent product).
+        // Single-axis configs (Size only, Color only) get exact storefront order;
+        // multi-axis variants fall back to the lowest-numbered option's position
+        // which still beats alphabetic SKU sort. Variants with no configurator
+        // override (e.g. ad-hoc colors) land at 9999 and tie-break by SKU.
         return $this->db->select('
             SELECT
                 LOWER(HEX(p.id)) AS id,
@@ -173,14 +180,24 @@ class ProductReader
                 COALESCE(p.min_purchase, parent.min_purchase) AS min_purchase,
                 COALESCE(p.max_purchase, parent.max_purchase) AS max_purchase,
                 COALESCE(p.purchase_steps, parent.purchase_steps) AS purchase_steps,
-                LOWER(HEX(p.product_media_id)) AS cover_id
+                LOWER(HEX(p.product_media_id)) AS cover_id,
+                COALESCE((
+                    SELECT MIN(pcs.position)
+                    FROM product_option po
+                    JOIN product_configurator_setting pcs
+                        ON pcs.property_group_option_id = po.property_group_option_id
+                        AND pcs.product_id = p.parent_id
+                        AND pcs.product_version_id = p.parent_version_id
+                    WHERE po.product_id = p.id
+                      AND po.product_version_id = p.version_id
+                ), 9999) AS display_order
             FROM product p
             INNER JOIN product parent
                 ON parent.id = p.parent_id
                 AND parent.version_id = p.version_id
             WHERE p.version_id = ?
               AND p.parent_id = UNHEX(?)
-            ORDER BY p.product_number ASC
+            ORDER BY display_order ASC, p.product_number ASC
         ', [$this->db->liveVersionIdBin(), $parentId]);
     }
 
@@ -224,7 +241,8 @@ class ProductReader
                 LOWER(HEX(pcs.property_group_option_id)) AS option_id,
                 COALESCE(pgot.name, '') AS option_name,
                 COALESCE(pgt.name, '') AS group_name,
-                LOWER(HEX(pgo.property_group_id)) AS group_id
+                LOWER(HEX(pgo.property_group_id)) AS group_id,
+                pcs.position AS position
             FROM product_configurator_setting pcs
             INNER JOIN property_group_option pgo ON pgo.id = pcs.property_group_option_id
             INNER JOIN property_group pg ON pg.id = pgo.property_group_id
@@ -236,6 +254,7 @@ class ProductReader
                 AND pgt.language_id = ?
             WHERE pcs.product_id = UNHEX(?)
               AND pcs.product_version_id = ?
+            ORDER BY pcs.position ASC, pgot.name ASC
         ", [
             $this->db->languageIdBin(),
             $this->db->languageIdBin(),

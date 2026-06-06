@@ -247,6 +247,10 @@ class ProductTransformer
                 'width' => $this->mmToCm($variant->width ?? 0),
                 'height' => $this->mmToCm($variant->height ?? 0),
             ],
+            // menu_order drives WC's variations list order in admin and is the
+            // tiebreaker most storefront themes use when "default attribute"
+            // selection doesn't narrow to a single variant.
+            'menu_order' => (int) ($variant->display_order ?? 0),
         ];
 
         if ($prices['sale'] !== null) {
