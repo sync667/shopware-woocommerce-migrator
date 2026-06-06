@@ -4,6 +4,8 @@ namespace App\Jobs;
 
 use App\Models\MigrationLog;
 use App\Models\MigrationRun;
+use App\Services\ContentMigrator;
+use App\Services\ImageMigrator;
 use App\Services\ShopwareDB;
 use App\Services\StateManager;
 use App\Services\WooCommerceClient;
@@ -38,7 +40,8 @@ class MigrateCmsPagesJob implements ShouldQueue
         $woo = WooCommerceClient::fromMigration($migration);
         $reader = new CmsPageReader($db);
         $seoReader = new SeoUrlReader($db);
-        $transformer = new CmsPageTransformer($stateManager, $this->migrationId);
+        $contentMigrator = new ContentMigrator(ImageMigrator::fromMigration($migration));
+        $transformer = new CmsPageTransformer($stateManager, $this->migrationId, $contentMigrator);
 
         $pages = $this->selectedPageIds
             ? $reader->fetchByIds($this->selectedPageIds)

@@ -2,17 +2,30 @@
 
 namespace App\Shopware\Transformers;
 
+use App\Services\ContentMigrator;
+
 class CategoryTransformer
 {
+    public function __construct(
+        protected ?ContentMigrator $contentMigrator = null
+    ) {}
+
     public function transform(object $category, ?int $wooParentId = null, string $seoTextBelow = ''): array
     {
-        $description = $category->description ?? '';
+        $description = (string) ($category->description ?? '');
+        if ($description !== '' && $this->contentMigrator !== null) {
+            $description = $this->contentMigrator->processHtmlContent($description);
+        }
 
         if ($seoTextBelow !== '') {
+            $processedSeo = $this->contentMigrator !== null
+                ? $this->contentMigrator->processHtmlContent($seoTextBelow)
+                : $seoTextBelow;
+
             if ($description === '') {
-                $description = "<!-- shopware-seo-text -->\n".$seoTextBelow;
+                $description = "<!-- shopware-seo-text -->\n".$processedSeo;
             } else {
-                $description = $description."\n\n<!-- shopware-seo-text -->\n".$seoTextBelow;
+                $description = $description."\n\n<!-- shopware-seo-text -->\n".$processedSeo;
             }
         }
 

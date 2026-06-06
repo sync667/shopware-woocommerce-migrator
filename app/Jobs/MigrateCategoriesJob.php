@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Models\MigrationLog;
 use App\Models\MigrationRun;
 use App\Services\CategorySeoTextResolver;
+use App\Services\ContentMigrator;
 use App\Services\ImageMigrator;
 use App\Services\ShopwareDB;
 use App\Services\StateManager;
@@ -39,8 +40,9 @@ class MigrateCategoriesJob implements ShouldQueue
         $db = ShopwareDB::fromMigration($migration);
         $woo = WooCommerceClient::fromMigration($migration);
         $imageMigrator = ImageMigrator::fromMigration($migration);
+        $contentMigrator = new ContentMigrator($imageMigrator);
         $reader = new CategoryReader($db);
-        $transformer = new CategoryTransformer;
+        $transformer = new CategoryTransformer($contentMigrator);
         $seoResolver = new CategorySeoTextResolver($db);
 
         if ($migration->sync_mode === 'delta' && $migration->last_sync_at) {

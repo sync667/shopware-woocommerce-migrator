@@ -2,13 +2,15 @@
 
 namespace App\Shopware\Transformers;
 
+use App\Services\ContentMigrator;
 use App\Services\StateManager;
 
 class CmsPageTransformer
 {
     public function __construct(
         protected StateManager $stateManager,
-        protected int $migrationId
+        protected int $migrationId,
+        protected ?ContentMigrator $contentMigrator = null
     ) {}
 
     /**
@@ -92,7 +94,15 @@ class CmsPageTransformer
             return null;
         }
 
-        $content = $this->cleanHtml($content);
+        $content = $this->sanitize($content);
+
+        // Don't wrap in <p> when the content already has block-level markup
+        // (Shopware text slots commonly carry <p>, <div>, <table>, etc.). The
+        // old code unconditionally wrapped and produced nested <p><p>foo</p></p>
+        // which browsers auto-closed into broken structure.
+        if (preg_match('/<(p|div|table|ul|ol|blockquote|h[1-6]|figure|section|article|details)\b/i', $content)) {
+            return "<!-- wp:html -->\n{$content}\n<!-- /wp:html -->";
+        }
 
         return "<!-- wp:paragraph -->\n<p>{$content}</p>\n<!-- /wp:paragraph -->";
     }
@@ -131,6 +141,8 @@ class CmsPageTransformer
         if (empty($content)) {
             return null;
         }
+
+        $content = $this->sanitize($content);
 
         return "<!-- wp:html -->\n{$content}\n<!-- /wp:html -->";
     }
@@ -213,11 +225,13 @@ class CmsPageTransformer
     }
 
     /**
-     * Clean HTML content
+     * Sanitize via the shared ContentMigrator when available. Falls back to a
+     * pass-through when the transformer was constructed without one (some unit
+     * tests do this) — those tests don't assert on description content.
      */
-    protected function cleanHtml(string $html): string
+    protected function sanitize(string $html): string
     {
-        return strip_tags($html, '<p><br><strong><em><u><a><ul><ol><li><h1><h2><h3><h4><h5><h6>');
+        return $this->contentMigrator?->processHtmlContent($html) ?? $html;
     }
 
     /**
