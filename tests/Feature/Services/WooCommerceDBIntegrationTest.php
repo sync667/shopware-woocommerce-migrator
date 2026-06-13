@@ -380,6 +380,51 @@ class WooCommerceDBIntegrationTest extends TestCase
         $this->assertSame(0, $this->db()->bulkInsertOrderNotes([]));
     }
 
+    public function test_replace_post_meta_writes_a_single_row(): void
+    {
+        $json = '[{"from":1,"to":5,"cost":100},{"from":6,"to":null,"cost":300}]';
+
+        $written = $this->db()->replacePostMeta('_remizasklep_delivery_tiers', [99 => $json]);
+
+        $this->assertSame(1, $written);
+        $row = self::$pdo->query("SELECT meta_value FROM wp_postmeta WHERE post_id = 99 AND meta_key = '_remizasklep_delivery_tiers'")->fetch(\PDO::FETCH_OBJ);
+        $this->assertSame($json, $row->meta_value);
+    }
+
+    public function test_replace_post_meta_drops_old_rows_before_inserting(): void
+    {
+        // The plugin contract notes wp_postmeta has no UNIQUE on (post_id, meta_key)
+        // so re-running the migration without a delete would silently append a
+        // second row and the WP API's get_post_meta($id, $key, true) would still
+        // return the FIRST (stale) value. Verify both pre-existing rows are
+        // removed and a single new row remains.
+        self::$pdo->exec("INSERT INTO wp_postmeta (post_id, meta_key, meta_value) VALUES (200, '_remizasklep_delivery_tiers', '[OLD-1]')");
+        self::$pdo->exec("INSERT INTO wp_postmeta (post_id, meta_key, meta_value) VALUES (200, '_remizasklep_delivery_tiers', '[OLD-2]')");
+        $this->assertSame(2, $this->countRows('wp_postmeta', 'post_id = ? AND meta_key = ?', [200, '_remizasklep_delivery_tiers']));
+
+        $written = $this->db()->replacePostMeta('_remizasklep_delivery_tiers', [200 => '[NEW]']);
+
+        $this->assertSame(1, $written);
+        $this->assertSame(1, $this->countRows('wp_postmeta', 'post_id = ? AND meta_key = ?', [200, '_remizasklep_delivery_tiers']));
+        $row = self::$pdo->query("SELECT meta_value FROM wp_postmeta WHERE post_id = 200 AND meta_key = '_remizasklep_delivery_tiers'")->fetch(\PDO::FETCH_OBJ);
+        $this->assertSame('[NEW]', $row->meta_value);
+    }
+
+    public function test_replace_post_meta_leaves_other_post_ids_untouched(): void
+    {
+        self::$pdo->exec("INSERT INTO wp_postmeta (post_id, meta_key, meta_value) VALUES (300, '_remizasklep_delivery_tiers', 'untouched')");
+
+        $this->db()->replacePostMeta('_remizasklep_delivery_tiers', [301 => '[NEW]']);
+
+        $row = self::$pdo->query("SELECT meta_value FROM wp_postmeta WHERE post_id = 300 AND meta_key = '_remizasklep_delivery_tiers'")->fetch(\PDO::FETCH_OBJ);
+        $this->assertSame('untouched', $row->meta_value);
+    }
+
+    public function test_replace_post_meta_short_circuits_on_empty_input(): void
+    {
+        $this->assertSame(0, $this->db()->replacePostMeta('_remizasklep_delivery_tiers', []));
+    }
+
     private function countRows(string $table, string $where, array $params): int
     {
         $stmt = self::$pdo->prepare("SELECT COUNT(*) c FROM {$table} WHERE {$where}");

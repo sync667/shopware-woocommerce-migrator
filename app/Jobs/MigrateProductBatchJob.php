@@ -261,6 +261,8 @@ class MigrateProductBatchJob implements ShouldQueue
             $stateManager->set('product', $product->id, $wooProductId, $this->migrationId);
             $this->log('info', "Migrated product '{$data['name']}' → WC #{$wooProductId}", $product->id);
 
+            $this->maybeWriteDeliveryTiers($migration, $product, $wooProductId);
+
             foreach ($variants as $variant) {
                 $this->migrateVariant($variant, $wooProductId, $reader, $transformer, $woo, $imageMigrator, $stateManager, $blockPurchaseRule);
             }
@@ -342,6 +344,55 @@ class MigrateProductBatchJob implements ShouldQueue
             'message' => 'Batch job failed after retries: '.$exception->getMessage(),
             'created_at' => now(),
         ]);
+    }
+
+    /**
+     * Stamp _remizasklep_delivery_tiers postmeta on the just-created WC product
+     * when (a) the operator opted in, (b) WC DB credentials are configured, and
+     * (c) the source product carries a non-empty `remiza_shipping_tiers` array.
+     *
+     * Validation failures bubble out as warnings logged against the product, so
+     * a single malformed tier doesn't kill the whole batch — but per the plugin
+     * contract we never silently drop a row, we always log it.
+     */
+    protected function maybeWriteDeliveryTiers(MigrationRun $migration, object $product, int $wooProductId): void
+    {
+        if (empty($migration->settings['remizasklep_options']['delivery_tiers_enabled'] ?? false)) {
+            return;
+        }
+
+        if ($migration->is_dry_run) {
+            return;
+        }
+
+        try {
+            $tiers = \App\Shopware\Transformers\DeliveryTierTransformer::extract($product);
+        } catch (\Throwable $e) {
+            $this->log('warning', "Delivery tiers rejected: {$e->getMessage()}", $product->id);
+
+            return;
+        }
+
+        if ($tiers === null) {
+            return;
+        }
+
+        $db = \App\Services\WooCommerceDB::fromMigration($migration);
+        if (! $db->isConfigured()) {
+            $this->log('warning', 'Delivery-tier write skipped: WC DB credentials not configured.', $product->id);
+
+            return;
+        }
+
+        try {
+            $json = json_encode($tiers, JSON_UNESCAPED_UNICODE);
+            $db->replacePostMeta('_remizasklep_delivery_tiers', [$wooProductId => $json]);
+            $this->log('info', 'Stamped '.count($tiers).' delivery tier(s).', $product->id);
+        } catch (\Throwable $e) {
+            $this->log('warning', "Delivery-tier write failed: {$e->getMessage()}", $product->id);
+        } finally {
+            $db->disconnect();
+        }
     }
 
     protected function log(string $level, string $message, ?string $shopwareId = null, ?string $entityType = null): void

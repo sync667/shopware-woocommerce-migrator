@@ -143,6 +143,55 @@ class WooCommerceDB
         return $affected;
     }
 
+    /**
+     * Authoritative replace: DELETE every row matching (post_id, meta_key) then
+     * INSERT the fresh value. wp_postmeta has no UNIQUE on (post_id, meta_key),
+     * so upsertPostMeta's ON DUPLICATE KEY UPDATE doesn't fire on the natural
+     * key — re-running the migration would just append duplicates.
+     *
+     * Both statements per chunk live in one transaction so a crash mid-batch
+     * either keeps the OLD row intact or has the NEW row in place, never a
+     * deleted-but-not-yet-inserted gap.
+     *
+     * @param  array<int, scalar|null>  $valuesByPostId
+     */
+    public function replacePostMeta(string $metaKey, array $valuesByPostId): int
+    {
+        if ($valuesByPostId === []) {
+            return 0;
+        }
+
+        $table = $this->table('postmeta');
+        $written = 0;
+        $conn = $this->connection();
+
+        foreach (array_chunk($valuesByPostId, 500, true) as $chunk) {
+            $conn->transaction(function () use ($table, $metaKey, $chunk, &$written) {
+                $postIds = array_keys($chunk);
+                $deletePlaceholders = implode(',', array_fill(0, count($postIds), '?'));
+                $this->affecting(
+                    "DELETE FROM {$table} WHERE meta_key = ? AND post_id IN ({$deletePlaceholders})",
+                    array_merge([$metaKey], $postIds)
+                );
+
+                $insertPlaceholders = [];
+                $insertParams = [];
+                foreach ($chunk as $postId => $value) {
+                    $insertPlaceholders[] = '(?, ?, ?)';
+                    $insertParams[] = (int) $postId;
+                    $insertParams[] = $metaKey;
+                    $insertParams[] = (string) ($value ?? '');
+                }
+                $written += $this->affecting(
+                    "INSERT INTO {$table} (post_id, meta_key, meta_value) VALUES ".implode(',', $insertPlaceholders),
+                    $insertParams
+                );
+            });
+        }
+
+        return $written;
+    }
+
     /** @param  array<int, scalar|null>  $valuesByTermId */
     public function upsertTermMeta(string $metaKey, array $valuesByTermId): int
     {

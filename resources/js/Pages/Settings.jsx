@@ -94,6 +94,7 @@ export default function Settings() {
     // disclosure under Migration Options. Stamps _remizasklep_block_purchase meta
     // on products meeting stock=0 AND is_closeout=1.
     const [blockPurchaseEnabled, setBlockPurchaseEnabled] = useState(false);
+    const [deliveryTiersEnabled, setDeliveryTiersEnabled] = useState(false);
     const [remizaCustomOpen, setRemizaCustomOpen] = useState(false);
 
     const [cleanupDeleteMedia, setCleanupDeleteMedia] = useState(false);
@@ -404,6 +405,10 @@ export default function Settings() {
                             setBlockPurchaseEnabled(true);
                             setRemizaCustomOpen(true);
                         }
+                        if (settings.remizasklep_options?.delivery_tiers_enabled) {
+                            setDeliveryTiersEnabled(true);
+                            setRemizaCustomOpen(true);
+                        }
                         const cleanupOpts = settings.cleanup_options || {};
                         if (typeof cleanupOpts.delete_media === 'boolean') {
                             setCleanupDeleteMedia(cleanupOpts.delete_media);
@@ -635,7 +640,10 @@ export default function Settings() {
             const omnibusOptions = omnibusEnabled ? { enabled: true } : null;
             const newsletterOptions = newsletterEnabled ? { enabled: true } : null;
             const wishlistOptions = wishlistEnabled ? { enabled: true } : null;
-            const remizasklepOptions = blockPurchaseEnabled ? { block_purchase_on_closeout: true } : null;
+            const remizasklepOptions = (blockPurchaseEnabled || deliveryTiersEnabled) ? {
+                ...(blockPurchaseEnabled ? { block_purchase_on_closeout: true } : {}),
+                ...(deliveryTiersEnabled ? { delivery_tiers_enabled: true } : {}),
+            } : null;
             const cleanupOptions = cleanWoocommerce ? {
                 delete_media: cleanupDeleteMedia,
                 media_mode: cleanupMediaMode,
@@ -958,6 +966,12 @@ export default function Settings() {
                         <div className="flex items-center gap-2 p-2 rounded bg-green-50">
                             <Check className="h-4 w-4 text-green-600" />
                             <span>Remiza block-purchase on closeout</span>
+                        </div>
+                    )}
+                    {deliveryTiersEnabled && (
+                        <div className="flex items-center gap-2 p-2 rounded bg-green-50">
+                            <Check className="h-4 w-4 text-green-600" />
+                            <span>Remiza delivery tiers</span>
                         </div>
                     )}
                 </div>
@@ -1893,6 +1907,31 @@ export default function Settings() {
                                     suppressed by the RemizaSklep companion plugin&apos;s filter. Parent
                                     value &quot;yes&quot; overrides all variants regardless of their own
                                     setting. ~467 products in the current dump match this rule.
+                                </span>
+                            </span>
+                        </label>
+
+                        <label className="flex items-start gap-2 cursor-pointer">
+                            <input
+                                type="checkbox"
+                                checked={deliveryTiersEnabled}
+                                onChange={(e) => setDeliveryTiersEnabled(e.target.checked)}
+                                className="mt-1 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            />
+                            <span className="text-sm text-gray-700">
+                                <span className="font-medium block">
+                                    Migrate per-product delivery tiers (Progi wysyłki)
+                                </span>
+                                <span className="block text-gray-500 mt-1">
+                                    Reads the <code>remiza_shipping_tiers</code> custom field on each
+                                    Shopware product, validates each <code>{`{quantityFrom, quantityTo, grossPrice}`}</code>
+                                    row, and writes the result as JSON into the
+                                    <code> _remizasklep_delivery_tiers </code> WC postmeta key. Uses
+                                    DELETE-then-INSERT per the plugin contract (postmeta has no UNIQUE on
+                                    <code> post_id + meta_key</code>). Requires Direct MySQL access to be
+                                    configured on the WooCommerce block. Invalid rows are NOT silently
+                                    dropped — they&apos;re logged as warnings against the product and the
+                                    rest of the migration continues.
                                 </span>
                             </span>
                         </label>

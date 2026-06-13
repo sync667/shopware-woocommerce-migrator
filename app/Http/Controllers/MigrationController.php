@@ -42,6 +42,7 @@ class MigrationController extends Controller
             'wishlist_options.enabled' => 'nullable|boolean',
             'remizasklep_options' => 'nullable|array',
             'remizasklep_options.block_purchase_on_closeout' => 'nullable|boolean',
+            'remizasklep_options.delivery_tiers_enabled' => 'nullable|boolean',
             'cleanup_options' => 'nullable|array',
             'cleanup_options.delete_media' => 'nullable|boolean',
             'cleanup_options.media_mode' => 'nullable|string|in:migrated_only,all',
