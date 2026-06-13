@@ -168,6 +168,8 @@ class MigrateProductBatchJob implements ShouldQueue
                 $omnibusLowestPrice = $reader->fetchOmnibusLowestPrice($product->id);
             }
 
+            $blockPurchaseRule = (bool) ($migration->settings['remizasklep_options']['block_purchase_on_closeout'] ?? false);
+
             $data = $transformer->transform(
                 $product,
                 $categoryWooIds,
@@ -177,6 +179,7 @@ class MigrateProductBatchJob implements ShouldQueue
                 $tags,
                 $primaryCategoryWooId,
                 $omnibusLowestPrice,
+                $blockPurchaseRule,
             );
 
             $variants = $reader->fetchVariants($product->id);
@@ -205,7 +208,7 @@ class MigrateProductBatchJob implements ShouldQueue
                     try {
                         $variantOptions = $reader->fetchVariantOptions($variant->id);
                         $optionAttributes = $transformer->buildVariantOptionAttributes($variantOptions);
-                        $variantData = $transformer->transformVariant($variant, $optionAttributes);
+                        $variantData = $transformer->transformVariant($variant, $optionAttributes, $blockPurchaseRule);
                         // Carry the parent shopware id so downstream consumers (SEO URL
                         // job, order line item resolver) can walk variant → parent.
                         $variantData['parent_shopware_id'] = $product->id;
@@ -259,7 +262,7 @@ class MigrateProductBatchJob implements ShouldQueue
             $this->log('info', "Migrated product '{$data['name']}' → WC #{$wooProductId}", $product->id);
 
             foreach ($variants as $variant) {
-                $this->migrateVariant($variant, $wooProductId, $reader, $transformer, $woo, $imageMigrator, $stateManager);
+                $this->migrateVariant($variant, $wooProductId, $reader, $transformer, $woo, $imageMigrator, $stateManager, $blockPurchaseRule);
             }
 
             // Cross-sells are linked in a separate job (LinkCrossSellsJob) AFTER the
@@ -279,6 +282,7 @@ class MigrateProductBatchJob implements ShouldQueue
         WooCommerceClient $woo,
         ImageMigrator $imageMigrator,
         StateManager $stateManager,
+        bool $blockPurchaseRule = false,
     ): void {
         if ($stateManager->alreadyMigrated('variation', $variant->id, $this->migrationId)) {
             return;
@@ -287,7 +291,7 @@ class MigrateProductBatchJob implements ShouldQueue
         try {
             $variantOptions = $reader->fetchVariantOptions($variant->id);
             $optionAttributes = $transformer->buildVariantOptionAttributes($variantOptions);
-            $data = $transformer->transformVariant($variant, $optionAttributes);
+            $data = $transformer->transformVariant($variant, $optionAttributes, $blockPurchaseRule);
 
             $media = $reader->fetchMedia($variant->id);
             if (! empty($media)) {

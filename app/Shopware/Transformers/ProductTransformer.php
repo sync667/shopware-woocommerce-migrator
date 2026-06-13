@@ -10,6 +10,31 @@ class ProductTransformer
         protected ?ContentMigrator $contentMigrator = null
     ) {}
 
+    /**
+     * Evaluate RemizaSklep's "block purchase on closeout stock-out" rule.
+     *
+     * Shopware admin pairs `Dostępność na magazynie` (stock) with the toggle
+     * `Sprzedaż po zaniżonej cenie` — which is the Polish localization of the
+     * standard `is_closeout` field. When closeout is on AND stock has hit zero
+     * the product should remain visible on the storefront but reject add-to-cart
+     * (the RemizaSklep companion plugin reads the meta and filters the button).
+     *
+     * Variants inherit the parent's `is_closeout` when their own column is NULL —
+     * the reader already COALESCEs that, so this helper works identically for
+     * parent and variant input objects.
+     */
+    public static function shouldBlockPurchase(object $product, bool $ruleEnabled): bool
+    {
+        if (! $ruleEnabled) {
+            return false;
+        }
+
+        $stock = (int) ($product->stock ?? 0);
+        $closeout = (bool) ($product->manage_stock ?? $product->is_closeout ?? false);
+
+        return $closeout && $stock <= 0;
+    }
+
     public function transform(
         object $product,
         array $categoryWooIds = [],
@@ -19,6 +44,7 @@ class ProductTransformer
         array $tags = [],
         ?int $primaryCategoryWooId = null,
         ?string $omnibusLowestPrice = null,
+        bool $blockPurchaseRule = false,
     ): array {
         $prices = $this->parsePrices($product->price ?? '[]');
 
@@ -222,10 +248,14 @@ class ProductTransformer
             }
         }
 
+        if (self::shouldBlockPurchase($product, $blockPurchaseRule)) {
+            $data['meta_data'][] = ['key' => '_remizasklep_block_purchase', 'value' => 'yes'];
+        }
+
         return $data;
     }
 
-    public function transformVariant(object $variant, array $optionAttributes = []): array
+    public function transformVariant(object $variant, array $optionAttributes = [], bool $blockPurchaseRule = false): array
     {
         $prices = $this->parsePrices($variant->price ?? '[]');
 
@@ -285,6 +315,10 @@ class ProductTransformer
 
         if (isset($variant->purchase_steps) && $variant->purchase_steps > 1) {
             $data['meta_data'][] = ['key' => '_purchase_steps', 'value' => (int) $variant->purchase_steps];
+        }
+
+        if (self::shouldBlockPurchase($variant, $blockPurchaseRule)) {
+            $data['meta_data'][] = ['key' => '_remizasklep_block_purchase', 'value' => 'yes'];
         }
 
         if (empty($data['meta_data'])) {

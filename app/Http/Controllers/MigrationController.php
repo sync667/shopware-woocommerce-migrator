@@ -40,6 +40,8 @@ class MigrationController extends Controller
             'newsletter_options.enabled' => 'nullable|boolean',
             'wishlist_options' => 'nullable|array',
             'wishlist_options.enabled' => 'nullable|boolean',
+            'remizasklep_options' => 'nullable|array',
+            'remizasklep_options.block_purchase_on_closeout' => 'nullable|boolean',
             'cleanup_options' => 'nullable|array',
             'cleanup_options.delete_media' => 'nullable|boolean',
             'cleanup_options.media_mode' => 'nullable|string|in:migrated_only,all',
@@ -105,6 +107,7 @@ class MigrationController extends Controller
                 'omnibus_options' => $validated['omnibus_options'] ?? [],
                 'newsletter_options' => $validated['newsletter_options'] ?? [],
                 'wishlist_options' => $validated['wishlist_options'] ?? [],
+                'remizasklep_options' => $validated['remizasklep_options'] ?? [],
                 'cleanup_options' => $validated['cleanup_options'] ?? [],
             ]),
             'is_dry_run' => $validated['is_dry_run'] ?? false,
@@ -325,6 +328,7 @@ class MigrationController extends Controller
             'omnibus_options' => $settings['omnibus_options'] ?? [],
             'newsletter_options' => $settings['newsletter_options'] ?? [],
             'wishlist_options' => $settings['wishlist_options'] ?? [],
+            'remizasklep_options' => $settings['remizasklep_options'] ?? [],
             'cleanup_options' => $settings['cleanup_options'] ?? [],
         ];
     }

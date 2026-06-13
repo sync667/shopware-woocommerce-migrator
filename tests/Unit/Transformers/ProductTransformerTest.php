@@ -272,6 +272,82 @@ class ProductTransformerTest extends TestCase
         $this->assertSame(0, $result['menu_order']);
     }
 
+    /**
+     * @return iterable<string, array{0:int,1:bool,2:bool,3:bool}>
+     */
+    public static function blockPurchaseRuleCases(): iterable
+    {
+        // stock, is_closeout (manage_stock), rule_enabled, expected_block
+        yield 'rule off, closeout stockout' => [0, true, false, false];
+        yield 'rule on, closeout stockout' => [0, true, true,  true];
+        yield 'rule on, closeout in stock' => [5, true, true,  false];
+        yield 'rule on, backorders stockout' => [0, false, true, false];
+        yield 'rule on, negative stock' => [-1, true, true, true];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('blockPurchaseRuleCases')]
+    public function test_should_block_purchase_rule(int $stock, bool $closeout, bool $ruleOn, bool $expected): void
+    {
+        $product = (object) ['stock' => $stock, 'manage_stock' => $closeout];
+
+        $this->assertSame($expected, \App\Shopware\Transformers\ProductTransformer::shouldBlockPurchase($product, $ruleOn));
+    }
+
+    public function test_block_purchase_meta_emitted_on_parent_when_rule_matches(): void
+    {
+        $product = (object) [
+            'name' => 'Czapka PSP', 'sku' => 'SKU-Czapka', 'active' => true,
+            'description' => '', 'stock' => 0, 'manage_stock' => true,
+            'weight' => 0, 'width' => 0, 'height' => 0, 'depth' => 0,
+            'price' => '[]', 'type' => 'product', 'meta_title' => '', 'meta_description' => '',
+        ];
+
+        $result = $this->transformer->transform(
+            $product, [], null, '', [], [], null, null, blockPurchaseRule: true
+        );
+
+        $hits = array_values(array_filter(
+            $result['meta_data'],
+            fn ($m) => $m['key'] === '_remizasklep_block_purchase'
+        ));
+        $this->assertCount(1, $hits);
+        $this->assertSame('yes', $hits[0]['value']);
+    }
+
+    public function test_block_purchase_meta_omitted_when_rule_off_or_unmatched(): void
+    {
+        $product = (object) [
+            'name' => 'In-stock', 'sku' => 'SKU-IS', 'active' => true,
+            'description' => '', 'stock' => 10, 'manage_stock' => true,
+            'weight' => 0, 'width' => 0, 'height' => 0, 'depth' => 0,
+            'price' => '[]', 'type' => 'product', 'meta_title' => '', 'meta_description' => '',
+        ];
+
+        $result = $this->transformer->transform(
+            $product, [], null, '', [], [], null, null, blockPurchaseRule: true
+        );
+
+        $hits = array_filter($result['meta_data'], fn ($m) => $m['key'] === '_remizasklep_block_purchase');
+        $this->assertSame([], array_values($hits));
+    }
+
+    public function test_block_purchase_meta_on_variant(): void
+    {
+        $variant = (object) [
+            'sku' => 'SKU-V', 'stock' => 0, 'manage_stock' => true,
+            'weight' => 0, 'price' => '[]',
+        ];
+
+        $result = $this->transformer->transformVariant($variant, [], true);
+
+        $hits = array_values(array_filter(
+            $result['meta_data'] ?? [],
+            fn ($m) => $m['key'] === '_remizasklep_block_purchase'
+        ));
+        $this->assertCount(1, $hits);
+        $this->assertSame('yes', $hits[0]['value']);
+    }
+
     public function test_handles_categories_and_tags(): void
     {
         $product = (object) [

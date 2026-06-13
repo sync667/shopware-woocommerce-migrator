@@ -90,6 +90,11 @@ export default function Settings() {
     const [omnibusEnabled, setOmnibusEnabled] = useState(false);
     const [newsletterEnabled, setNewsletterEnabled] = useState(false);
     const [wishlistEnabled, setWishlistEnabled] = useState(false);
+    // Hidden by default. Surfaces only when the operator opens the "Remiza-specific"
+    // disclosure under Migration Options. Stamps _remizasklep_block_purchase meta
+    // on products meeting stock=0 AND is_closeout=1.
+    const [blockPurchaseEnabled, setBlockPurchaseEnabled] = useState(false);
+    const [remizaCustomOpen, setRemizaCustomOpen] = useState(false);
 
     const [cleanupDeleteMedia, setCleanupDeleteMedia] = useState(false);
     const [cleanupMediaMode, setCleanupMediaMode] = useState('migrated_only');
@@ -395,6 +400,10 @@ export default function Settings() {
                         if (settings.wishlist_options?.enabled) {
                             setWishlistEnabled(true);
                         }
+                        if (settings.remizasklep_options?.block_purchase_on_closeout) {
+                            setBlockPurchaseEnabled(true);
+                            setRemizaCustomOpen(true);
+                        }
                         const cleanupOpts = settings.cleanup_options || {};
                         if (typeof cleanupOpts.delete_media === 'boolean') {
                             setCleanupDeleteMedia(cleanupOpts.delete_media);
@@ -626,6 +635,7 @@ export default function Settings() {
             const omnibusOptions = omnibusEnabled ? { enabled: true } : null;
             const newsletterOptions = newsletterEnabled ? { enabled: true } : null;
             const wishlistOptions = wishlistEnabled ? { enabled: true } : null;
+            const remizasklepOptions = blockPurchaseEnabled ? { block_purchase_on_closeout: true } : null;
             const cleanupOptions = cleanWoocommerce ? {
                 delete_media: cleanupDeleteMedia,
                 media_mode: cleanupMediaMode,
@@ -660,6 +670,7 @@ export default function Settings() {
                     omnibus_options: omnibusOptions,
                     newsletter_options: newsletterOptions,
                     wishlist_options: wishlistOptions,
+                    remizasklep_options: remizasklepOptions,
                     cleanup_options: cleanupOptions,
                     settings: { shopware: swConfig, woocommerce, wordpress: wpConfig },
                 }),
@@ -943,6 +954,12 @@ export default function Settings() {
                         )}
                         <span className={wishlistEnabled ? '' : 'text-gray-500'}>Customer Wishlists (Optional)</span>
                     </div>
+                    {blockPurchaseEnabled && (
+                        <div className="flex items-center gap-2 p-2 rounded bg-green-50">
+                            <Check className="h-4 w-4 text-green-600" />
+                            <span>Remiza block-purchase on closeout</span>
+                        </div>
+                    )}
                 </div>
                 <p className="mt-3 text-xs text-gray-500">
                     All entities are migrated automatically. Optional features can be enabled in the sections below.
@@ -1837,6 +1854,48 @@ export default function Settings() {
                         <p className="mt-2 text-xs text-blue-600">
                             File will be written to <code>storage/app/migrations/&lt;id&gt;/wishlists.csv</code>.
                         </p>
+                    </div>
+                )}
+            </div>
+
+            {/* Remiza-specific custom logic. Collapsed by default; the toggles
+                inside stamp meta keys the RemizaSklep companion plugin reads. */}
+            <div className={sectionClass}>
+                <button
+                    type="button"
+                    onClick={() => setRemizaCustomOpen(!remizaCustomOpen)}
+                    className="flex items-center justify-between w-full text-left"
+                >
+                    <span className="text-lg font-medium text-gray-900">
+                        Remiza-specific (RemizaSklep plugin)
+                    </span>
+                    {remizaCustomOpen
+                        ? <ChevronUp className="h-5 w-5 text-gray-400" />
+                        : <ChevronDown className="h-5 w-5 text-gray-400" />}
+                </button>
+                {remizaCustomOpen && (
+                    <div className="mt-4 space-y-3">
+                        <label className="flex items-start gap-2 cursor-pointer">
+                            <input
+                                type="checkbox"
+                                checked={blockPurchaseEnabled}
+                                onChange={(e) => setBlockPurchaseEnabled(e.target.checked)}
+                                className="mt-1 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            />
+                            <span className="text-sm text-gray-700">
+                                <span className="font-medium block">
+                                    Block purchase when stock = 0 and &quot;Sprzedaż po zaniżonej cenie&quot; is on
+                                </span>
+                                <span className="block text-gray-500 mt-1">
+                                    Stamps <code>_remizasklep_block_purchase = yes</code> on products and
+                                    variations matching <code>stock ≤ 0</code> AND <code>is_closeout = 1</code>.
+                                    Products stay visible on the storefront but the add-to-cart button is
+                                    suppressed by the RemizaSklep companion plugin&apos;s filter. Parent
+                                    value &quot;yes&quot; overrides all variants regardless of their own
+                                    setting. ~467 products in the current dump match this rule.
+                                </span>
+                            </span>
+                        </label>
                     </div>
                 )}
             </div>
