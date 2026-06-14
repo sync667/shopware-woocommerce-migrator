@@ -168,7 +168,7 @@ class MigrateProductBatchJob implements ShouldQueue
                 $omnibusLowestPrice = $reader->fetchOmnibusLowestPrice($product->id);
             }
 
-            $blockPurchaseRule = (bool) ($migration->settings['remizasklep_options']['block_purchase_on_closeout'] ?? false);
+            $blockPurchaseRule = (bool) ($migration->settings['companion_options']['block_purchase_on_closeout'] ?? false);
 
             $data = $transformer->transform(
                 $product,
@@ -346,18 +346,10 @@ class MigrateProductBatchJob implements ShouldQueue
         ]);
     }
 
-    /**
-     * Stamp _remizasklep_delivery_tiers postmeta on the just-created WC product
-     * when (a) the operator opted in, (b) WC DB credentials are configured, and
-     * (c) the source product carries a non-empty `remiza_shipping_tiers` array.
-     *
-     * Validation failures bubble out as warnings logged against the product, so
-     * a single malformed tier doesn't kill the whole batch — but per the plugin
-     * contract we never silently drop a row, we always log it.
-     */
+    /** Forwards per-product delivery tiers to the configured companion meta key. */
     protected function maybeWriteDeliveryTiers(MigrationRun $migration, object $product, int $wooProductId): void
     {
-        if (empty($migration->settings['remizasklep_options']['delivery_tiers_enabled'] ?? false)) {
+        if (empty($migration->settings['companion_options']['delivery_tiers_enabled'] ?? false)) {
             return;
         }
 
@@ -386,7 +378,8 @@ class MigrateProductBatchJob implements ShouldQueue
 
         try {
             $json = json_encode($tiers, JSON_UNESCAPED_UNICODE);
-            $db->replacePostMeta('_remizasklep_delivery_tiers', [$wooProductId => $json]);
+            $metaKey = (string) config('migration.companion.meta.delivery_tiers');
+            $db->replacePostMeta($metaKey, [$wooProductId => $json]);
             $this->log('info', 'Stamped '.count($tiers).' delivery tier(s).', $product->id);
         } catch (\Throwable $e) {
             $this->log('warning', "Delivery-tier write failed: {$e->getMessage()}", $product->id);

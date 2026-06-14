@@ -384,10 +384,10 @@ class WooCommerceDBIntegrationTest extends TestCase
     {
         $json = '[{"from":1,"to":5,"cost":100},{"from":6,"to":null,"cost":300}]';
 
-        $written = $this->db()->replacePostMeta('_remizasklep_delivery_tiers', [99 => $json]);
+        $written = $this->db()->replacePostMeta('_companion_delivery_tiers_test', [99 => $json]);
 
         $this->assertSame(1, $written);
-        $row = self::$pdo->query("SELECT meta_value FROM wp_postmeta WHERE post_id = 99 AND meta_key = '_remizasklep_delivery_tiers'")->fetch(\PDO::FETCH_OBJ);
+        $row = self::$pdo->query("SELECT meta_value FROM wp_postmeta WHERE post_id = 99 AND meta_key = '_companion_delivery_tiers_test'")->fetch(\PDO::FETCH_OBJ);
         $this->assertSame($json, $row->meta_value);
     }
 
@@ -398,31 +398,31 @@ class WooCommerceDBIntegrationTest extends TestCase
         // second row and the WP API's get_post_meta($id, $key, true) would still
         // return the FIRST (stale) value. Verify both pre-existing rows are
         // removed and a single new row remains.
-        self::$pdo->exec("INSERT INTO wp_postmeta (post_id, meta_key, meta_value) VALUES (200, '_remizasklep_delivery_tiers', '[OLD-1]')");
-        self::$pdo->exec("INSERT INTO wp_postmeta (post_id, meta_key, meta_value) VALUES (200, '_remizasklep_delivery_tiers', '[OLD-2]')");
-        $this->assertSame(2, $this->countRows('wp_postmeta', 'post_id = ? AND meta_key = ?', [200, '_remizasklep_delivery_tiers']));
+        self::$pdo->exec("INSERT INTO wp_postmeta (post_id, meta_key, meta_value) VALUES (200, '_companion_delivery_tiers_test', '[OLD-1]')");
+        self::$pdo->exec("INSERT INTO wp_postmeta (post_id, meta_key, meta_value) VALUES (200, '_companion_delivery_tiers_test', '[OLD-2]')");
+        $this->assertSame(2, $this->countRows('wp_postmeta', 'post_id = ? AND meta_key = ?', [200, '_companion_delivery_tiers_test']));
 
-        $written = $this->db()->replacePostMeta('_remizasklep_delivery_tiers', [200 => '[NEW]']);
+        $written = $this->db()->replacePostMeta('_companion_delivery_tiers_test', [200 => '[NEW]']);
 
         $this->assertSame(1, $written);
-        $this->assertSame(1, $this->countRows('wp_postmeta', 'post_id = ? AND meta_key = ?', [200, '_remizasklep_delivery_tiers']));
-        $row = self::$pdo->query("SELECT meta_value FROM wp_postmeta WHERE post_id = 200 AND meta_key = '_remizasklep_delivery_tiers'")->fetch(\PDO::FETCH_OBJ);
+        $this->assertSame(1, $this->countRows('wp_postmeta', 'post_id = ? AND meta_key = ?', [200, '_companion_delivery_tiers_test']));
+        $row = self::$pdo->query("SELECT meta_value FROM wp_postmeta WHERE post_id = 200 AND meta_key = '_companion_delivery_tiers_test'")->fetch(\PDO::FETCH_OBJ);
         $this->assertSame('[NEW]', $row->meta_value);
     }
 
     public function test_replace_post_meta_leaves_other_post_ids_untouched(): void
     {
-        self::$pdo->exec("INSERT INTO wp_postmeta (post_id, meta_key, meta_value) VALUES (300, '_remizasklep_delivery_tiers', 'untouched')");
+        self::$pdo->exec("INSERT INTO wp_postmeta (post_id, meta_key, meta_value) VALUES (300, '_companion_delivery_tiers_test', 'untouched')");
 
-        $this->db()->replacePostMeta('_remizasklep_delivery_tiers', [301 => '[NEW]']);
+        $this->db()->replacePostMeta('_companion_delivery_tiers_test', [301 => '[NEW]']);
 
-        $row = self::$pdo->query("SELECT meta_value FROM wp_postmeta WHERE post_id = 300 AND meta_key = '_remizasklep_delivery_tiers'")->fetch(\PDO::FETCH_OBJ);
+        $row = self::$pdo->query("SELECT meta_value FROM wp_postmeta WHERE post_id = 300 AND meta_key = '_companion_delivery_tiers_test'")->fetch(\PDO::FETCH_OBJ);
         $this->assertSame('untouched', $row->meta_value);
     }
 
     public function test_replace_post_meta_short_circuits_on_empty_input(): void
     {
-        $this->assertSame(0, $this->db()->replacePostMeta('_remizasklep_delivery_tiers', []));
+        $this->assertSame(0, $this->db()->replacePostMeta('_companion_delivery_tiers_test', []));
     }
 
     private function countRows(string $table, string $where, array $params): int

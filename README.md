@@ -20,6 +20,7 @@ A Laravel 12 web application with an Inertia.js + React dashboard that migrates 
 - **Omnibus pricing (Polish DSP):** reads `crehler_omnibus_prices` and writes `_omnibus_lowest_price` meta for the WooCommerce PL Omnibus plugin
 - **Newsletter export:** writes `storage/app/migrations/{id}/newsletter_recipients.csv` for MailPoet/Mailchimp/Klaviyo import
 - **Wishlist export:** flat CSV (one row per customer × product) for YITH or TI WooCommerce Wishlist
+- **Companion plugin integration:** forwards Shopware-side product data into postmeta keys a site-specific WP/WC plugin reads. Meta-key names and the source custom-field name are env-configurable so site-specific naming stays out of the public repo. See [Companion plugin extension](#companion-plugin-extension) below.
 
 **Safety**
 - **Cross-run media reuse:** the image migrator tracks every Shopware-media-id → WP-attachment-id mapping in `MigrationEntity`. Subsequent runs reuse existing attachments instead of re-uploading.
@@ -33,6 +34,49 @@ A Laravel 12 web application with an Inertia.js + React dashboard that migrates 
 - **Password migration:** Shopware bcrypt hash preserved as `_shopware_password_hash` user meta + legacy SW5 hash + encoder preserved separately; customers get a forced reset on first login
 - **SSH tunnel:** connect to Shopware MySQL via a jump host (password or key)
 - **SQL dump upload:** import directly from a `.sql` / `.sql.gz` dump instead of connecting to Shopware live
+
+## Companion plugin extension
+
+Some shops run a custom WP/WC plugin that reads its own postmeta keys to drive
+storefront behavior — e.g. a "block add-to-cart on closeout stock-out" rule,
+per-product delivery-tier pricing, or membership-aware pricing. The migrator
+exposes a small set of opt-in hooks that forward Shopware-side data into the
+postmeta keys your plugin reads. **No companion plugin is required to use the
+migrator** — leave the section disabled and nothing changes.
+
+The integration has three pieces:
+
+1. **Settings.jsx → Companion plugin integration disclosure** (collapsed by
+   default). Two checkboxes:
+   - **Block purchase on closeout stock-out** — stamps
+     `COMPANION_META_BLOCK_PURCHASE = "yes"` on products and variations matching
+     `stock ≤ 0 AND is_closeout = 1`. Parent value overrides variants.
+   - **Migrate per-product delivery tiers** — reads the
+     `COMPANION_SHOPWARE_TIER_FIELD` custom field on each Shopware product,
+     validates each `{quantityFrom, quantityTo, grossPrice}` row, and writes
+     the result as JSON into the `COMPANION_META_DELIVERY_TIERS` postmeta key.
+     Uses DELETE-then-INSERT so re-runs are idempotent. Requires Direct MySQL
+     access.
+
+2. **Email aliasing.** When a Shopware shop has duplicate emails (e.g. shared
+   family/business accounts) the migrator can't create both as WC users —
+   WC enforces email uniqueness. The migrator suffixes collisions with
+   `+sw_<8hex>@domain` so all customers land in WC. The original email is
+   stamped on `COMPANION_META_EMAIL_ORIGINAL` and `COMPANION_META_EMAIL_ALIASED
+   = "yes"` so the plugin (or an operator query) can recover the original.
+
+3. **Configuration via env.** Every key is env-overridable so site-specific
+   naming stays out of the public repo:
+
+   ```env
+   COMPANION_SHOPWARE_TIER_FIELD=shipping_tiers
+   COMPANION_META_BLOCK_PURCHASE=_custom_block_purchase
+   COMPANION_META_DELIVERY_TIERS=_custom_delivery_tiers
+   COMPANION_META_EMAIL_ORIGINAL=_custom_email_original
+   COMPANION_META_EMAIL_ALIASED=_custom_email_aliased
+   ```
+
+   Defaults are generic (`_custom_*`); override per your plugin's contract.
 
 ## Tech Stack
 

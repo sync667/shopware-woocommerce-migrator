@@ -7,21 +7,11 @@ use InvalidArgumentException;
 class DeliveryTierTransformer
 {
     /**
-     * Extract and validate the RemizaSklep delivery-tier list out of a Shopware
-     * product's custom_fields JSON.
+     * Extract per-product delivery tiers from a Shopware product's custom_fields JSON.
      *
-     * Source shape (Shopware admin "Progi wysyłki" custom field):
-     *   "remiza_shipping_tiers": [
-     *     {"quantityFrom": 1, "quantityTo": 1,    "grossPrice": 120},
-     *     {"quantityFrom": 2, "quantityTo": null, "grossPrice": 240}
-     *   ]
-     *
-     * Target shape (RemizaSklep plugin contract):
-     *   [{from: int, to: int|null, cost: float}]
-     *
-     * Returns null when no tier override is set on the product. Throws on any
-     * row that violates the plugin's read-time validation rules — per the spec
-     * the migrator must "fail loud instead" of silently dropping bad rows.
+     * Source field name is configurable via COMPANION_SHOPWARE_TIER_FIELD; rows
+     * are {quantityFrom, quantityTo, grossPrice}. Returns null when no tiers are
+     * present. Throws on any invalid row so bad data is never silently dropped.
      *
      * @return array<int, array{from: int, to: ?int, cost: float}>|null
      */
@@ -37,7 +27,8 @@ class DeliveryTierTransformer
             return null;
         }
 
-        $rows = $payload['remiza_shipping_tiers'] ?? null;
+        $field = (string) config('migration.companion.shopware_tier_field');
+        $rows = $payload[$field] ?? null;
         if (! is_array($rows) || $rows === []) {
             return null;
         }

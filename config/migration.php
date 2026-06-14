@@ -47,4 +47,29 @@ return [
 
     'primary_sales_channel' => env('MIGRATION_PRIMARY_SALES_CHANNEL'),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Companion plugin integration
+    |--------------------------------------------------------------------------
+    |
+    | Optional extension point for forwarding Shopware-side product data into
+    | postmeta keys that a custom WP/WC companion plugin reads. Every key here
+    | is env-overridable so site-specific naming stays out of the public repo.
+    |
+    | shopware_tier_field  source custom field on product_translation.custom_fields
+    |                      whose value is JSON [{quantityFrom, quantityTo, grossPrice}]
+    | meta.*               WC postmeta keys the companion plugin reads
+    |
+    */
+
+    'companion' => [
+        'shopware_tier_field' => env('COMPANION_SHOPWARE_TIER_FIELD', 'shipping_tiers'),
+        'meta' => [
+            'block_purchase' => env('COMPANION_META_BLOCK_PURCHASE', '_custom_block_purchase'),
+            'delivery_tiers' => env('COMPANION_META_DELIVERY_TIERS', '_custom_delivery_tiers'),
+            'email_original' => env('COMPANION_META_EMAIL_ORIGINAL', '_custom_email_original'),
+            'email_aliased' => env('COMPANION_META_EMAIL_ALIASED', '_custom_email_aliased'),
+        ],
+    ],
+
 ];

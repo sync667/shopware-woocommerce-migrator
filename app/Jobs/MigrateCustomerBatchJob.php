@@ -147,8 +147,8 @@ class MigrateCustomerBatchJob implements ShouldQueue
 
         $alias = self::aliasEmail($email, (string) ($customer->id ?? ''));
         $data['email'] = $alias;
-        $data['meta_data'][] = ['key' => '_remizasklep_email_original', 'value' => $email];
-        $data['meta_data'][] = ['key' => '_remizasklep_email_aliased', 'value' => 'yes'];
+        $data['meta_data'][] = ['key' => (string) config('migration.companion.meta.email_original'), 'value' => $email];
+        $data['meta_data'][] = ['key' => (string) config('migration.companion.meta.email_aliased'), 'value' => 'yes'];
 
         $result = $woo->createOrFind('customers', $data, 'email', $alias);
 

@@ -18,10 +18,40 @@ class CategorySeoTextResolver
     {
         $fromCustomField = $this->resolveFromCustomField($category);
         if ($fromCustomField !== '') {
-            return $fromCustomField;
+            return $this->renderPlaceholders($fromCustomField, $category);
         }
 
-        return $this->resolveFromCmsPage($category);
+        return $this->renderPlaceholders($this->resolveFromCmsPage($category), $category);
+    }
+
+    /**
+     * Render Shopware Twig placeholders ({{ category.X }} and
+     * {{ category.translated.X }}) against the category context. Unknown
+     * tokens are stripped rather than passed through so raw Twig never
+     * leaks into the migrated WC term description.
+     */
+    protected function renderPlaceholders(string $source, object $category): string
+    {
+        if ($source === '' || ! str_contains($source, '{{')) {
+            return $source;
+        }
+
+        $values = [
+            'name' => (string) ($category->name ?? ''),
+            'metatitle' => (string) ($category->meta_title ?? ''),
+            'metadescription' => (string) ($category->meta_description ?? ''),
+            'keywords' => (string) ($category->keywords ?? ''),
+        ];
+
+        return (string) preg_replace_callback(
+            '/\{\{\s*category(?:\.translated)?\.([A-Za-z_]+)\s*\}\}/u',
+            static function (array $m) use ($values): string {
+                $key = strtolower($m[1]);
+
+                return $values[$key] ?? '';
+            },
+            $source
+        );
     }
 
     protected function resolveFromCustomField(object $category): string

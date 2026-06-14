@@ -3,7 +3,7 @@
 namespace Tests\Unit\Transformers;
 
 use App\Shopware\Transformers\ProductTransformer;
-use PHPUnit\Framework\TestCase;
+use Tests\TestCase;
 
 class ProductTransformerTest extends TestCase
 {
@@ -12,6 +12,7 @@ class ProductTransformerTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        config(['migration.companion.meta.block_purchase' => '_companion_test_block_purchase']);
         $this->transformer = new ProductTransformer;
     }
 
@@ -247,7 +248,7 @@ class ProductTransformerTest extends TestCase
     public function test_variant_emits_menu_order_from_display_order(): void
     {
         $variant = (object) [
-            'sku' => 'Remiza10896.2',
+            'sku' => 'SAMPLE-10896.2',
             'stock' => 5,
             'manage_stock' => true,
             'weight' => 0,
@@ -296,7 +297,7 @@ class ProductTransformerTest extends TestCase
     public function test_block_purchase_meta_emitted_on_parent_when_rule_matches(): void
     {
         $product = (object) [
-            'name' => 'Czapka PSP', 'sku' => 'SKU-Czapka', 'active' => true,
+            'name' => 'Sample Product', 'sku' => 'SKU-CO', 'active' => true,
             'description' => '', 'stock' => 0, 'manage_stock' => true,
             'weight' => 0, 'width' => 0, 'height' => 0, 'depth' => 0,
             'price' => '[]', 'type' => 'product', 'meta_title' => '', 'meta_description' => '',
@@ -308,7 +309,7 @@ class ProductTransformerTest extends TestCase
 
         $hits = array_values(array_filter(
             $result['meta_data'],
-            fn ($m) => $m['key'] === '_remizasklep_block_purchase'
+            fn ($m) => $m['key'] === '_companion_test_block_purchase'
         ));
         $this->assertCount(1, $hits);
         $this->assertSame('yes', $hits[0]['value']);
@@ -327,7 +328,7 @@ class ProductTransformerTest extends TestCase
             $product, [], null, '', [], [], null, null, blockPurchaseRule: true
         );
 
-        $hits = array_filter($result['meta_data'], fn ($m) => $m['key'] === '_remizasklep_block_purchase');
+        $hits = array_filter($result['meta_data'], fn ($m) => $m['key'] === '_companion_test_block_purchase');
         $this->assertSame([], array_values($hits));
     }
 
@@ -342,7 +343,7 @@ class ProductTransformerTest extends TestCase
 
         $hits = array_values(array_filter(
             $result['meta_data'] ?? [],
-            fn ($m) => $m['key'] === '_remizasklep_block_purchase'
+            fn ($m) => $m['key'] === '_companion_test_block_purchase'
         ));
         $this->assertCount(1, $hits);
         $this->assertSame('yes', $hits[0]['value']);

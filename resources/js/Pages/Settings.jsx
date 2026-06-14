@@ -90,12 +90,9 @@ export default function Settings() {
     const [omnibusEnabled, setOmnibusEnabled] = useState(false);
     const [newsletterEnabled, setNewsletterEnabled] = useState(false);
     const [wishlistEnabled, setWishlistEnabled] = useState(false);
-    // Hidden by default. Surfaces only when the operator opens the "Remiza-specific"
-    // disclosure under Migration Options. Stamps _remizasklep_block_purchase meta
-    // on products meeting stock=0 AND is_closeout=1.
     const [blockPurchaseEnabled, setBlockPurchaseEnabled] = useState(false);
     const [deliveryTiersEnabled, setDeliveryTiersEnabled] = useState(false);
-    const [remizaCustomOpen, setRemizaCustomOpen] = useState(false);
+    const [companionDisclosureOpen, setCompanionDisclosureOpen] = useState(false);
 
     const [cleanupDeleteMedia, setCleanupDeleteMedia] = useState(false);
     const [cleanupMediaMode, setCleanupMediaMode] = useState('migrated_only');
@@ -401,13 +398,13 @@ export default function Settings() {
                         if (settings.wishlist_options?.enabled) {
                             setWishlistEnabled(true);
                         }
-                        if (settings.remizasklep_options?.block_purchase_on_closeout) {
+                        if (settings.companion_options?.block_purchase_on_closeout) {
                             setBlockPurchaseEnabled(true);
-                            setRemizaCustomOpen(true);
+                            setCompanionDisclosureOpen(true);
                         }
-                        if (settings.remizasklep_options?.delivery_tiers_enabled) {
+                        if (settings.companion_options?.delivery_tiers_enabled) {
                             setDeliveryTiersEnabled(true);
-                            setRemizaCustomOpen(true);
+                            setCompanionDisclosureOpen(true);
                         }
                         const cleanupOpts = settings.cleanup_options || {};
                         if (typeof cleanupOpts.delete_media === 'boolean') {
@@ -640,7 +637,7 @@ export default function Settings() {
             const omnibusOptions = omnibusEnabled ? { enabled: true } : null;
             const newsletterOptions = newsletterEnabled ? { enabled: true } : null;
             const wishlistOptions = wishlistEnabled ? { enabled: true } : null;
-            const remizasklepOptions = (blockPurchaseEnabled || deliveryTiersEnabled) ? {
+            const companionOptions = (blockPurchaseEnabled || deliveryTiersEnabled) ? {
                 ...(blockPurchaseEnabled ? { block_purchase_on_closeout: true } : {}),
                 ...(deliveryTiersEnabled ? { delivery_tiers_enabled: true } : {}),
             } : null;
@@ -678,7 +675,7 @@ export default function Settings() {
                     omnibus_options: omnibusOptions,
                     newsletter_options: newsletterOptions,
                     wishlist_options: wishlistOptions,
-                    remizasklep_options: remizasklepOptions,
+                    companion_options: companionOptions,
                     cleanup_options: cleanupOptions,
                     settings: { shopware: swConfig, woocommerce, wordpress: wpConfig },
                 }),
@@ -965,13 +962,13 @@ export default function Settings() {
                     {blockPurchaseEnabled && (
                         <div className="flex items-center gap-2 p-2 rounded bg-green-50">
                             <Check className="h-4 w-4 text-green-600" />
-                            <span>Remiza block-purchase on closeout</span>
+                            <span>Companion: block-purchase on closeout</span>
                         </div>
                     )}
                     {deliveryTiersEnabled && (
                         <div className="flex items-center gap-2 p-2 rounded bg-green-50">
                             <Check className="h-4 w-4 text-green-600" />
-                            <span>Remiza delivery tiers</span>
+                            <span>Companion: delivery tiers</span>
                         </div>
                     )}
                 </div>
@@ -1872,23 +1869,27 @@ export default function Settings() {
                 )}
             </div>
 
-            {/* Remiza-specific custom logic. Collapsed by default; the toggles
-                inside stamp meta keys the RemizaSklep companion plugin reads. */}
             <div className={sectionClass}>
                 <button
                     type="button"
-                    onClick={() => setRemizaCustomOpen(!remizaCustomOpen)}
+                    onClick={() => setCompanionDisclosureOpen(!companionDisclosureOpen)}
                     className="flex items-center justify-between w-full text-left"
                 >
                     <span className="text-lg font-medium text-gray-900">
-                        Remiza-specific (RemizaSklep plugin)
+                        Companion plugin integration
                     </span>
-                    {remizaCustomOpen
+                    {companionDisclosureOpen
                         ? <ChevronUp className="h-5 w-5 text-gray-400" />
                         : <ChevronDown className="h-5 w-5 text-gray-400" />}
                 </button>
-                {remizaCustomOpen && (
+                {companionDisclosureOpen && (
                     <div className="mt-4 space-y-3">
+                        <p className="text-xs text-gray-500">
+                            Meta-key names + source custom-field name are configured via the
+                            <code> COMPANION_* </code> env vars. Operators wire these to whatever
+                            companion plugin handles the read on the WP/WC side.
+                        </p>
+
                         <label className="flex items-start gap-2 cursor-pointer">
                             <input
                                 type="checkbox"
@@ -1898,15 +1899,13 @@ export default function Settings() {
                             />
                             <span className="text-sm text-gray-700">
                                 <span className="font-medium block">
-                                    Block purchase when stock = 0 and &quot;Sprzedaż po zaniżonej cenie&quot; is on
+                                    Block purchase on closeout stock-out
                                 </span>
                                 <span className="block text-gray-500 mt-1">
-                                    Stamps <code>_remizasklep_block_purchase = yes</code> on products and
-                                    variations matching <code>stock ≤ 0</code> AND <code>is_closeout = 1</code>.
-                                    Products stay visible on the storefront but the add-to-cart button is
-                                    suppressed by the RemizaSklep companion plugin&apos;s filter. Parent
-                                    value &quot;yes&quot; overrides all variants regardless of their own
-                                    setting. ~467 products in the current dump match this rule.
+                                    Stamps the <code>COMPANION_META_BLOCK_PURCHASE</code> meta = <code>yes</code> on
+                                    products and variations where <code>stock ≤ 0</code> AND <code>is_closeout = 1</code>.
+                                    The product stays visible on the storefront; the companion plugin
+                                    suppresses add-to-cart. Parent value overrides variants.
                                 </span>
                             </span>
                         </label>
@@ -1920,18 +1919,15 @@ export default function Settings() {
                             />
                             <span className="text-sm text-gray-700">
                                 <span className="font-medium block">
-                                    Migrate per-product delivery tiers (Progi wysyłki)
+                                    Migrate per-product delivery tiers
                                 </span>
                                 <span className="block text-gray-500 mt-1">
-                                    Reads the <code>remiza_shipping_tiers</code> custom field on each
+                                    Reads the <code>COMPANION_SHOPWARE_TIER_FIELD</code> custom field on each
                                     Shopware product, validates each <code>{`{quantityFrom, quantityTo, grossPrice}`}</code>
                                     row, and writes the result as JSON into the
-                                    <code> _remizasklep_delivery_tiers </code> WC postmeta key. Uses
-                                    DELETE-then-INSERT per the plugin contract (postmeta has no UNIQUE on
-                                    <code> post_id + meta_key</code>). Requires Direct MySQL access to be
-                                    configured on the WooCommerce block. Invalid rows are NOT silently
-                                    dropped — they&apos;re logged as warnings against the product and the
-                                    rest of the migration continues.
+                                    <code> COMPANION_META_DELIVERY_TIERS </code> WC postmeta key. Uses
+                                    DELETE-then-INSERT so re-runs are idempotent. Requires Direct MySQL
+                                    access. Invalid rows are logged and skipped.
                                 </span>
                             </span>
                         </label>

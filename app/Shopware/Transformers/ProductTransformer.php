@@ -11,17 +11,9 @@ class ProductTransformer
     ) {}
 
     /**
-     * Evaluate RemizaSklep's "block purchase on closeout stock-out" rule.
-     *
-     * Shopware admin pairs `Dostępność na magazynie` (stock) with the toggle
-     * `Sprzedaż po zaniżonej cenie` — which is the Polish localization of the
-     * standard `is_closeout` field. When closeout is on AND stock has hit zero
-     * the product should remain visible on the storefront but reject add-to-cart
-     * (the RemizaSklep companion plugin reads the meta and filters the button).
-     *
-     * Variants inherit the parent's `is_closeout` when their own column is NULL —
-     * the reader already COALESCEs that, so this helper works identically for
-     * parent and variant input objects.
+     * Rule: closeout (is_closeout) AND stock <= 0 → the companion plugin
+     * suppresses add-to-cart while keeping the product visible.
+     * Variants inherit parent is_closeout when their own column is NULL.
      */
     public static function shouldBlockPurchase(object $product, bool $ruleEnabled): bool
     {
@@ -249,7 +241,7 @@ class ProductTransformer
         }
 
         if (self::shouldBlockPurchase($product, $blockPurchaseRule)) {
-            $data['meta_data'][] = ['key' => '_remizasklep_block_purchase', 'value' => 'yes'];
+            $data['meta_data'][] = ['key' => (string) config('migration.companion.meta.block_purchase'), 'value' => 'yes'];
         }
 
         return $data;
@@ -318,7 +310,7 @@ class ProductTransformer
         }
 
         if (self::shouldBlockPurchase($variant, $blockPurchaseRule)) {
-            $data['meta_data'][] = ['key' => '_remizasklep_block_purchase', 'value' => 'yes'];
+            $data['meta_data'][] = ['key' => (string) config('migration.companion.meta.block_purchase'), 'value' => 'yes'];
         }
 
         if (empty($data['meta_data'])) {

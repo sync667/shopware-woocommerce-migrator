@@ -4,10 +4,16 @@ namespace Tests\Unit\Transformers;
 
 use App\Shopware\Transformers\DeliveryTierTransformer;
 use InvalidArgumentException;
-use PHPUnit\Framework\TestCase;
+use Tests\TestCase;
 
 class DeliveryTierTransformerTest extends TestCase
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+        config(['migration.companion.shopware_tier_field' => 'shipping_tiers']);
+    }
+
     public function test_returns_null_when_custom_fields_absent(): void
     {
         $this->assertNull(DeliveryTierTransformer::extract((object) []));
@@ -23,11 +29,10 @@ class DeliveryTierTransformerTest extends TestCase
         $this->assertNull(DeliveryTierTransformer::extract($product));
     }
 
-    public function test_decodes_real_world_payload_from_mig57_dump(): void
+    public function test_decodes_two_tier_payload(): void
     {
-        // Verbatim from grep of the production dump.
         $product = (object) [
-            'custom_fields' => '{"remiza_shipping_tiers":[{"quantityFrom":1,"quantityTo":1,"grossPrice":200},{"quantityFrom":2,"quantityTo":2,"grossPrice":300}],"remiza_shipping_rule_ids":["5895de109a154df8ba79309fcddf1953"]}',
+            'custom_fields' => '{"shipping_tiers":[{"quantityFrom":1,"quantityTo":1,"grossPrice":200},{"quantityFrom":2,"quantityTo":2,"grossPrice":300}]}',
         ];
 
         $tiers = DeliveryTierTransformer::extract($product);
@@ -41,7 +46,7 @@ class DeliveryTierTransformerTest extends TestCase
     public function test_open_ended_top_tier_keeps_null_to(): void
     {
         $product = (object) [
-            'custom_fields' => '{"remiza_shipping_tiers":[{"quantityFrom":1,"quantityTo":5,"grossPrice":100},{"quantityFrom":6,"quantityTo":null,"grossPrice":500}]}',
+            'custom_fields' => '{"shipping_tiers":[{"quantityFrom":1,"quantityTo":5,"grossPrice":100},{"quantityFrom":6,"quantityTo":null,"grossPrice":500}]}',
         ];
 
         $tiers = DeliveryTierTransformer::extract($product);
@@ -54,10 +59,8 @@ class DeliveryTierTransformerTest extends TestCase
 
     public function test_tiers_are_sorted_by_from_ascending(): void
     {
-        // Plugin handles sort/overlap at read time but the contract asks us to
-        // write sorted for cleanliness.
         $product = (object) [
-            'custom_fields' => '{"remiza_shipping_tiers":[{"quantityFrom":21,"quantityTo":null,"grossPrice":500},{"quantityFrom":1,"quantityTo":5,"grossPrice":100},{"quantityFrom":6,"quantityTo":20,"grossPrice":300}]}',
+            'custom_fields' => '{"shipping_tiers":[{"quantityFrom":21,"quantityTo":null,"grossPrice":500},{"quantityFrom":1,"quantityTo":5,"grossPrice":100},{"quantityFrom":6,"quantityTo":20,"grossPrice":300}]}',
         ];
 
         $tiers = DeliveryTierTransformer::extract($product);
@@ -68,7 +71,7 @@ class DeliveryTierTransformerTest extends TestCase
     public function test_throws_when_from_is_below_one(): void
     {
         $product = (object) [
-            'custom_fields' => '{"remiza_shipping_tiers":[{"quantityFrom":0,"quantityTo":5,"grossPrice":100}]}',
+            'custom_fields' => '{"shipping_tiers":[{"quantityFrom":0,"quantityTo":5,"grossPrice":100}]}',
         ];
 
         $this->expectException(InvalidArgumentException::class);
@@ -80,7 +83,7 @@ class DeliveryTierTransformerTest extends TestCase
     public function test_throws_when_to_less_than_from(): void
     {
         $product = (object) [
-            'custom_fields' => '{"remiza_shipping_tiers":[{"quantityFrom":5,"quantityTo":2,"grossPrice":100}]}',
+            'custom_fields' => '{"shipping_tiers":[{"quantityFrom":5,"quantityTo":2,"grossPrice":100}]}',
         ];
 
         $this->expectException(InvalidArgumentException::class);
@@ -92,7 +95,7 @@ class DeliveryTierTransformerTest extends TestCase
     public function test_throws_when_cost_is_negative(): void
     {
         $product = (object) [
-            'custom_fields' => '{"remiza_shipping_tiers":[{"quantityFrom":1,"quantityTo":null,"grossPrice":-10}]}',
+            'custom_fields' => '{"shipping_tiers":[{"quantityFrom":1,"quantityTo":null,"grossPrice":-10}]}',
         ];
 
         $this->expectException(InvalidArgumentException::class);
@@ -104,7 +107,7 @@ class DeliveryTierTransformerTest extends TestCase
     public function test_throws_when_required_keys_missing(): void
     {
         $product = (object) [
-            'custom_fields' => '{"remiza_shipping_tiers":[{"quantityTo":5,"grossPrice":100}]}',
+            'custom_fields' => '{"shipping_tiers":[{"quantityTo":5,"grossPrice":100}]}',
         ];
 
         $this->expectException(InvalidArgumentException::class);
@@ -116,7 +119,7 @@ class DeliveryTierTransformerTest extends TestCase
     public function test_cost_is_rounded_to_two_decimals(): void
     {
         $product = (object) [
-            'custom_fields' => '{"remiza_shipping_tiers":[{"quantityFrom":1,"quantityTo":null,"grossPrice":99.999}]}',
+            'custom_fields' => '{"shipping_tiers":[{"quantityFrom":1,"quantityTo":null,"grossPrice":99.999}]}',
         ];
 
         $tiers = DeliveryTierTransformer::extract($product);
@@ -126,10 +129,9 @@ class DeliveryTierTransformerTest extends TestCase
 
     public function test_accepts_object_payload_not_just_string(): void
     {
-        // ProductReader can also hand us an already-decoded array via the DB layer.
         $product = (object) [
             'custom_fields' => [
-                'remiza_shipping_tiers' => [
+                'shipping_tiers' => [
                     ['quantityFrom' => 1, 'quantityTo' => null, 'grossPrice' => 250],
                 ],
             ],
@@ -138,5 +140,18 @@ class DeliveryTierTransformerTest extends TestCase
         $tiers = DeliveryTierTransformer::extract($product);
 
         $this->assertSame([['from' => 1, 'to' => null, 'cost' => 250.00]], $tiers);
+    }
+
+    public function test_field_name_is_configurable_via_config(): void
+    {
+        config(['migration.companion.shopware_tier_field' => 'my_custom_tiers']);
+
+        $product = (object) [
+            'custom_fields' => '{"my_custom_tiers":[{"quantityFrom":1,"quantityTo":null,"grossPrice":50}]}',
+        ];
+
+        $tiers = DeliveryTierTransformer::extract($product);
+
+        $this->assertSame([['from' => 1, 'to' => null, 'cost' => 50.00]], $tiers);
     }
 }
