@@ -5,15 +5,12 @@ namespace App\Jobs;
 use App\Models\MigrationEntity;
 use App\Models\MigrationLog;
 use App\Models\MigrationRun;
-use App\Services\ShopwareDB;
-use App\Services\StateManager;
-use App\Services\WooCommerceClient;
-use App\Shopware\Readers\ProductReader;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Bus;
 
 class LinkCrossSellsJob implements ShouldQueue
 {
@@ -23,28 +20,24 @@ class LinkCrossSellsJob implements ShouldQueue
 
     public int $backoff = 5;
 
-    public int $timeout = 3600;
+    public int $timeout = 600;
+
+    public const CHUNK_SIZE = 100;
 
     public function __construct(protected int $migrationId)
     {
         $this->onQueue('migration');
     }
 
-    public function handle(StateManager $stateManager): void
+    public function handle(): void
     {
         $migration = MigrationRun::findOrFail($this->migrationId);
 
         if (app(\App\Services\CancellationService::class)->isCancelled($this->migrationId)) {
-            $this->advanceChain();
+            self::advanceChain($this->migrationId);
 
             return;
         }
-
-        $sw = $migration->shopwareSettings();
-        $upsellGroups = array_map('mb_strtolower', $sw['upsell_group_names'] ?? []);
-
-        $db = ShopwareDB::fromMigration($migration);
-        $reader = new ProductReader($db);
 
         $migratedProducts = MigrationEntity::where('migration_id', $this->migrationId)
             ->where('entity_type', 'product')
@@ -55,71 +48,46 @@ class LinkCrossSellsJob implements ShouldQueue
 
         if ($migratedProducts === []) {
             $this->log('info', 'No migrated products to link.');
-            $db->disconnect();
-            $this->advanceChain();
+            self::advanceChain($this->migrationId);
 
             return;
         }
 
-        $this->log('info', 'Linking cross-sells / upsells across '.count($migratedProducts).' product(s).');
+        $shopwareIds = array_keys($migratedProducts);
+        $chunks = array_chunk($shopwareIds, self::CHUNK_SIZE);
+        $migrationId = $this->migrationId;
 
-        $woo = $migration->is_dry_run ? null : WooCommerceClient::fromMigration($migration);
-        $linked = $skipped = $failed = 0;
-        $unresolved = 0;
+        $this->log('info', 'Linking cross-sells / upsells across '.count($shopwareIds).' product(s) in '.count($chunks).' chunk(s) of '.self::CHUNK_SIZE.'.');
 
-        foreach ($migratedProducts as $shopwareId => $wooProductId) {
-            $rows = $reader->fetchCrossSells($shopwareId);
-            if ($rows === []) {
-                continue;
-            }
+        $batchJobs = array_map(
+            fn ($chunk) => new LinkCrossSellBatchJob($migrationId, $chunk),
+            $chunks
+        );
 
-            [$upsellIds, $crossSellIds, $missed] = self::categorizeCrossSells($rows, $migratedProducts, $upsellGroups);
-            $unresolved += $missed;
-
-            if ($upsellIds === [] && $crossSellIds === []) {
-                $skipped++;
-
-                continue;
-            }
-
-            $payload = [];
-            if ($upsellIds !== []) {
-                $payload['upsell_ids'] = $upsellIds;
-            }
-            if ($crossSellIds !== []) {
-                $payload['cross_sell_ids'] = $crossSellIds;
-            }
-
-            if ($migration->is_dry_run) {
-                $linked++;
-
-                continue;
-            }
-
-            try {
-                $woo->put("products/{$wooProductId}", $payload);
-                $linked++;
-            } catch (\Throwable $e) {
-                $failed++;
-                $this->log('warning', "Cross-sell update for product {$shopwareId} (WC #{$wooProductId}) failed: {$e->getMessage()}", $shopwareId);
-            }
-        }
-
-        $db->disconnect();
-
-        $this->log('info', "Cross-sells linked: {$linked} updated, {$skipped} with no resolvable targets, {$unresolved} target refs skipped (not migrated), {$failed} failures.");
-
-        $this->advanceChain();
+        Bus::batch($batchJobs)
+            ->name("link-cross-sells-{$migrationId}")
+            ->allowFailures()
+            ->then(function () use ($migrationId) {
+                self::advanceChain($migrationId);
+            })
+            ->catch(function (\Illuminate\Bus\Batch $batch, \Throwable $e) use ($migrationId) {
+                MigrationLog::create([
+                    'migration_id' => $migrationId,
+                    'entity_type' => 'product',
+                    'level' => 'error',
+                    'message' => 'Cross-sell batch error: '.$e->getMessage(),
+                    'created_at' => now(),
+                ]);
+                self::advanceChain($migrationId);
+            })
+            ->onQueue('migration')
+            ->dispatch();
     }
 
     /**
-     * Split Shopware cross-sell rows into WC upsell/cross-sell id sets based on
-     * the operator-configured group-name list. Returns [upsellIds[], crossSellIds[], unresolved].
-     * Pure function — no DB, no HTTP — so it's covered by unit tests.
-     *
-     * @param  array<int, object>  $rows  from ProductReader::fetchCrossSells
-     * @param  array<string, int>  $migratedProducts  shopware_id => woo_id
-     * @param  array<int, string>  $upsellGroupsLower  pre-lowercased
+     * @param  array<int, object>  $rows
+     * @param  array<string, int>  $migratedProducts
+     * @param  array<int, string>  $upsellGroupsLower
      * @return array{0: int[], 1: int[], 2: int}
      */
     public static function categorizeCrossSells(array $rows, array $migratedProducts, array $upsellGroupsLower): array
@@ -146,17 +114,16 @@ class LinkCrossSellsJob implements ShouldQueue
         return [array_keys($upsell), array_keys($cross), $missed];
     }
 
-    protected function advanceChain(): void
+    public static function advanceChain(int $migrationId): void
     {
-        MigrateCustomersJob::dispatch($this->migrationId);
+        MigrateCustomersJob::dispatch($migrationId);
     }
 
-    protected function log(string $level, string $message, ?string $shopwareId = null): void
+    protected function log(string $level, string $message): void
     {
         MigrationLog::create([
             'migration_id' => $this->migrationId,
             'entity_type' => 'product',
-            'shopware_id' => $shopwareId,
             'level' => $level,
             'message' => $message,
             'created_at' => now(),

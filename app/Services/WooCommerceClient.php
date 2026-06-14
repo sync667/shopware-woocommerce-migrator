@@ -37,6 +37,7 @@ class WooCommerceClient
                 $config['consumer_secret'] ?? '',
             ],
             'headers' => $headers,
+            'connect_timeout' => 10,
             'timeout' => 30,
         ]);
     }

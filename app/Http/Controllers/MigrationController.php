@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Jobs\MigrateCategoriesJob;
 use App\Jobs\MigrateManufacturersJob;
+use App\Jobs\MigrateProductAttributesJob;
 use App\Jobs\MigrateProductsJob;
 use App\Jobs\MigrateTaxesJob;
 use App\Models\MigrationRun;
@@ -134,6 +135,7 @@ class MigrationController extends Controller
             new MigrateManufacturersJob($migration->id),
             new MigrateTaxesJob($migration->id),
             new MigrateCategoriesJob($migration->id),
+            new MigrateProductAttributesJob($migration->id),
             new MigrateProductsJob($migration->id),
         ]);
 
@@ -256,7 +258,33 @@ class MigrationController extends Controller
             ] : null,
             'recent_errors' => $recentErrors,
             'recent_warnings' => $recentWarnings,
+            'artifacts' => $this->availableArtifacts($migration),
         ]);
+    }
+
+    /** @return array<string, array{label: string, url: string, size_bytes: int}> */
+    protected function availableArtifacts(MigrationRun $migration): array
+    {
+        $files = [
+            'redirects' => ['label' => 'SEO Redirects (CSV)', 'file' => 'redirects.csv'],
+            'newsletter' => ['label' => 'Newsletter Recipients (CSV)', 'file' => 'newsletter_recipients.csv'],
+            'wishlists' => ['label' => 'Customer Wishlists (CSV)', 'file' => 'wishlists.csv'],
+        ];
+
+        $out = [];
+        foreach ($files as $key => $meta) {
+            $path = storage_path('app/migrations/'.$migration->id.'/'.$meta['file']);
+            if (! is_file($path)) {
+                continue;
+            }
+            $out[$key] = [
+                'label' => $meta['label'],
+                'url' => route('migrations.download', ['migration' => $migration->id, 'artifact' => $key]),
+                'size_bytes' => (int) filesize($path),
+            ];
+        }
+
+        return $out;
     }
 
     /**
@@ -338,6 +366,28 @@ class MigrationController extends Controller
     {
         return Inertia::render('Migration/Show', [
             'migrationId' => $migration->id,
+        ]);
+    }
+
+    public function downloadArtifact(MigrationRun $migration, string $artifact): \Symfony\Component\HttpFoundation\BinaryFileResponse|JsonResponse
+    {
+        $artifacts = [
+            'redirects' => ['file' => 'redirects.csv', 'mime' => 'text/csv'],
+            'newsletter' => ['file' => 'newsletter_recipients.csv', 'mime' => 'text/csv'],
+            'wishlists' => ['file' => 'wishlists.csv', 'mime' => 'text/csv'],
+        ];
+
+        if (! isset($artifacts[$artifact])) {
+            return response()->json(['error' => 'Unknown artifact'], 404);
+        }
+
+        $path = storage_path('app/migrations/'.$migration->id.'/'.$artifacts[$artifact]['file']);
+        if (! is_file($path)) {
+            return response()->json(['error' => 'File not generated for this migration'], 404);
+        }
+
+        return response()->download($path, "migration-{$migration->id}-{$artifacts[$artifact]['file']}", [
+            'Content-Type' => $artifacts[$artifact]['mime'],
         ]);
     }
 

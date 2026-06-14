@@ -185,6 +185,17 @@ class ContentMigratorTest extends TestCase
         $this->assertStringContainsString('style="color: red;"', $result);
     }
 
+    public function test_strips_contenteditable_false_artifacts(): void
+    {
+        $html = '<table><tbody><tr><td>Cell content<div class="sw-text-editor-table__col-selector" contenteditable="false" style="height: 832px;"></div></td></tr></tbody></table>';
+        $result = $this->contentMigrator->processHtmlContent($html);
+        $this->assertStringContainsString('Cell content', $result);
+        $this->assertStringContainsString('<td>', $result);
+        $this->assertStringNotContainsString('contenteditable', $result);
+        $this->assertStringNotContainsString('sw-text-editor-table__col-selector', $result);
+        $this->assertStringNotContainsString('height: 832px', $result);
+    }
+
     public function test_preserves_button_text_even_though_form_is_inert(): void
     {
         // Buttons in product descriptions usually carry literal copy ("Buy",

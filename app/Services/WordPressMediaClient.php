@@ -25,6 +25,7 @@ class WordPressMediaClient
                 $config['wp_username'] ?? '',
                 $config['wp_app_password'] ?? '',
             ],
+            'connect_timeout' => 10,
             'timeout' => 60,
         ];
 

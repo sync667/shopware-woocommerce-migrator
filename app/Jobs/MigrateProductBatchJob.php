@@ -51,6 +51,13 @@ class MigrateProductBatchJob implements ShouldQueue
         $reader = new ProductReader($db);
         $transformer = new ProductTransformer($contentMigrator);
 
+        $globalAttrMap = \App\Models\MigrationEntity::where('migration_id', $this->migrationId)
+            ->where('entity_type', 'product_attribute')
+            ->whereNotNull('woo_id')
+            ->pluck('woo_id', 'shopware_id')
+            ->map(fn ($v) => (int) $v)
+            ->all();
+
         try {
             foreach ($this->productIds as $productId) {
                 if (app(\App\Services\CancellationService::class)->isCancelled($this->migrationId)) {
@@ -65,7 +72,7 @@ class MigrateProductBatchJob implements ShouldQueue
 
                 try {
                     $this->migrateProduct(
-                        $productId, $migration, $db, $woo, $imageMigrator, $reader, $transformer, $stateManager
+                        $productId, $migration, $db, $woo, $imageMigrator, $reader, $transformer, $stateManager, $globalAttrMap
                     );
                 } catch (\Throwable $e) {
                     $stateManager->markFailed('product', $productId, $this->migrationId, $e->getMessage());
@@ -86,6 +93,7 @@ class MigrateProductBatchJob implements ShouldQueue
         ProductReader $reader,
         ProductTransformer $transformer,
         StateManager $stateManager,
+        array $globalAttrMap = [],
     ): void {
         $product = $reader->fetchOne($productId);
 
@@ -139,8 +147,8 @@ class MigrateProductBatchJob implements ShouldQueue
             $tags = array_map(fn ($t) => $t->name, $reader->fetchTags($product->id));
 
             $attributes = array_merge(
-                $transformer->buildAttributes($configuratorSettings, true),
-                $transformer->buildAttributes($properties, false),
+                $transformer->buildAttributes($configuratorSettings, true, $globalAttrMap),
+                $transformer->buildAttributes($properties, false, $globalAttrMap),
             );
 
             if ($manufacturerAttribute !== null) {
@@ -148,13 +156,17 @@ class MigrateProductBatchJob implements ShouldQueue
             }
 
             if (! empty($product->delivery_time_name)) {
-                $attributes[] = [
+                $attr = [
                     'name' => 'Delivery time',
                     'options' => [(string) $product->delivery_time_name],
                     'visible' => true,
                     'variation' => false,
                     'position' => count($attributes),
                 ];
+                if (! empty($globalAttrMap['__delivery_time__'])) {
+                    $attr['id'] = (int) $globalAttrMap['__delivery_time__'];
+                }
+                $attributes[] = $attr;
             }
 
             $primaryCategoryWooId = null;
@@ -169,6 +181,13 @@ class MigrateProductBatchJob implements ShouldQueue
             }
 
             $blockPurchaseRule = (bool) ($migration->settings['companion_options']['block_purchase_on_closeout'] ?? false);
+
+            if (! empty($product->cms_page_id)) {
+                $videoEmbeds = self::renderVideoSlots($reader->fetchVideoSlots($product->cms_page_id));
+                if ($videoEmbeds !== '') {
+                    $product->description = ((string) ($product->description ?? '')).$videoEmbeds;
+                }
+            }
 
             $data = $transformer->transform(
                 $product,
@@ -192,7 +211,7 @@ class MigrateProductBatchJob implements ShouldQueue
                     try {
                         $defaultOptions = $reader->fetchVariantOptions($mainVariantId);
                         if (! empty($defaultOptions)) {
-                            $data['default_attributes'] = $transformer->buildVariantOptionAttributes($defaultOptions);
+                            $data['default_attributes'] = $transformer->buildVariantOptionAttributes($defaultOptions, $globalAttrMap);
                         }
                     } catch (\Throwable $e) {
                         $this->log('warning', "Could not resolve main_variant_id options ({$mainVariantId}): {$e->getMessage()}", $product->id);
@@ -207,7 +226,7 @@ class MigrateProductBatchJob implements ShouldQueue
                 foreach ($variants as $variant) {
                     try {
                         $variantOptions = $reader->fetchVariantOptions($variant->id);
-                        $optionAttributes = $transformer->buildVariantOptionAttributes($variantOptions);
+                        $optionAttributes = $transformer->buildVariantOptionAttributes($variantOptions, $globalAttrMap);
                         $variantData = $transformer->transformVariant($variant, $optionAttributes, $blockPurchaseRule);
                         // Carry the parent shopware id so downstream consumers (SEO URL
                         // job, order line item resolver) can walk variant → parent.
@@ -264,7 +283,7 @@ class MigrateProductBatchJob implements ShouldQueue
             $this->maybeWriteDeliveryTiers($migration, $product, $wooProductId);
 
             foreach ($variants as $variant) {
-                $this->migrateVariant($variant, $wooProductId, $reader, $transformer, $woo, $imageMigrator, $stateManager, $blockPurchaseRule);
+                $this->migrateVariant($variant, $wooProductId, $reader, $transformer, $woo, $imageMigrator, $stateManager, $blockPurchaseRule, $globalAttrMap);
             }
 
             // Cross-sells are linked in a separate job (LinkCrossSellsJob) AFTER the
@@ -285,6 +304,7 @@ class MigrateProductBatchJob implements ShouldQueue
         ImageMigrator $imageMigrator,
         StateManager $stateManager,
         bool $blockPurchaseRule = false,
+        array $globalAttrMap = [],
     ): void {
         if ($stateManager->alreadyMigrated('variation', $variant->id, $this->migrationId)) {
             return;
@@ -292,7 +312,7 @@ class MigrateProductBatchJob implements ShouldQueue
 
         try {
             $variantOptions = $reader->fetchVariantOptions($variant->id);
-            $optionAttributes = $transformer->buildVariantOptionAttributes($variantOptions);
+            $optionAttributes = $transformer->buildVariantOptionAttributes($variantOptions, $globalAttrMap);
             $data = $transformer->transformVariant($variant, $optionAttributes, $blockPurchaseRule);
 
             $media = $reader->fetchMedia($variant->id);
@@ -386,6 +406,50 @@ class MigrateProductBatchJob implements ShouldQueue
         } finally {
             $db->disconnect();
         }
+    }
+
+    /** @param  array<int, object>  $slots */
+    public static function renderVideoSlots(array $slots): string
+    {
+        $out = '';
+        foreach ($slots as $slot) {
+            $config = json_decode((string) ($slot->config ?? '{}'), true);
+            if (! is_array($config)) {
+                continue;
+            }
+            $id = $config['videoID']['value'] ?? null;
+            if (! is_string($id) || $id === '') {
+                continue;
+            }
+            $id = htmlspecialchars($id, ENT_QUOTES, 'UTF-8');
+
+            if ($slot->type === 'vimeo-video') {
+                $url = "https://vimeo.com/{$id}";
+                $provider = 'vimeo';
+                $blockClass = 'wp-block-embed-vimeo';
+            } else {
+                $url = "https://www.youtube.com/watch?v={$id}";
+                $provider = 'youtube';
+                $blockClass = 'wp-block-embed-youtube';
+            }
+
+            $attrs = json_encode([
+                'url' => $url,
+                'type' => 'video',
+                'providerNameSlug' => $provider,
+                'responsive' => true,
+                'className' => 'wp-embed-aspect-16-9 wp-has-aspect-ratio',
+            ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+
+            $out .= "\n<!-- wp:embed {$attrs} -->\n"
+                ."<figure class=\"wp-block-embed is-type-video is-provider-{$provider} {$blockClass} wp-embed-aspect-16-9 wp-has-aspect-ratio\">"
+                .'<div class="wp-block-embed__wrapper">'
+                ."\n{$url}\n"
+                .'</div></figure>'
+                ."\n<!-- /wp:embed -->";
+        }
+
+        return $out;
     }
 
     protected function log(string $level, string $message, ?string $shopwareId = null, ?string $entityType = null): void

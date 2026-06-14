@@ -30,6 +30,7 @@ class ProductReader
                 LOWER(HEX(p.product_manufacturer_id)) AS manufacturer_id,
                 LOWER(HEX(p.product_media_id)) AS cover_id,
                 LOWER(HEX(p.main_variant_id)) AS main_variant_id,
+                LOWER(HEX(p.cms_page_id)) AS cms_page_id,
                 COALESCE(pt.name, '') AS name,
                 COALESCE(pt.description, '') AS description,
                 COALESCE(pt.meta_title, '') AS meta_title,
@@ -113,6 +114,7 @@ class ProductReader
                 LOWER(HEX(p.product_manufacturer_id)) AS manufacturer_id,
                 LOWER(HEX(p.product_media_id)) AS cover_id,
                 LOWER(HEX(p.main_variant_id)) AS main_variant_id,
+                LOWER(HEX(p.cms_page_id)) AS cms_page_id,
                 COALESCE(pt.name, '') AS name,
                 COALESCE(pt.description, '') AS description,
                 COALESCE(pt.meta_title, '') AS meta_title,
@@ -231,6 +233,25 @@ class ProductReader
             WHERE pc.product_id = UNHEX(?)
               AND pc.product_version_id = ?
         ', [$productId, $this->db->liveVersionIdBin()]);
+    }
+
+    /** @return array<int, object> */
+    public function fetchAllPropertyGroups(): array
+    {
+        return $this->db->select("
+            SELECT
+                LOWER(HEX(pg.id)) AS group_id,
+                COALESCE(pgt.name, '') AS group_name
+            FROM property_group pg
+            LEFT JOIN property_group_translation pgt
+                ON pgt.property_group_id = pg.id
+                AND pgt.language_id = ?
+            WHERE EXISTS (
+                SELECT 1 FROM property_group_option pgo
+                WHERE pgo.property_group_id = pg.id
+            )
+            ORDER BY pgt.name ASC
+        ", [$this->db->languageIdBin()]);
     }
 
     public function fetchConfiguratorSettings(string $productId): array
@@ -357,6 +378,31 @@ class ProductReader
         return $value;
     }
 
+    /**
+     * @return array<int, object> rows with `type` and `config` JSON string
+     */
+    public function fetchVideoSlots(string $cmsPageId): array
+    {
+        if ($cmsPageId === '') {
+            return [];
+        }
+
+        return $this->db->select("
+            SELECT cs.type, cst.config, cse.position AS section_pos, cb.position AS block_pos, cs.slot AS slot_name
+            FROM cms_slot cs
+            JOIN cms_block cb ON cb.id = cs.cms_block_id
+            JOIN cms_section cse ON cse.id = cb.cms_section_id
+            LEFT JOIN cms_slot_translation cst
+                ON cst.cms_slot_id = cs.id
+                AND cst.cms_slot_version_id = cs.version_id
+                AND cst.language_id = ?
+            WHERE cse.cms_page_id = UNHEX(?)
+              AND cs.version_id = ?
+              AND cs.type IN ('youtube-video', 'vimeo-video')
+            ORDER BY cse.position ASC, cb.position ASC, cs.slot ASC
+        ", [$this->db->languageIdBin(), $cmsPageId, $this->db->liveVersionIdBin()]);
+    }
+
     public function fetchCrossSells(string $productId): array
     {
         // productList = manual list, productStream = dynamic (resolved via product_stream_mapping).
@@ -435,6 +481,7 @@ class ProductReader
                 LOWER(HEX(p.product_manufacturer_id)) AS manufacturer_id,
                 LOWER(HEX(p.product_media_id)) AS cover_id,
                 LOWER(HEX(p.main_variant_id)) AS main_variant_id,
+                LOWER(HEX(p.cms_page_id)) AS cms_page_id,
                 COALESCE(pt.name, '') AS name,
                 COALESCE(pt.description, '') AS description,
                 COALESCE(pt.meta_title, '') AS meta_title,

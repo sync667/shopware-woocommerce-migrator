@@ -61,14 +61,13 @@ class ContentMigrator
      */
     protected function removeUnsafeNodes(DOMXPath $xpath): void
     {
-        // Scripting, binary plugins, head-only nodes — removing these drops any
-        // text payload they had, which is fine because they shouldn't carry any.
-        // Form controls are deliberately NOT in this list: they're inert without
-        // their owning form's submit handler and stripping them eats inline copy
-        // like the literal text inside a styled <button>Buy now</button>.
         $disallowed = ['script', 'style', 'object', 'embed', 'link', 'meta', 'base', 'noscript'];
         $expression = '//'.implode('|//', $disallowed);
         foreach (iterator_to_array($xpath->query($expression)) as $node) {
+            $node->parentNode?->removeChild($node);
+        }
+
+        foreach (iterator_to_array($xpath->query('//*[@contenteditable="false"]')) as $node) {
             $node->parentNode?->removeChild($node);
         }
     }

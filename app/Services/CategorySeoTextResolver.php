@@ -24,12 +24,6 @@ class CategorySeoTextResolver
         return $this->renderPlaceholders($this->resolveFromCmsPage($category), $category);
     }
 
-    /**
-     * Render Shopware Twig placeholders ({{ category.X }} and
-     * {{ category.translated.X }}) against the category context. Unknown
-     * tokens are stripped rather than passed through so raw Twig never
-     * leaks into the migrated WC term description.
-     */
     protected function renderPlaceholders(string $source, object $category): string
     {
         if ($source === '' || ! str_contains($source, '{{')) {

@@ -300,7 +300,7 @@ return [
             'connection' => 'redis',
             'queue' => ['migration'],
             'balance' => 'simple',
-            'maxProcesses' => 1,
+            'maxProcesses' => 3,
             'maxTime' => 0,
             'maxJobs' => 0,
             'memory' => 256,
@@ -312,7 +312,7 @@ return [
             'connection' => 'redis',
             'queue' => ['cleanup'],
             'balance' => 'simple',
-            'maxProcesses' => 1,
+            'maxProcesses' => 3,
             'maxTime' => 0,
             'maxJobs' => 0,
             'memory' => 512,
@@ -356,7 +356,7 @@ return [
                 'maxProcesses' => 1,
             ],
             'supervisor-migration' => [
-                'maxProcesses' => 1,
+                'maxProcesses' => 3,
             ],
         ],
 
@@ -393,7 +393,7 @@ return [
                 'maxProcesses' => 1,
             ],
             'supervisor-migration' => [
-                'maxProcesses' => 1,
+                'maxProcesses' => 3,
             ],
         ],
     ],

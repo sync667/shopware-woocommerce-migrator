@@ -213,6 +213,71 @@ class ProductTransformerTest extends TestCase
         $this->assertEquals('Size', $result[1]['name']);
     }
 
+    public function test_build_attributes_emits_global_id_when_group_id_in_map(): void
+    {
+        $settings = [
+            (object) ['group_name' => 'Rozmiar', 'group_id' => 'sw-size', 'option_name' => 'S'],
+            (object) ['group_name' => 'Rozmiar', 'group_id' => 'sw-size', 'option_name' => 'M'],
+            (object) ['group_name' => 'Kolor', 'group_id' => 'sw-color', 'option_name' => 'Red'],
+            (object) ['group_name' => 'Custom', 'group_id' => 'sw-unmapped', 'option_name' => 'x'],
+        ];
+
+        $result = $this->transformer->buildAttributes($settings, true, [
+            'sw-size' => 77,
+            'sw-color' => 78,
+        ]);
+
+        $this->assertSame(77, $result[0]['id']);
+        $this->assertSame('Rozmiar', $result[0]['name']);
+        $this->assertSame(78, $result[1]['id']);
+        $this->assertSame('Kolor', $result[1]['name']);
+        $this->assertArrayNotHasKey('id', $result[2]);
+        $this->assertSame('Custom', $result[2]['name']);
+    }
+
+    public function test_build_attributes_without_map_omits_id_field(): void
+    {
+        $settings = [
+            (object) ['group_name' => 'Size', 'group_id' => 'sw-size', 'option_name' => 'S'],
+        ];
+
+        $result = $this->transformer->buildAttributes($settings, true);
+
+        $this->assertArrayNotHasKey('id', $result[0]);
+        $this->assertSame('Size', $result[0]['name']);
+    }
+
+    public function test_build_variant_option_attributes_emits_id_when_group_in_map(): void
+    {
+        $options = [
+            (object) ['group_name' => 'Rozmiar', 'group_id' => 'sw-size', 'option_name' => 'M'],
+            (object) ['group_name' => 'Kolor', 'group_id' => 'sw-color', 'option_name' => 'Red'],
+            (object) ['group_name' => 'Custom', 'group_id' => 'sw-unmapped', 'option_name' => 'x'],
+        ];
+
+        $result = $this->transformer->buildVariantOptionAttributes($options, [
+            'sw-size' => 77,
+            'sw-color' => 78,
+        ]);
+
+        $this->assertSame(77, $result[0]['id']);
+        $this->assertSame('M', $result[0]['option']);
+        $this->assertSame(78, $result[1]['id']);
+        $this->assertArrayNotHasKey('id', $result[2]);
+    }
+
+    public function test_build_variant_option_attributes_without_map_omits_id_field(): void
+    {
+        $options = [
+            (object) ['group_name' => 'Rozmiar', 'group_id' => 'sw-size', 'option_name' => 'M'],
+        ];
+
+        $result = $this->transformer->buildVariantOptionAttributes($options);
+
+        $this->assertArrayNotHasKey('id', $result[0]);
+        $this->assertSame('M', $result[0]['option']);
+    }
+
     public function test_builds_variant_option_attributes(): void
     {
         $options = [

@@ -38,6 +38,18 @@ const ENTITY_TYPES = [
     'customer_wishlist',
 ];
 
+function formatBytes(bytes) {
+    if (!Number.isFinite(bytes) || bytes < 0) return '';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    let n = bytes;
+    let i = 0;
+    while (n >= 1024 && i < units.length - 1) {
+        n /= 1024;
+        i++;
+    }
+    return `${n.toFixed(n < 10 && i > 0 ? 1 : 0)} ${units[i]}`;
+}
+
 function formatDuration(seconds) {
     if (seconds == null) return '—';
     const h = Math.floor(seconds / 3600);
@@ -92,6 +104,7 @@ export default function Show({ migrationId }) {
     const lastActivity = data?.last_activity;
     const recentErrors = data?.recent_errors || [];
     const recentWarnings = data?.recent_warnings || [];
+    const artifacts = data?.artifacts || {};
 
     const totalProcessed = (summary.success || 0) + (summary.skipped || 0);
 
@@ -277,6 +290,30 @@ export default function Show({ migrationId }) {
                     />
                 ))}
             </div>
+
+            {Object.keys(artifacts).length > 0 && (
+                <div className="mb-6 rounded-lg border border-gray-200 bg-white px-4 py-3">
+                    <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm font-medium text-gray-700">Downloadable artifacts</span>
+                    </div>
+                    <ul className="space-y-2">
+                        {Object.entries(artifacts).map(([key, a]) => (
+                            <li key={key} className="flex items-center justify-between text-sm">
+                                <span className="text-gray-700">{a.label}</span>
+                                <span className="flex items-center gap-3">
+                                    <span className="text-xs text-gray-400">{formatBytes(a.size_bytes)}</span>
+                                    <a
+                                        href={a.url}
+                                        className="rounded bg-blue-600 px-3 py-1 text-xs font-medium text-white hover:bg-blue-700"
+                                    >
+                                        Download
+                                    </a>
+                                </span>
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+            )}
 
             {/* Last activity */}
             {lastActivity && (

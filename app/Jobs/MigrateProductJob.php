@@ -110,9 +110,16 @@ class MigrateProductJob implements ShouldQueue
             $properties = $reader->fetchProperties($product->id);
             $tags = array_map(fn ($t) => $t->name, $reader->fetchTags($product->id));
 
+            $globalAttrMap = \App\Models\MigrationEntity::where('migration_id', $this->migrationId)
+                ->where('entity_type', 'product_attribute')
+                ->whereNotNull('woo_id')
+                ->pluck('woo_id', 'shopware_id')
+                ->map(fn ($v) => (int) $v)
+                ->all();
+
             $attributes = array_merge(
-                $transformer->buildAttributes($configuratorSettings, true),
-                $transformer->buildAttributes($properties, false),
+                $transformer->buildAttributes($configuratorSettings, true, $globalAttrMap),
+                $transformer->buildAttributes($properties, false, $globalAttrMap),
             );
 
             $data = $transformer->transform(
@@ -178,7 +185,7 @@ class MigrateProductJob implements ShouldQueue
             $this->log('info', "Migrated product '{$data['name']}' → WC #{$wooProductId}");
 
             foreach ($variants as $variant) {
-                $this->migrateVariant($variant, $wooProductId, $reader, $transformer, $woo, $imageMigrator, $stateManager);
+                $this->migrateVariant($variant, $wooProductId, $reader, $transformer, $woo, $imageMigrator, $stateManager, $globalAttrMap);
             }
 
             $crossSells = $reader->fetchCrossSells($product->id);
@@ -199,6 +206,7 @@ class MigrateProductJob implements ShouldQueue
         WooCommerceClient $woo,
         ImageMigrator $imageMigrator,
         StateManager $stateManager,
+        array $globalAttrMap = [],
     ): void {
         if ($stateManager->alreadyMigrated('variation', $variant->id, $this->migrationId)) {
             return;
@@ -206,7 +214,7 @@ class MigrateProductJob implements ShouldQueue
 
         try {
             $variantOptions = $reader->fetchVariantOptions($variant->id);
-            $optionAttributes = $transformer->buildVariantOptionAttributes($variantOptions);
+            $optionAttributes = $transformer->buildVariantOptionAttributes($variantOptions, $globalAttrMap);
             $data = $transformer->transformVariant($variant, $optionAttributes);
 
             $media = $reader->fetchMedia($variant->id);

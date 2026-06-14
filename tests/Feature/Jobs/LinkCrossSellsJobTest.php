@@ -2,12 +2,20 @@
 
 namespace Tests\Feature\Jobs;
 
+use App\Jobs\LinkCrossSellBatchJob;
 use App\Jobs\LinkCrossSellsJob;
+use App\Models\MigrationEntity;
+use App\Models\MigrationRun;
+use Illuminate\Bus\PendingBatch;
 use Illuminate\Contracts\Queue\ShouldQueue;
-use PHPUnit\Framework\TestCase;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Bus;
+use Tests\TestCase;
 
 class LinkCrossSellsJobTest extends TestCase
 {
+    use RefreshDatabase;
+
     public function test_implements_should_queue_on_migration_queue(): void
     {
         $this->assertTrue(in_array(ShouldQueue::class, class_implements(LinkCrossSellsJob::class)));
@@ -73,5 +81,71 @@ class LinkCrossSellsJobTest extends TestCase
         $this->assertSame([], $upsell);
         $this->assertSame([], $cross);
         $this->assertSame(0, $missed);
+    }
+
+    public function test_batch_job_implements_should_queue_on_migration_queue(): void
+    {
+        $this->assertTrue(in_array(ShouldQueue::class, class_implements(\App\Jobs\LinkCrossSellBatchJob::class)));
+
+        $job = new \App\Jobs\LinkCrossSellBatchJob(1, ['sw-A']);
+        $this->assertSame('migration', $job->queue);
+    }
+
+    public function test_chunk_size_constant_matches_dispatcher_default(): void
+    {
+        $this->assertSame(100, LinkCrossSellsJob::CHUNK_SIZE);
+    }
+
+    public function test_dispatcher_chunks_migrated_products_into_bus_batch(): void
+    {
+        $migration = MigrationRun::create([
+            'name' => 'test',
+            'settings' => ['shopware' => ['upsell_group_names' => []]],
+            'status' => 'running',
+            'is_dry_run' => false,
+        ]);
+
+        for ($i = 0; $i < 250; $i++) {
+            MigrationEntity::create([
+                'migration_id' => $migration->id,
+                'entity_type' => 'product',
+                'shopware_id' => 'sw-'.str_pad((string) $i, 4, '0', STR_PAD_LEFT),
+                'woo_id' => 1000 + $i,
+                'status' => 'success',
+            ]);
+        }
+
+        Bus::fake();
+
+        (new LinkCrossSellsJob($migration->id))->handle();
+
+        Bus::assertBatched(function (PendingBatch $batch) {
+            return $batch->jobs->count() === 3
+                && $batch->jobs->every(fn ($j) => $j instanceof LinkCrossSellBatchJob);
+        });
+    }
+
+    public function test_dispatcher_skips_unmigrated_products(): void
+    {
+        $migration = MigrationRun::create([
+            'name' => 'test',
+            'settings' => ['shopware' => ['upsell_group_names' => []]],
+            'status' => 'running',
+            'is_dry_run' => false,
+        ]);
+        MigrationEntity::create([
+            'migration_id' => $migration->id,
+            'entity_type' => 'product',
+            'shopware_id' => 'sw-FAILED',
+            'woo_id' => null,
+            'status' => 'failed',
+        ]);
+
+        Bus::fake();
+
+        (new LinkCrossSellsJob($migration->id))->handle();
+
+        Bus::assertNotDispatched(LinkCrossSellBatchJob::class);
+        Bus::assertDispatched(\App\Jobs\MigrateCustomersJob::class);
     }
 }

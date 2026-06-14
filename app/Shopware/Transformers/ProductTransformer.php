@@ -320,41 +320,56 @@ class ProductTransformer
         return $data;
     }
 
-    public function buildAttributes(array $configuratorSettings, bool $isVariation = true): array
+    /**
+     * @param  array<string, int>  $groupIdToWooAttrId  shopware group_id (hex) → WC attribute id
+     */
+    public function buildAttributes(array $configuratorSettings, bool $isVariation = true, array $groupIdToWooAttrId = []): array
     {
         $grouped = [];
         foreach ($configuratorSettings as $setting) {
             $groupName = $setting->group_name ?? 'Unknown';
+            $groupId = $setting->group_id ?? null;
             $optionName = $setting->option_name ?? '';
             if (! isset($grouped[$groupName])) {
-                $grouped[$groupName] = [];
+                $grouped[$groupName] = ['group_id' => $groupId, 'options' => []];
             }
-            $grouped[$groupName][] = $optionName;
+            $grouped[$groupName]['options'][] = $optionName;
         }
 
         $attributes = [];
         $position = 0;
-        foreach ($grouped as $name => $options) {
-            $attributes[] = [
+        foreach ($grouped as $name => $info) {
+            $attr = [
                 'name' => $name,
-                'options' => array_unique($options),
+                'options' => array_unique($info['options']),
                 'visible' => true,
                 'variation' => $isVariation,
                 'position' => $position++,
             ];
+            $wooAttrId = $info['group_id'] !== null ? ($groupIdToWooAttrId[$info['group_id']] ?? null) : null;
+            if ($wooAttrId !== null) {
+                $attr['id'] = (int) $wooAttrId;
+            }
+            $attributes[] = $attr;
         }
 
         return $attributes;
     }
 
-    public function buildVariantOptionAttributes(array $variantOptions): array
+    /** @param  array<string, int>  $groupIdToWooAttrId */
+    public function buildVariantOptionAttributes(array $variantOptions, array $groupIdToWooAttrId = []): array
     {
         $attributes = [];
         foreach ($variantOptions as $option) {
-            $attributes[] = [
+            $attr = [
                 'name' => $option->group_name ?? 'Unknown',
                 'option' => $option->option_name ?? '',
             ];
+            $groupId = $option->group_id ?? null;
+            if ($groupId !== null && isset($groupIdToWooAttrId[$groupId])) {
+                $attr['id'] = (int) $groupIdToWooAttrId[$groupId];
+            }
+            $attributes[] = $attr;
         }
 
         return $attributes;

@@ -18,6 +18,9 @@ Route::middleware(\App\Http\Middleware\ValidateAccessToken::class)->group(functi
     Route::get('/settings', [DashboardController::class, 'settings'])->name('settings');
     Route::get('/migrations/{migration}', [MigrationController::class, 'show'])->name('migrations.show');
     Route::get('/migrations/{migration}/logs', [LogController::class, 'show'])->name('migrations.logs');
+    Route::get('/migrations/{migration}/download/{artifact}', [MigrationController::class, 'downloadArtifact'])
+        ->whereIn('artifact', ['redirects', 'newsletter', 'wishlists'])
+        ->name('migrations.download');
 
     // API endpoints (need session for auth middleware)
     Route::model('migration', \App\Models\MigrationRun::class);
