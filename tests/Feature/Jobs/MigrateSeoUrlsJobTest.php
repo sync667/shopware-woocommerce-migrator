@@ -405,11 +405,11 @@ class MigrateSeoUrlsJobTest extends TestCase
             ->first();
         $this->assertNull($seoEntity, 'pending-target seo_url rows must be left untouched for next pass');
 
-        $warning = MigrationLog::where('migration_id', $this->migration->id)
+        $log = MigrationLog::where('migration_id', $this->migration->id)
             ->where('shopware_id', 'seo1')->first();
-        $this->assertNotNull($warning);
-        $this->assertSame('warning', $warning->level);
-        $this->assertStringContainsString('not yet migrated', $warning->message);
+        $this->assertNotNull($log);
+        $this->assertSame('info', $log->level);
+        $this->assertStringContainsString('not yet migrated', $log->message);
     }
 
     public function test_slug_missing_uses_id_fallback(): void
@@ -696,7 +696,7 @@ class MigrateSeoUrlsJobTest extends TestCase
         $this->assertTrue(
             MigrationLog::where('migration_id', $this->migration->id)
                 ->where('shopware_id', 's1')
-                ->where('level', 'warning')
+                ->where('level', 'info')
                 ->exists()
         );
     }

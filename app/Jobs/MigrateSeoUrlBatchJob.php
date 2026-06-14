@@ -173,7 +173,7 @@ class MigrateSeoUrlBatchJob implements ShouldQueue
             $reason = $orphan
                 ? "references {$entityType} {$row->foreign_key} which does not exist in Shopware (likely deleted; stale seo_url row)"
                 : "references {$entityType} {$row->foreign_key} which is not yet migrated; leaving for next pass";
-            $level = $orphan ? 'info' : 'warning';
+            $level = 'info';
 
             $this->log($level, "SEO URL '/{$row->seo_path_info}' {$reason}", $row->id);
 

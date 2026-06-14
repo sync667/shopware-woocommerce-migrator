@@ -180,4 +180,36 @@ class CustomerTransformerTest extends TestCase
 
         $this->assertSame('PL5213969319', $result['billing']['vat_id']);
     }
+
+    /**
+     * @return iterable<string, array{0:string,1:string}>
+     */
+    public static function emailSanitizationCases(): iterable
+    {
+        yield 'clean' => ['user@example.com', 'user@example.com'];
+        yield 'trim whitespace' => ["  user@example.com\n", 'user@example.com'];
+        yield 'strip wrapping single quotes' => ["'ospmszczonow@wp.pl'", 'ospmszczonow@wp.pl'];
+        yield 'strip wrapping double quotes' => ['"user@example.com"', 'user@example.com'];
+        yield 'rfc-822 display name' => ['Krzysztof Kokoszka <kkokoszka@supon.rzeszow.pl>', 'kkokoszka@supon.rzeszow.pl'];
+        yield 'display name with quotes' => ['"Foo Bar" <foo@bar.com>', 'foo@bar.com'];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('emailSanitizationCases')]
+    public function test_email_sanitization(string $input, string $expected): void
+    {
+        $this->assertSame($expected, \App\Shopware\Transformers\CustomerTransformer::sanitizeEmail($input));
+    }
+
+    public function test_customer_email_runs_through_sanitizer(): void
+    {
+        $transformer = new \App\Shopware\Transformers\CustomerTransformer;
+        $customer = (object) [
+            'id' => 'cust1',
+            'email' => 'Krzysztof Kokoszka <kkokoszka@supon.rzeszow.pl>',
+        ];
+
+        $result = $transformer->transform($customer);
+
+        $this->assertSame('kkokoszka@supon.rzeszow.pl', $result['email']);
+    }
 }

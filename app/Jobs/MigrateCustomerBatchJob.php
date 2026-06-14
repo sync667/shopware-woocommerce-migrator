@@ -105,12 +105,14 @@ class MigrateCustomerBatchJob implements ShouldQueue
                         continue;
                     }
 
-                    $result = $woo->createOrFind('customers', $data, 'email', $customer->email);
-                    $wooId = $result['id'] ?? null;
+                    [$wooId, $finalEmail] = $this->createCustomerWithCollisionFallback(
+                        $woo, $customer, $data
+                    );
 
                     if ($wooId) {
                         $stateManager->set('customer', $customer->id, $wooId, $this->migrationId);
-                        $this->log('info', "Migrated customer '{$customer->email}' → WC #{$wooId}", $customer->id);
+                        $note = $finalEmail !== $customer->email ? " (email re-aliased: {$finalEmail})" : '';
+                        $this->log('info', "Migrated customer '{$customer->email}' → WC #{$wooId}{$note}", $customer->id);
                     } else {
                         $stateManager->markFailed('customer', $customer->id, $this->migrationId, 'WooCommerce returned no ID for customer');
                         $this->log('error', "WooCommerce returned no ID for customer '{$customer->email}'", $customer->id);
@@ -123,6 +125,57 @@ class MigrateCustomerBatchJob implements ShouldQueue
         } finally {
             $db->disconnect();
         }
+    }
+
+    /** @return array{0: int|null, 1: string} */
+    protected function createCustomerWithCollisionFallback(
+        \App\Services\WooCommerceClient $woo,
+        object $customer,
+        array $data,
+    ): array {
+        $email = (string) $data['email'];
+
+        try {
+            $result = $woo->createOrFind('customers', $data, 'email', $email);
+
+            return [(int) ($result['id'] ?? 0) ?: null, $email];
+        } catch (\Throwable $e) {
+            if (! self::isEmailCollisionError($e)) {
+                throw $e;
+            }
+        }
+
+        $alias = self::aliasEmail($email, (string) ($customer->id ?? ''));
+        $data['email'] = $alias;
+        $data['meta_data'][] = ['key' => '_remizasklep_email_original', 'value' => $email];
+        $data['meta_data'][] = ['key' => '_remizasklep_email_aliased', 'value' => 'yes'];
+
+        $result = $woo->createOrFind('customers', $data, 'email', $alias);
+
+        return [(int) ($result['id'] ?? 0) ?: null, $alias];
+    }
+
+    protected static function isEmailCollisionError(\Throwable $e): bool
+    {
+        $msg = $e->getMessage();
+
+        return str_contains($msg, 'email-exists')
+            || str_contains($msg, 'registration-error-email-exists')
+            || str_contains($msg, 'email_exists');
+    }
+
+    public static function aliasEmail(string $email, string $shopwareId): string
+    {
+        $shortId = substr($shopwareId, 0, 8) ?: substr(bin2hex(random_bytes(4)), 0, 8);
+        $at = strrpos($email, '@');
+        if ($at === false) {
+            return $email.'+sw_'.$shortId;
+        }
+
+        $local = substr($email, 0, $at);
+        $domain = substr($email, $at + 1);
+
+        return $local.'+sw_'.$shortId.'@'.$domain;
     }
 
     /**

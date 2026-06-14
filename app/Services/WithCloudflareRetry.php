@@ -2,19 +2,10 @@
 
 namespace App\Services;
 
+use GuzzleHttp\Exception\ConnectException;
 use GuzzleHttp\HandlerStack;
 use GuzzleHttp\Middleware;
 
-/**
- * Guzzle handler stack with automatic retry on Cloudflare connectivity errors.
- *
- * CF error codes that indicate a transient origin-unreachable condition:
- *   521 – Web Server Is Down
- *   522 – Connection Timed Out
- *   524 – A Timeout Occurred
- *
- * Retries up to 3 times with exponential back-off: 1 s → 2 s → 4 s.
- */
 trait WithCloudflareRetry
 {
     protected static function makeRetryHandlerStack(): HandlerStack
@@ -22,17 +13,26 @@ trait WithCloudflareRetry
         $stack = HandlerStack::create();
 
         $stack->push(Middleware::retry(
-            static function (int $retries, $request, $response): bool {
+            static function (int $retries, $request, $response, $exception): bool {
                 if ($retries >= 3) {
                     return false;
+                }
+
+                if ($exception instanceof ConnectException) {
+                    return true;
+                }
+
+                if ($exception !== null) {
+                    $msg = $exception->getMessage();
+                    if (str_contains($msg, 'cURL error 28') || str_contains($msg, 'Operation timed out')) {
+                        return true;
+                    }
                 }
 
                 return $response !== null
                     && in_array($response->getStatusCode(), [521, 522, 524], true);
             },
             static function (int $retries): int {
-                // Guzzle invokes this with $retries = 0 before the first retry.
-                // 1 s → 2 s → 4 s matches the docblock.
                 return (int) (1000 * (2 ** $retries));
             }
         ));

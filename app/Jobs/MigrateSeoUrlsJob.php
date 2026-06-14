@@ -86,7 +86,7 @@ class MigrateSeoUrlsJob implements ShouldQueue
                     ['skip_reason' => 'source_collision']
                 );
             }
-            $this->log('warning', 'SEO URL dispatcher: marked '.count($collisions).' cross-entity source collision(s) as skipped.');
+            $this->log('info', 'SEO URL dispatcher: marked '.count($collisions).' cross-entity source collision(s) as skipped.');
         }
 
         $this->log('info', 'SEO URL dispatcher: deduped to '.count($ids).' row(s) for processing.');
@@ -218,7 +218,7 @@ class MigrateSeoUrlsJob implements ShouldQueue
 
         try {
             if (! $client->isAvailable()) {
-                $this->log('warning', 'Redirection plugin not reachable; running in file-only mode');
+                $this->log('info', 'Redirection plugin not reachable; running in file-only mode');
 
                 return [null, []];
             }

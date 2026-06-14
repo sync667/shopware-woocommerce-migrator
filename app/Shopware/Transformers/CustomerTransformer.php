@@ -11,7 +11,7 @@ class CustomerTransformer
         ?string $newPassword = null,
     ): array {
         $data = [
-            'email' => $customer->email,
+            'email' => self::sanitizeEmail($customer->email ?? ''),
             'first_name' => $customer->first_name ?? '',
             'last_name' => $customer->last_name ?? '',
             'role' => 'customer',
@@ -86,6 +86,18 @@ class CustomerTransformer
         }
 
         return $data;
+    }
+
+    public static function sanitizeEmail(string $email): string
+    {
+        $email = trim($email);
+        $email = trim($email, "\"'");
+
+        if (preg_match('/<([^>]+)>/', $email, $m)) {
+            $email = trim($m[1]);
+        }
+
+        return $email;
     }
 
     /**

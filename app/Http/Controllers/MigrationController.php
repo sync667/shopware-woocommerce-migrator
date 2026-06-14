@@ -866,6 +866,11 @@ class MigrationController extends Controller
             $mediaId = $wpMedia->upload($testContent, 'migration-test-'.time().'.txt', 'text/plain');
 
             if ($mediaId) {
+                try {
+                    $wpMedia->deleteMedia((int) $mediaId);
+                } catch (\Throwable) {
+                }
+
                 return [
                     'success' => true,
                     'details' => [

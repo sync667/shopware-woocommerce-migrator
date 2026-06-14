@@ -39,6 +39,7 @@ class WooCommerceCleanup
             'shipping_zones',
             'pages',
             'media',
+            'leftovers',
         ];
     }
 
@@ -87,6 +88,7 @@ class WooCommerceCleanup
             'shipping_zones' => $this->deleteAllShippingZones(),
             'pages' => $this->deleteAllPages(),
             'media' => $this->deleteAllMedia(),
+            'leftovers' => $this->deleteRenumberBlockers(),
             default => throw new \InvalidArgumentException("Unknown cleanup entity: {$entity}"),
         };
     }
@@ -103,7 +105,87 @@ class WooCommerceCleanup
 
     protected function deleteAllProducts(): array
     {
-        return $this->batchDeleteAll('products', 'products');
+        $result = $this->batchDeleteAll('products', 'products');
+        $this->purgeProductLookupOrphans();
+
+        return $result;
+    }
+
+    /** @return array{deleted: int, skipped?: bool} */
+    protected function deleteRenumberBlockers(): array
+    {
+        if (! $this->migration) {
+            return ['deleted' => 0, 'skipped' => true];
+        }
+
+        $db = \App\Services\WooCommerceDB::fromMigration($this->migration);
+        if (! $db->isConfigured()) {
+            $this->log('info', 'Renumber-blocker sweep skipped: WC DB not configured.', null, 'cleanup');
+
+            return ['deleted' => 0, 'skipped' => true];
+        }
+
+        $deleted = 0;
+
+        try {
+            $posts = $db->table('posts');
+            $postmeta = $db->table('postmeta');
+
+            $oembedRows = $db->affecting("DELETE FROM {$posts} WHERE post_type = 'oembed_cache'");
+            if ($oembedRows > 0) {
+                $this->log('info', "Cleaned {$oembedRows} oembed_cache row(s).", null, 'cleanup');
+                $deleted += $oembedRows;
+            }
+
+            $probeIds = $db->select(
+                "SELECT ID FROM {$posts} WHERE post_type = 'attachment' AND post_title LIKE 'migration-test-%'"
+            );
+            if ($probeIds !== []) {
+                $ids = array_map(fn ($r) => (int) $r->ID, $probeIds);
+                $placeholders = implode(',', array_fill(0, count($ids), '?'));
+                $db->affecting("DELETE FROM {$postmeta} WHERE post_id IN ({$placeholders})", $ids);
+                $attachmentRows = $db->affecting("DELETE FROM {$posts} WHERE ID IN ({$placeholders})", $ids);
+                if ($attachmentRows > 0) {
+                    $this->log('info', "Cleaned {$attachmentRows} leftover migration-test attachment(s).", null, 'cleanup');
+                    $deleted += $attachmentRows;
+                }
+            }
+        } catch (\Throwable $e) {
+            $this->log('info', "Renumber-blocker sweep skipped: {$e->getMessage()}", null, 'cleanup');
+        } finally {
+            $db->disconnect();
+        }
+
+        return ['deleted' => $deleted];
+    }
+
+    protected function purgeProductLookupOrphans(): void
+    {
+        if (! $this->migration) {
+            return;
+        }
+
+        $db = \App\Services\WooCommerceDB::fromMigration($this->migration);
+        if (! $db->isConfigured()) {
+            return;
+        }
+
+        try {
+            $lookup = $db->table('wc_product_meta_lookup');
+            $posts = $db->table('posts');
+            $affected = $db->affecting(
+                "DELETE l FROM {$lookup} l LEFT JOIN {$posts} p ON p.ID = l.product_id WHERE p.ID IS NULL"
+            );
+            if ($affected > 0) {
+                $this->log('info', "Purged {$affected} orphan row(s) from wc_product_meta_lookup.", null, 'cleanup');
+            }
+        } catch (\Throwable $e) {
+            // Table absent on stores without WC 4.7+ lookup index, or DB perms
+            // missing — both are non-blocking.
+            $this->log('info', "wc_product_meta_lookup purge skipped: {$e->getMessage()}", null, 'cleanup');
+        } finally {
+            $db->disconnect();
+        }
     }
 
     protected function deleteAllProductAttributes(): array
@@ -161,7 +243,13 @@ class WooCommerceCleanup
                                 $deletedThisRound++;
                             } catch (\Exception $wpE) {
                                 $failed++;
-                                $this->log('warning', "Failed to delete orphaned review {$review['id']} via WP comments: {$wpE->getMessage()}", null, 'cleanup');
+                                $is404 = method_exists($wpE, 'getResponse')
+                                    && $wpE->getResponse()
+                                    && $wpE->getResponse()->getStatusCode() === 404;
+                                $level = $is404 || str_contains($wpE->getMessage(), '404 Not Found')
+                                    ? 'info'
+                                    : 'warning';
+                                $this->log($level, "Orphaned review {$review['id']} delete fallback: {$wpE->getMessage()}", null, 'cleanup');
                             }
                         } else {
                             $failed++;
