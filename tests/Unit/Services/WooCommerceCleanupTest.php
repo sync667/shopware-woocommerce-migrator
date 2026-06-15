@@ -4,7 +4,9 @@ namespace Tests\Unit\Services;
 
 use App\Models\MigrationRun;
 use App\Services\WooCommerceCleanup;
+use App\Services\WooCommerceClient;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Mockery;
 use Tests\TestCase;
 
 class WooCommerceCleanupTest extends TestCase
@@ -75,6 +77,40 @@ class WooCommerceCleanupTest extends TestCase
         $this->assertContains('media', WooCommerceCleanup::entitiesFor($migration));
     }
 
+    public function test_batch_delete_all_counts_actual_deletions_not_chunk_size(): void
+    {
+        // Mig 65 inflation bug: WC's batch endpoint with force=true returns 200 even
+        // when an ID is already gone, but only reports the actually-deleted ones in
+        // response.delete[]. The counter must reflect that, not the chunk size.
+        $woo = Mockery::mock(WooCommerceClient::class);
+        $woo->shouldReceive('get')->once()
+            ->andReturn([['id' => 10], ['id' => 11], ['id' => 12]]);
+        $woo->shouldReceive('batchDelete')->once()
+            ->with('orders', [10, 11, 12], [])
+            ->andReturn(['delete' => [['id' => 10], ['id' => 12]]]);
+        $woo->shouldReceive('get')->once()->andReturn([]);
+
+        $cleanup = new WooCommerceCleanupHarness($woo);
+        $result = $cleanup->run('orders', 'orders');
+
+        $this->assertSame(2, $result['deleted'], 'Only IDs WC echoed back in delete[] count');
+    }
+
+    public function test_batch_delete_all_bails_when_same_ids_returned_twice(): void
+    {
+        // Hierarchy quirk: when WC reparents children after a parent delete, the
+        // same IDs can keep coming back. We must not spin forever.
+        $woo = Mockery::mock(WooCommerceClient::class);
+        $woo->shouldReceive('get')->andReturn([['id' => 1], ['id' => 2]]);
+        $woo->shouldReceive('batchDelete')->once()
+            ->andReturn(['delete' => [['id' => 1], ['id' => 2]]]);
+
+        $cleanup = new WooCommerceCleanupHarness($woo);
+        $result = $cleanup->run('products/categories', 'categories');
+
+        $this->assertSame(2, $result['deleted']);
+    }
+
     public function test_entities_for_static_list_matches_known_set(): void
     {
         // Sanity-check: full static list still contains all cleanup steps in safe FK order
@@ -86,5 +122,22 @@ class WooCommerceCleanupTest extends TestCase
         $this->assertContains('pages', $static);
         // Order matters: orders must die before products
         $this->assertLessThan(array_search('products', $static), array_search('orders', $static));
+    }
+
+    protected function tearDown(): void
+    {
+        Mockery::close();
+        parent::tearDown();
+    }
+}
+
+/**
+ * Exposes the protected batchDeleteAll helper for direct testing.
+ */
+class WooCommerceCleanupHarness extends WooCommerceCleanup
+{
+    public function run(string $endpoint, string $logName, ?callable $filter = null, array $extraQuery = []): array
+    {
+        return $this->batchDeleteAll($endpoint, $logName, $filter, $extraQuery);
     }
 }

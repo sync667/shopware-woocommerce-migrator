@@ -15,6 +15,7 @@ const ENTITY_TYPES = [
     'manufacturer',
     'tax',
     'category',
+    'product_attribute',
     'product',
     'customer',
     'order',

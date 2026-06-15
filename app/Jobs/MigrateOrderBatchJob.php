@@ -130,15 +130,17 @@ class MigrateOrderBatchJob implements ShouldQueue
                         continue;
                     }
 
-                    // Idempotency safety-net: a previous attempt may have succeeded in WC
-                    // but lost the response (network drop, CF 5xx after creation). Look
-                    // for an existing order matching our Shopware ID before POSTing again.
-                    $existing = $woo->findOrderByShopwareId($order->id, (string) ($order->order_number ?? ''));
-                    if ($existing && ! empty($existing['id'])) {
-                        $stateManager->set('order', $order->id, (int) $existing['id'], $this->migrationId);
-                        $this->log('info', "Order '{$order->order_number}' already in WC as #{$existing['id']} (idempotent skip)", $order->id);
+                    // Idempotency safety-net only matters on actual retries — a fresh
+                    // first attempt already passed alreadyMigrated() above. Skipping the
+                    // search GET on attempt 1 halves the WC round-trips per order.
+                    if ($this->attempts() > 1 || $migration->sync_mode === 'delta') {
+                        $existing = $woo->findOrderByShopwareId($order->id, (string) ($order->order_number ?? ''));
+                        if ($existing && ! empty($existing['id'])) {
+                            $stateManager->set('order', $order->id, (int) $existing['id'], $this->migrationId);
+                            $this->log('info', "Order '{$order->order_number}' already in WC as #{$existing['id']} (idempotent skip)", $order->id);
 
-                        continue;
+                            continue;
+                        }
                     }
 
                     $result = $woo->post('orders', $data);

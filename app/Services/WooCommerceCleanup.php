@@ -281,6 +281,13 @@ class WooCommerceCleanup
      * Fetch one page at a time, batch-delete all IDs (optionally filtered), repeat until exhausted.
      * Reduces API calls from O(n) individual DELETEs to O(n/100) batch POSTs.
      *
+     * Counts actual deletions (parsed from the batch response's `delete[]` array) rather
+     * than chunk size, so the counter doesn't inflate when WC silently no-ops on
+     * already-gone IDs (force=true is idempotent). Drains highest IDs first — for
+     * hierarchical taxonomies that's a fair proxy for "leaves first" and avoids the
+     * reparent-then-reappear loop where WC promotes children to root on parent delete.
+     * Detects stalled progress (same IDs returned twice) and bails to avoid spinning.
+     *
      * @param  callable|null  $filter  Optional item-level filter (e.g. skip 'uncategorized')
      * @param  string[]  $extraQuery  Extra query params forwarded to the batch endpoint (e.g. ['reassign' => '0'])
      */
@@ -292,27 +299,62 @@ class WooCommerceCleanup
     ): array {
         $deleted = 0;
         $failed = 0;
+        $alreadyAttempted = [];
 
         try {
-            do {
-                $items = $this->woocommerce->get($endpoint, ['per_page' => 100, 'page' => 1]);
-                $toDelete = $filter ? array_values(array_filter($items, $filter)) : $items;
-                $ids = array_column($toDelete, 'id');
-
-                if (empty($ids)) {
+            while (true) {
+                $items = $this->woocommerce->get($endpoint, [
+                    'per_page' => 100,
+                    'page' => 1,
+                    'orderby' => 'id',
+                    'order' => 'desc',
+                ]);
+                if ($filter) {
+                    $items = array_values(array_filter($items, $filter));
+                }
+                if (empty($items)) {
                     break;
                 }
 
-                try {
-                    $this->woocommerce->batchDelete($endpoint, $ids, $extraQuery);
-                    $deleted += count($ids);
-                    $this->log('info', "Cleaning {$logName}: {$deleted} deleted so far…", null, 'cleanup');
-                } catch (\Exception $e) {
-                    $failed += count($ids);
-                    $this->log('warning', "Batch delete failed for {$logName}: {$e->getMessage()}", null, 'cleanup');
+                $ids = array_column($items, 'id');
+
+                $freshIds = [];
+                foreach ($ids as $id) {
+                    if (! isset($alreadyAttempted[$id])) {
+                        $freshIds[] = $id;
+                    }
+                }
+                if ($freshIds === []) {
+                    $this->log('warning', "Cleaning {$logName}: no new IDs returned ({$deleted} deleted, {$failed} failed) — stopping to avoid spin.", null, 'cleanup');
                     break;
                 }
-            } while (count($items) === 100);
+
+                $hadError = false;
+                foreach (array_chunk($freshIds, 100) as $chunk) {
+                    try {
+                        $response = $this->woocommerce->batchDelete($endpoint, $chunk, $extraQuery);
+                        foreach ($chunk as $id) {
+                            $alreadyAttempted[$id] = true;
+                        }
+                        $actuallyDeleted = is_array($response['delete'] ?? null) ? count($response['delete']) : count($chunk);
+                        $deleted += $actuallyDeleted;
+                    } catch (\Exception $e) {
+                        $failed += count($chunk);
+                        foreach ($chunk as $id) {
+                            $alreadyAttempted[$id] = true;
+                        }
+                        $this->log('warning', "Batch delete failed for {$logName}: {$e->getMessage()}", null, 'cleanup');
+                        $hadError = true;
+                        break;
+                    }
+                }
+
+                $this->log('info', "Cleaning {$logName}: {$deleted} deleted so far…", null, 'cleanup');
+
+                if ($hadError) {
+                    break;
+                }
+            }
 
             $this->log('info', "Finished cleaning {$logName}: {$deleted} deleted", null, 'cleanup');
         } catch (\Exception $e) {

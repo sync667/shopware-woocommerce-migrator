@@ -288,13 +288,22 @@ class WordPressMediaClient
     }
 
     /**
-     * Permanently delete a WordPress media attachment
+     * Permanently delete a WordPress media attachment.
+     * Idempotent: a 404 (already gone) is treated as success.
      */
     public function deleteMedia(int $mediaId): void
     {
-        $this->client->delete("media/{$mediaId}", [
-            'query' => ['force' => true],
-        ]);
+        try {
+            $this->client->delete("media/{$mediaId}", [
+                'query' => ['force' => true],
+            ]);
+        } catch (\GuzzleHttp\Exception\ClientException $e) {
+            $status = $e->getResponse()?->getStatusCode();
+            if ($status === 404 || $status === 410) {
+                return;
+            }
+            throw $e;
+        }
     }
 
     /**
@@ -348,7 +357,8 @@ class WordPressMediaClient
 
                 $result = json_decode($response->getBody()->getContents(), true);
                 foreach ($result['responses'] ?? [] as $res) {
-                    if (($res['status'] ?? 500) < 300) {
+                    $status = (int) ($res['status'] ?? 500);
+                    if ($status < 300 || $status === 404 || $status === 410) {
                         $deleted++;
                     } else {
                         $failed++;

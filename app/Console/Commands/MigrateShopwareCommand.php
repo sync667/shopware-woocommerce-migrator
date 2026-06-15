@@ -199,6 +199,14 @@ class MigrateShopwareCommand extends Command
         }
 
         Bus::chain($jobs)->catch(function (\Throwable $e) use ($migration) {
+            \App\Models\MigrationLog::create([
+                'migration_id' => $migration->id,
+                'entity_type' => 'system',
+                'level' => 'error',
+                'message' => 'Migration chain aborted: '.get_class($e).': '.$e->getMessage(),
+                'context' => ['trace' => substr($e->getTraceAsString(), 0, 4000)],
+                'created_at' => now(),
+            ]);
             $migration->markFailed();
         })->dispatch();
 

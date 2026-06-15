@@ -140,6 +140,14 @@ class MigrationController extends Controller
         ]);
 
         Bus::chain($jobs)->catch(function (\Throwable $e) use ($migration) {
+            \App\Models\MigrationLog::create([
+                'migration_id' => $migration->id,
+                'entity_type' => 'system',
+                'level' => 'error',
+                'message' => 'Migration chain aborted: '.get_class($e).': '.$e->getMessage(),
+                'context' => ['trace' => substr($e->getTraceAsString(), 0, 4000)],
+                'created_at' => now(),
+            ]);
             $migration->markFailed();
         })->dispatch();
 
@@ -204,7 +212,7 @@ class MigrationController extends Controller
             }
         }
 
-        $stepOrder = ['manufacturer', 'tax', 'category', 'product', 'variation', 'customer', 'order', 'coupon', 'review'];
+        $stepOrder = ['manufacturer', 'tax', 'category', 'product_attribute', 'product', 'variation', 'customer', 'order', 'coupon', 'review'];
         $currentStep = null;
         if ($migration->status === 'running') {
             foreach ($stepOrder as $step) {
@@ -221,6 +229,17 @@ class MigrationController extends Controller
         $lastLog = $migration->logs()
             ->orderByDesc('created_at')
             ->first(['message', 'entity_type', 'level', 'created_at']);
+
+        // Phases that hand off via Bus::batch (cross-sell linking after products,
+        // SEO URL writer after orders) don't produce pending entity rows but DO
+        // emit logs. Fall back to the most recent log's entity_type so the UI
+        // doesn't show "no step" while the migration is still actively working.
+        if ($currentStep === null && $migration->status === 'running' && $lastLog
+            && in_array($lastLog->entity_type, $stepOrder, true)
+            && abs(now()->diffInSeconds($lastLog->created_at)) < 300
+        ) {
+            $currentStep = $lastLog->entity_type;
+        }
 
         return response()->json([
             'migration' => [

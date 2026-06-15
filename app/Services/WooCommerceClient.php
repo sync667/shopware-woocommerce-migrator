@@ -160,12 +160,14 @@ class WooCommerceClient
     /**
      * Batch-delete items by ID using the WooCommerce batch endpoint.
      * Passes force=true as a query param so it is inherited by each sub-request.
+     * Returns the raw batch response — callers can inspect `delete[]` for the
+     * IDs WC actually removed (already-gone IDs are silently skipped).
      *
      * @param  string[]  $extraQuery  Additional query params (e.g. ['reassign' => '0'])
      */
-    public function batchDelete(string $endpoint, array $ids, array $extraQuery = []): void
+    public function batchDelete(string $endpoint, array $ids, array $extraQuery = []): array
     {
-        $this->post(
+        return $this->post(
             "{$endpoint}/batch",
             ['delete' => $ids],
             array_merge(['force' => 'true'], $extraQuery)
