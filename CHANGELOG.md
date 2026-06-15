@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0](https://github.com/sync667/shopware-woocommerce-migrator/compare/v0.5.0...v0.6.0) (2026-06-15)
+
+
+### Features
+
+* add support for newsletter recipients and customer wishlists migration ([f1767f8](https://github.com/sync667/shopware-woocommerce-migrator/commit/f1767f85edb486405937ad6616cb184376743df2))
+* clean idea ([f0664ae](https://github.com/sync667/shopware-woocommerce-migrator/commit/f0664ae705f4c70ea55912bd20ff959d5d83c1e2))
+* enhance category SEO migration with custom field resolution and description formatting ([8d9c792](https://github.com/sync667/shopware-woocommerce-migrator/commit/8d9c7924d2127c31fb832492461e897cac3b11ef))
+* enhance product attribute migration with slug handling and idempotency checks ([077fc6c](https://github.com/sync667/shopware-woocommerce-migrator/commit/077fc6c28a0fc127f097c7bb29b755ad1f261c8d))
+* enhance SEO URL migration with Redirection plugin integration and add CSV logging ([07d766b](https://github.com/sync667/shopware-woocommerce-migrator/commit/07d766bcc5d1c52261c196481bbc5a05153da3a7))
+* implement batch processing for category, manufacturer, product attribute migrations and add PrepareCatalogJob ([62c196f](https://github.com/sync667/shopware-woocommerce-migrator/commit/62c196f032a78729250c7f4941f68fe034e3378e))
+* implement batch processing for linking cross-sells and migrating product attributes ([4939f95](https://github.com/sync667/shopware-woocommerce-migrator/commit/4939f95cf07e7cc6066e7a318d9a12ad3f143284))
+* implement chunked upload for database dumps and enhance container management ([29eeecf](https://github.com/sync667/shopware-woocommerce-migrator/commit/29eeecf647b171d070431a14a907526d784d501b))
+* implement email sanitization and aliasing for customer migration ([ddf58ae](https://github.com/sync667/shopware-woocommerce-migrator/commit/ddf58ae8f236d5722f1816143085c46d5e2418fc))
+* integrate companion plugin support for Shopware product data migration ([bb1e359](https://github.com/sync667/shopware-woocommerce-migrator/commit/bb1e359271b75b196d3d160fba121a84b41b382b))
+* link cross-sells in a dedicated post-products job ([4c98cd3](https://github.com/sync667/shopware-woocommerce-migrator/commit/4c98cd31f0527e66440694551218e2728bebfdf9))
+* migrate per-product Shopware delivery tiers to RemizaSklep meta ([0e5bf4e](https://github.com/sync667/shopware-woocommerce-migrator/commit/0e5bf4e0f8bc233f9cc12f6b69c9807763f7b096))
+* optimize migration job queues and enhance memory management for large data sets ([3684247](https://github.com/sync667/shopware-woocommerce-migrator/commit/3684247943b6623d87cdec60e01e27f0913a34ea))
+* preserve Shopware variant ordering via WC menu_order ([1b0ab92](https://github.com/sync667/shopware-woocommerce-migrator/commit/1b0ab925856464e69ad8e9deeb7c4ea6986c8293))
+* refactor authentication tests to improve token validation and session handling ([2c1f84a](https://github.com/sync667/shopware-woocommerce-migrator/commit/2c1f84ad974c382b77be5f00575bf09cf5588cc8))
+* scope product visibility, SEO keywords, main variant, delivery time ([a8bac76](https://github.com/sync667/shopware-woocommerce-migrator/commit/a8bac765001a88278250c396b1308e85b490dbbc))
+* stamp _remizasklep_block_purchase for closeout stock-outs ([7dda5b3](https://github.com/sync667/shopware-woocommerce-migrator/commit/7dda5b30c5eb66ead611949e15fe2f8405a41475))
+* surface new migration features in Settings UI ([6113663](https://github.com/sync667/shopware-woocommerce-migrator/commit/6113663d1e7aa5f319f33a6e7298ce3b3b6edb4b))
+* WooCommerceDB service + preserve order ids + status history ([73adbab](https://github.com/sync667/shopware-woocommerce-migrator/commit/73adbab0e34ad4ba6b7043b533a0e38f6ad9c258))
+
+
+### Bug Fixes
+
+* preserve description formatting on the DOM, not via strip_tags ([d354012](https://github.com/sync667/shopware-woocommerce-migrator/commit/d354012804487ed5221926db1ce112eb3cd784fa))
+* route category + CMS descriptions through ContentMigrator ([89b671e](https://github.com/sync667/shopware-woocommerce-migrator/commit/89b671e14b4d102ed3a8f232de2089f4f7e29806))
+
 ## [0.5.0](https://github.com/sync667/shopware-woocommerce-migrator/compare/v0.4.0...v0.5.0) (2026-02-27)
 
 
