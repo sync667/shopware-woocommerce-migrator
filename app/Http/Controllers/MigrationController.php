@@ -2,11 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Jobs\MigrateCategoriesJob;
-use App\Jobs\MigrateManufacturersJob;
-use App\Jobs\MigrateProductAttributesJob;
-use App\Jobs\MigrateProductsJob;
-use App\Jobs\MigrateTaxesJob;
 use App\Models\MigrationRun;
 use App\Services\ShopwareDB;
 use App\Services\WooCommerceClient;
@@ -129,15 +124,11 @@ class MigrationController extends Controller
             }
         }
 
-        // Products batch dispatches customers batch via then(),
-        // which in turn dispatches orders → coupons → reviews → [cms] → completion.
-        $jobs = array_merge($jobs, [
-            new MigrateManufacturersJob($migration->id),
-            new MigrateTaxesJob($migration->id),
-            new MigrateCategoriesJob($migration->id),
-            new MigrateProductAttributesJob($migration->id),
-            new MigrateProductsJob($migration->id),
-        ]);
+        // PrepareCatalogJob runs manufacturers/taxes/categories/attributes as a
+        // parallel Bus::batch, then dispatches MigrateProductsJob. Products fan-out
+        // dispatches customers via then(), which in turn dispatches orders →
+        // coupons → reviews → [cms] → completion.
+        $jobs[] = new \App\Jobs\PrepareCatalogJob($migration->id);
 
         Bus::chain($jobs)->catch(function (\Throwable $e) use ($migration) {
             \App\Models\MigrationLog::create([

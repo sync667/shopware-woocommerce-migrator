@@ -48,6 +48,9 @@ class MigrateOrderBatchJob implements ShouldQueue
         $transformer = new OrderTransformer;
 
         try {
+            $creates = [];
+            $createOrders = [];
+
             foreach ($this->orderIds as $orderId) {
                 if (app(\App\Services\CancellationService::class)->isCancelled($this->migrationId)) {
                     $this->batch()?->cancel();
@@ -60,68 +63,15 @@ class MigrateOrderBatchJob implements ShouldQueue
                 }
 
                 try {
-                    $order = $reader->fetchOne($orderId);
+                    $payload = $this->buildOrderPayload(
+                        $orderId, $reader, $transformer, $stateManager, $migration
+                    );
 
-                    if ($order === null) {
-                        $stateManager->markFailed('order', $orderId, $this->migrationId, 'Order not found in Shopware DB');
-                        $this->log('warning', 'Order not found in Shopware DB', $orderId);
-
+                    if ($payload === null) {
                         continue;
                     }
 
-                    $customer = $reader->fetchOrderCustomer($order->id);
-                    $billingAddress = ! empty($order->billing_address_id)
-                        ? $reader->fetchAddress($order->billing_address_id)
-                        : null;
-                    $shippingAddress = $reader->fetchShippingAddress($order->id);
-                    $lineItems = $reader->fetchLineItems($order->id);
-                    $trackingCodes = $reader->fetchDeliveryTracking($order->id);
-                    $shippingMethod = $reader->fetchShippingMethod($order->id);
-
-                    // Resolve WC product/variation IDs for each line item so WooCommerce
-                    // links order items to the migrated products properly. A Shopware
-                    // product UUID can belong to either a parent product or a variant —
-                    // check variation mapping first because a variation entity carries
-                    // the parent's woo_id in its payload (set by MigrateProductBatchJob).
-                    foreach ($lineItems as $lineItem) {
-                        if (empty($lineItem->product_id)) {
-                            continue;
-                        }
-
-                        $variationEntity = $stateManager->getEntity('variation', $lineItem->product_id, $this->migrationId);
-                        if ($variationEntity && $variationEntity->status === 'success' && $variationEntity->woo_id) {
-                            $lineItem->woo_variation_id = $variationEntity->woo_id;
-                            $parentWooId = $variationEntity->payload['parent_woo_id'] ?? null;
-                            if ($parentWooId === null) {
-                                // Legacy variation row (migrated before the parent_woo_id payload was
-                                // added). WC requires product_id on variation line items; log a
-                                // warning so the operator can spot the gap and re-migrate the parent.
-                                $this->log(
-                                    'warning',
-                                    "Variation {$lineItem->product_id} has no parent_woo_id payload; line item will lack product_id",
-                                    $orderId
-                                );
-                            } else {
-                                $lineItem->woo_product_id = $parentWooId;
-                            }
-
-                            continue;
-                        }
-
-                        $wooProductId = $stateManager->get('product', $lineItem->product_id, $this->migrationId);
-                        if ($wooProductId) {
-                            $lineItem->woo_product_id = $wooProductId;
-                        }
-                    }
-
-                    $data = $transformer->transform($order, $customer, $billingAddress, $shippingAddress, $lineItems, $trackingCodes, $shippingMethod);
-
-                    if (! empty($customer->customer_id)) {
-                        $wooCustomerId = $stateManager->get('customer', $customer->customer_id, $this->migrationId);
-                        if ($wooCustomerId) {
-                            $data['customer_id'] = $wooCustomerId;
-                        }
-                    }
+                    [$order, $data] = $payload;
 
                     if ($migration->is_dry_run) {
                         $stateManager->markSkipped('order', $order->id, $this->migrationId, $data);
@@ -131,8 +81,7 @@ class MigrateOrderBatchJob implements ShouldQueue
                     }
 
                     // Idempotency safety-net only matters on actual retries — a fresh
-                    // first attempt already passed alreadyMigrated() above. Skipping the
-                    // search GET on attempt 1 halves the WC round-trips per order.
+                    // first attempt already passed alreadyMigrated() above.
                     if ($this->attempts() > 1 || $migration->sync_mode === 'delta') {
                         $existing = $woo->findOrderByShopwareId($order->id, (string) ($order->order_number ?? ''));
                         if ($existing && ! empty($existing['id'])) {
@@ -143,22 +92,153 @@ class MigrateOrderBatchJob implements ShouldQueue
                         }
                     }
 
-                    $result = $woo->post('orders', $data);
-                    $wooId = $result['id'] ?? null;
-
-                    if ($wooId) {
-                        $wooId = $this->maybeRenumberOrder($migration, (int) $wooId, $order);
-
-                        $stateManager->set('order', $order->id, $wooId, $this->migrationId);
-                        $this->log('info', "Migrated order '{$order->order_number}' → WC #{$wooId}", $order->id);
-                    }
+                    $creates[] = $data;
+                    $createOrders[] = $order;
                 } catch (\Throwable $e) {
                     $stateManager->markFailed('order', $orderId, $this->migrationId, $e->getMessage());
                     $this->log('error', "Failed: {$e->getMessage()}", $orderId);
                 }
             }
+
+            if ($creates === []) {
+                return;
+            }
+
+            // WC's batch endpoint caps at 100 creates per request; our dispatcher
+            // currently chunks at 50, but stay defensive in case that changes.
+            foreach (array_chunk($creates, 100) as $chunkIdx => $chunkCreates) {
+                $chunkOrders = array_slice($createOrders, $chunkIdx * 100, count($chunkCreates));
+                $this->postBatchAndRecord($woo, $migration, $stateManager, $chunkCreates, $chunkOrders);
+            }
         } finally {
             $db->disconnect();
+        }
+    }
+
+    /**
+     * Build the WC order payload for one Shopware order. Returns [order, data]
+     * on success, null when the entity should be skipped (not found / pre-marked).
+     *
+     * @return array{0: object, 1: array<string, mixed>}|null
+     */
+    protected function buildOrderPayload(
+        string $orderId,
+        OrderReader $reader,
+        OrderTransformer $transformer,
+        StateManager $stateManager,
+        MigrationRun $migration,
+    ): ?array {
+        $order = $reader->fetchOne($orderId);
+
+        if ($order === null) {
+            $stateManager->markFailed('order', $orderId, $this->migrationId, 'Order not found in Shopware DB');
+            $this->log('warning', 'Order not found in Shopware DB', $orderId);
+
+            return null;
+        }
+
+        $customer = $reader->fetchOrderCustomer($order->id);
+        $billingAddress = ! empty($order->billing_address_id)
+            ? $reader->fetchAddress($order->billing_address_id)
+            : null;
+        $shippingAddress = $reader->fetchShippingAddress($order->id);
+        $lineItems = $reader->fetchLineItems($order->id);
+        $trackingCodes = $reader->fetchDeliveryTracking($order->id);
+        $shippingMethod = $reader->fetchShippingMethod($order->id);
+
+        // Resolve WC product/variation IDs for each line item so WooCommerce
+        // links order items to the migrated products properly. A Shopware
+        // product UUID can belong to either a parent product or a variant —
+        // check variation mapping first because a variation entity carries
+        // the parent's woo_id in its payload (set by MigrateProductBatchJob).
+        foreach ($lineItems as $lineItem) {
+            if (empty($lineItem->product_id)) {
+                continue;
+            }
+
+            $variationEntity = $stateManager->getEntity('variation', $lineItem->product_id, $this->migrationId);
+            if ($variationEntity && $variationEntity->status === 'success' && $variationEntity->woo_id) {
+                $lineItem->woo_variation_id = $variationEntity->woo_id;
+                $parentWooId = $variationEntity->payload['parent_woo_id'] ?? null;
+                if ($parentWooId === null) {
+                    $this->log(
+                        'warning',
+                        "Variation {$lineItem->product_id} has no parent_woo_id payload; line item will lack product_id",
+                        $orderId
+                    );
+                } else {
+                    $lineItem->woo_product_id = $parentWooId;
+                }
+
+                continue;
+            }
+
+            $wooProductId = $stateManager->get('product', $lineItem->product_id, $this->migrationId);
+            if ($wooProductId) {
+                $lineItem->woo_product_id = $wooProductId;
+            }
+        }
+
+        $data = $transformer->transform($order, $customer, $billingAddress, $shippingAddress, $lineItems, $trackingCodes, $shippingMethod);
+
+        if (! empty($customer->customer_id)) {
+            $wooCustomerId = $stateManager->get('customer', $customer->customer_id, $this->migrationId);
+            if ($wooCustomerId) {
+                $data['customer_id'] = $wooCustomerId;
+            }
+        }
+
+        return [$order, $data];
+    }
+
+    /**
+     * POST /orders/batch with the prepared `create[]` payload. The response's
+     * `create[]` is documented to preserve input order, so we map each response
+     * slot back to the originating Shopware order by index. Per-item errors
+     * (WP_Error wrapped under `error` key) become per-entity markFailed rows —
+     * one bad order in a batch doesn't fail the rest.
+     *
+     * @param  array<int, array<string, mixed>>  $chunkCreates
+     * @param  array<int, object>  $chunkOrders
+     */
+    protected function postBatchAndRecord(
+        WooCommerceClient $woo,
+        MigrationRun $migration,
+        StateManager $stateManager,
+        array $chunkCreates,
+        array $chunkOrders,
+    ): void {
+        try {
+            $result = $woo->post('orders/batch', ['create' => array_values($chunkCreates)]);
+        } catch (\Throwable $e) {
+            // Whole-batch failure: mark every order in the chunk failed so the
+            // operator sees the cause and Bus::batch retry logic can do its job.
+            foreach ($chunkOrders as $order) {
+                $stateManager->markFailed('order', $order->id, $this->migrationId, $e->getMessage());
+                $this->log('error', "Batch POST failed: {$e->getMessage()}", $order->id);
+            }
+            throw $e;
+        }
+
+        $items = is_array($result['create'] ?? null) ? $result['create'] : [];
+
+        foreach ($chunkOrders as $i => $order) {
+            $item = $items[$i] ?? null;
+
+            if (! is_array($item) || empty($item['id'])) {
+                $errMessage = is_array($item['error'] ?? null)
+                    ? ($item['error']['message'] ?? 'Unknown batch error')
+                    : 'No id returned for order in batch response';
+                $stateManager->markFailed('order', $order->id, $this->migrationId, $errMessage);
+                $this->log('error', "Failed: {$errMessage}", $order->id);
+
+                continue;
+            }
+
+            $wooId = $this->maybeRenumberOrder($migration, (int) $item['id'], $order);
+
+            $stateManager->set('order', $order->id, $wooId, $this->migrationId);
+            $this->log('info', "Migrated order '{$order->order_number}' → WC #{$wooId}", $order->id);
         }
     }
 

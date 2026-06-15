@@ -8,6 +8,7 @@ use App\Services\ShopwareDB;
 use App\Services\StateManager;
 use App\Services\WooCommerceClient;
 use App\Shopware\Readers\ProductReader;
+use Illuminate\Bus\Batchable;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -16,7 +17,7 @@ use Illuminate\Queue\SerializesModels;
 
 class MigrateProductAttributesJob implements ShouldQueue
 {
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+    use Batchable, Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public int $tries = 3;
 

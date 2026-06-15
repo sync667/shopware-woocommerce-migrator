@@ -3,10 +3,6 @@
 namespace App\Console\Commands;
 
 use App\Jobs\CleanWooCommerceJob;
-use App\Jobs\MigrateCategoriesJob;
-use App\Jobs\MigrateManufacturersJob;
-use App\Jobs\MigrateProductsJob;
-use App\Jobs\MigrateTaxesJob;
 use App\Models\MigrationRun;
 use App\Services\WooCommerceCleanup;
 use Illuminate\Console\Command;
@@ -168,15 +164,12 @@ class MigrateShopwareCommand extends Command
             }
         }
 
-        // ProductsJob dispatches the CustomerJob batch, which then dispatches the
-        // remaining chain (orders, coupons, reviews, shipping, payment, SEO, CMS,
-        // streams, newsletter, wishlist, completion) via dispatchRemainingChain().
-        $jobs = array_merge($jobs, [
-            new MigrateManufacturersJob($migration->id),
-            new MigrateTaxesJob($migration->id),
-            new MigrateCategoriesJob($migration->id),
-            new MigrateProductsJob($migration->id),
-        ]);
+        // PrepareCatalogJob runs manufacturers/taxes/categories/attributes as a
+        // parallel Bus::batch, then dispatches MigrateProductsJob. Products
+        // dispatches CustomersJob via then(), which then dispatches the remaining
+        // chain (orders, coupons, reviews, shipping, payment, SEO, CMS, streams,
+        // newsletter, wishlist, completion) via dispatchRemainingChain().
+        $jobs[] = new \App\Jobs\PrepareCatalogJob($migration->id);
 
         if ($this->option('cms-all')) {
             $this->info('CMS pages: Migrating all pages');
