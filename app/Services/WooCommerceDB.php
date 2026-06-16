@@ -365,10 +365,17 @@ class WooCommerceDB
             if ($hpos) {
                 $this->affecting('UPDATE '.$this->table('wc_orders').' SET id = ? WHERE id = ?', [$toId, $fromId]);
                 $this->affecting('UPDATE '.$this->table('wc_orders').' SET parent_order_id = ? WHERE parent_order_id = ?', [$toId, $fromId]);
+                // wc_orders_meta was missed in earlier versions — leaving these
+                // unmoved orphaned ALL custom meta (_order_number, _shopware_order_id,
+                // billing/shipping address indexes, custom fields) on the old auto ID.
+                // Same for tax_lookup. The lookup/stats rows are auxiliary but moved
+                // for completeness.
+                $this->affecting('UPDATE '.$this->table('wc_orders_meta').' SET order_id = ? WHERE order_id = ?', [$toId, $fromId]);
                 $this->affecting('UPDATE '.$this->table('wc_order_addresses').' SET order_id = ? WHERE order_id = ?', [$toId, $fromId]);
                 $this->affecting('UPDATE '.$this->table('wc_order_operational_data').' SET order_id = ? WHERE order_id = ?', [$toId, $fromId]);
                 $this->affecting('UPDATE '.$this->table('wc_order_stats').' SET order_id = ? WHERE order_id = ?', [$toId, $fromId]);
                 $this->affecting('UPDATE '.$this->table('wc_order_product_lookup').' SET order_id = ? WHERE order_id = ?', [$toId, $fromId]);
+                $this->affecting('UPDATE '.$this->table('wc_order_tax_lookup').' SET order_id = ? WHERE order_id = ?', [$toId, $fromId]);
             }
         });
     }

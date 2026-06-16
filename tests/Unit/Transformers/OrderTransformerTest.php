@@ -57,7 +57,6 @@ class OrderTransformerTest extends TestCase
         $result = $this->transformer->transform($order, $customer, $billing);
 
         $this->assertEquals('completed', $result['status']);
-        $this->assertTrue($result['set_paid']);
         $this->assertEquals('Please deliver before noon', $result['customer_note']);
         $this->assertEquals('john@example.com', $result['billing']['email']);
         $this->assertEquals('123 Main St', $result['billing']['address_1']);
@@ -65,6 +64,68 @@ class OrderTransformerTest extends TestCase
 
         $meta = collect($result['meta_data']);
         $this->assertEquals('SW-10001', $meta->firstWhere('key', '_shopware_order_number')['value']);
+    }
+
+    public function test_emits_gmt_date_fields_so_wc_does_not_apply_site_timezone(): void
+    {
+        // Bug fix: previously sent `date_created` (no TZ), which WC interpreted as
+        // site-local time and shifted every order by the site's UTC offset. The _gmt
+        // variant is explicit UTC.
+        $order = (object) [
+            'order_number' => '12345',
+            'order_date' => '2024-06-25 12:33:47.893',
+            'updated_at' => '2024-07-24 08:31:04.123',
+            'status' => 'completed',
+        ];
+
+        $result = $this->transformer->transform($order, null, null);
+
+        $this->assertArrayNotHasKey('date_created', $result, 'must NOT use non-GMT field — that one is site-timezone-relative');
+        $this->assertSame('2024-06-25T12:33:47', $result['date_created_gmt']);
+        $this->assertSame('2024-07-24T08:31:04', $result['date_modified_gmt']);
+        $this->assertSame('2024-06-25T12:33:47', $result['date_paid_gmt'], 'completed orders are paid at checkout time');
+        $this->assertSame('2024-07-24T08:31:04', $result['date_completed_gmt'], 'completed_gmt uses updated_at (closer estimate than order_date)');
+    }
+
+    public function test_cancelled_order_has_no_paid_or_completed_dates(): void
+    {
+        $order = (object) [
+            'order_number' => '12345',
+            'order_date' => '2024-06-25 12:33:47',
+            'updated_at' => '2024-06-26 10:00:00',
+            'status' => 'cancelled',
+        ];
+
+        $result = $this->transformer->transform($order, null, null);
+
+        $this->assertArrayNotHasKey('date_paid_gmt', $result);
+        $this->assertArrayNotHasKey('date_completed_gmt', $result);
+        $this->assertArrayHasKey('date_created_gmt', $result);
+        $this->assertArrayHasKey('date_modified_gmt', $result);
+    }
+
+    public function test_in_progress_order_marks_paid_but_not_completed(): void
+    {
+        $order = (object) [
+            'order_number' => '12345',
+            'order_date' => '2024-06-25 12:33:47',
+            'updated_at' => '2024-06-25 13:00:00',
+            'status' => 'in_progress',
+        ];
+
+        $result = $this->transformer->transform($order, null, null);
+
+        $this->assertArrayHasKey('date_paid_gmt', $result, 'in_progress is paid');
+        $this->assertArrayNotHasKey('date_completed_gmt', $result, 'in_progress is not yet completed');
+    }
+
+    public function test_normalize_datetime_handles_fractional_seconds_and_empty(): void
+    {
+        $this->assertSame('2024-01-15T10:30:45', OrderTransformer::normalizeDateTime('2024-01-15 10:30:45.999'));
+        $this->assertSame('2024-01-15T10:30:45', OrderTransformer::normalizeDateTime('2024-01-15 10:30:45'));
+        $this->assertNull(OrderTransformer::normalizeDateTime(null));
+        $this->assertNull(OrderTransformer::normalizeDateTime(''));
+        $this->assertNull(OrderTransformer::normalizeDateTime('0000-00-00 00:00:00'));
     }
 
     public function test_emits_order_number_meta_for_display_filter(): void

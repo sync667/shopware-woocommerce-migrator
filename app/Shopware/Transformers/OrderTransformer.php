@@ -14,6 +14,26 @@ class OrderTransformer
         'reminded' => 'on-hold',
     ];
 
+    /** Shopware order.state values that imply payment was captured. */
+    public const PAID_STATUSES = ['completed', 'in_progress'];
+
+    /**
+     * Normalize a Shopware timestamp for WC's *_gmt fields (UTC, no fractional seconds).
+     * Shopware 6 stores datetime(3) — WC's DATETIME columns silently truncate the .NNN,
+     * but normalizing here makes the value we send equal to the value WC stores.
+     */
+    public static function normalizeDateTime(?string $value): ?string
+    {
+        if ($value === null || $value === '' || str_starts_with($value, '0000-00-00')) {
+            return null;
+        }
+        try {
+            return (new \DateTimeImmutable($value, new \DateTimeZone('UTC')))->format('Y-m-d\TH:i:s');
+        } catch (\Throwable $e) {
+            return substr($value, 0, 19);
+        }
+    }
+
     public function transform(
         object $order,
         ?object $customer = null,
@@ -23,10 +43,18 @@ class OrderTransformer
         array $trackingCodes = [],
         ?object $shippingMethod = null,
     ): array {
+        // Shopware DATETIME columns are UTC; WC's `date_created` field is interpreted
+        // as site-local timezone, which on a Europe/Warsaw site would shift every order
+        // by 1-2 hours. The `_gmt` variants are unambiguous UTC — use those so the data
+        // round-trips exactly regardless of WP timezone setting.
+        $status = (string) ($order->status ?? '');
+        $createdGmt = self::normalizeDateTime($order->order_date ?? null);
+        $modifiedGmt = self::normalizeDateTime($order->updated_at ?? null) ?: $createdGmt;
+        $paidGmt = in_array($status, self::PAID_STATUSES, true) ? $createdGmt : null;
+        $completedGmt = $status === 'completed' ? ($modifiedGmt ?: $createdGmt) : null;
+
         $data = [
-            'status' => self::STATUS_MAP[$order->status] ?? 'pending',
-            'date_created' => isset($order->order_date) ? (new \DateTime($order->order_date))->format('Y-m-d\TH:i:s') : null,
-            'set_paid' => in_array($order->status, ['completed', 'in_progress']),
+            'status' => self::STATUS_MAP[$status] ?? 'pending',
             'billing' => $billingAddress ? $this->transformAddress($billingAddress) : [],
             'shipping' => $shippingAddress ? $this->transformAddress($shippingAddress) : [],
             'line_items' => $this->transformLineItems($lineItems),
@@ -39,6 +67,19 @@ class OrderTransformer
                 ['key' => '_shopware_order_id', 'value' => $order->id ?? ''],
             ],
         ];
+
+        if ($createdGmt !== null) {
+            $data['date_created_gmt'] = $createdGmt;
+        }
+        if ($modifiedGmt !== null) {
+            $data['date_modified_gmt'] = $modifiedGmt;
+        }
+        if ($paidGmt !== null) {
+            $data['date_paid_gmt'] = $paidGmt;
+        }
+        if ($completedGmt !== null) {
+            $data['date_completed_gmt'] = $completedGmt;
+        }
 
         // Shipping lines — always include so the order total is correct in WC
         $shippingTotal = (float) ($order->shipping_total ?? 0);
