@@ -277,13 +277,15 @@ class MigrateProductBatchJob implements ShouldQueue
                 throw new \RuntimeException('Failed to create product in WooCommerce');
             }
 
-            $stateManager->set('product', $product->id, $wooProductId, $this->migrationId);
+            $stateManager->set('product', $product->id, $wooProductId, $this->migrationId, [
+                'slug' => $result['slug'] ?? null,
+            ]);
             $this->log('info', "Migrated product '{$data['name']}' → WC #{$wooProductId}", $product->id);
 
             $this->maybeWriteDeliveryTiers($migration, $product, $wooProductId);
 
             foreach ($variants as $variant) {
-                $this->migrateVariant($variant, $wooProductId, $reader, $transformer, $woo, $imageMigrator, $stateManager, $blockPurchaseRule, $globalAttrMap);
+                $this->migrateVariant($variant, $product->id, $wooProductId, $reader, $transformer, $woo, $imageMigrator, $stateManager, $blockPurchaseRule, $globalAttrMap);
             }
 
             // Cross-sells are linked in a separate job (LinkCrossSellsJob) AFTER the
@@ -297,6 +299,7 @@ class MigrateProductBatchJob implements ShouldQueue
 
     protected function migrateVariant(
         object $variant,
+        string $parentShopwareId,
         int $wooProductId,
         ProductReader $reader,
         ProductTransformer $transformer,
@@ -336,7 +339,7 @@ class MigrateProductBatchJob implements ShouldQueue
                 // variation — WC requires both ids for variation line items.
                 $stateManager->set('variation', $variant->id, $wooVariationId, $this->migrationId, [
                     'parent_woo_id' => $wooProductId,
-                    'parent_shopware_id' => $variant->parent_id ?? null,
+                    'parent_shopware_id' => $parentShopwareId,
                 ]);
                 $this->log('info', "Migrated variant '{$variant->sku}' → WC #{$wooVariationId}", $variant->id, 'variation');
             }

@@ -312,4 +312,42 @@ class MigrationJobsTest extends TestCase
             'WooCommerceClient should have a delete() method for cleanup operations'
         );
     }
+
+    /**
+     * Regression: a migrated variation must persist its parent product's shopware id so the
+     * SEO URL job can resolve variant URLs (/Product/1-size) to the parent product. The bug
+     * stored $variant->parent_id (null in the batch path), orphaning every variant redirect.
+     */
+    public function test_migrate_variant_persists_parent_shopware_id_independent_of_variant_object(): void
+    {
+        $stateManager = new \App\Services\StateManager;
+
+        $reader = $this->createMock(\App\Shopware\Readers\ProductReader::class);
+        $reader->method('fetchVariantOptions')->willReturn([]);
+        $reader->method('fetchMedia')->willReturn([]);
+
+        $transformer = $this->createMock(\App\Shopware\Transformers\ProductTransformer::class);
+        $transformer->method('buildVariantOptionAttributes')->willReturn([]);
+        $transformer->method('transformVariant')->willReturn(['sku' => 'VARIANT-1']);
+
+        $woo = $this->createMock(\App\Services\WooCommerceClient::class);
+        $woo->method('post')->willReturn(['id' => 9001]);
+
+        $imageMigrator = $this->createMock(\App\Services\ImageMigrator::class);
+
+        // parent_id intentionally null — the fix must NOT depend on the variant object.
+        $variant = (object) ['id' => 'variant-sw-id', 'sku' => 'VARIANT-1', 'parent_id' => null];
+
+        $job = new MigrateProductBatchJob($this->migration->id, ['parent-sw-id']);
+
+        $method = new \ReflectionMethod($job, 'migrateVariant');
+        $method->setAccessible(true);
+        $method->invoke($job, $variant, 'parent-sw-id', 9000, $reader, $transformer, $woo, $imageMigrator, $stateManager, false, []);
+
+        $entity = $stateManager->getEntity('variation', 'variant-sw-id', $this->migration->id);
+
+        $this->assertNotNull($entity);
+        $this->assertSame('parent-sw-id', $entity->payload['parent_shopware_id']);
+        $this->assertSame(9000, $entity->payload['parent_woo_id']);
+    }
 }

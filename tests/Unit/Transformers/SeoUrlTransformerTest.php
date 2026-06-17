@@ -28,7 +28,7 @@ class SeoUrlTransformerTest extends TestCase
         $result = $this->transformer->transform($seoUrl, 'product', 42, 'classic-shoe-wc');
 
         $this->assertSame('/classic-shoe', $result['source']);
-        $this->assertSame('/product/classic-shoe-wc/', $result['target']);
+        $this->assertSame('/produkt/classic-shoe-wc/', $result['target']);
         $this->assertSame(301, $result['code']);
         $this->assertSame('aaa111', $result['metadata']['shopware_id']);
         $this->assertSame('bbb222', $result['metadata']['foreign_key']);
@@ -49,7 +49,7 @@ class SeoUrlTransformerTest extends TestCase
         $result = $this->transformer->transform($seoUrl, 'category', 7, 'sneakers');
 
         $this->assertSame('/Shoes/Sneakers', $result['source']);
-        $this->assertSame('/product-category/sneakers/', $result['target']);
+        $this->assertSame('/kategoria-produktu/sneakers/', $result['target']);
     }
 
     public function test_transforms_cms_page_with_slug(): void
@@ -181,13 +181,13 @@ class SeoUrlTransformerTest extends TestCase
     {
         $seoUrl = (object) [
             'id' => 'a', 'foreign_key' => 'b', 'route_name' => 'frontend.detail.page',
-            'seo_path_info' => 'product/same', 'is_canonical' => 1,
+            'seo_path_info' => 'produkt/same', 'is_canonical' => 1,
         ];
 
         $result = $this->transformer->transform($seoUrl, 'product', 1, 'same');
 
-        $this->assertSame('/product/same', $result['source']);
-        $this->assertSame('/product/same/', $result['target']);
+        $this->assertSame('/produkt/same', $result['source']);
+        $this->assertSame('/produkt/same/', $result['target']);
         $this->assertTrue($result['is_self_redirect']);
     }
 

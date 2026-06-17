@@ -280,15 +280,23 @@ class MigrateSeoUrlsJobTest extends TestCase
         Http::assertSent(fn ($r) => $r->method() === 'POST'
             && str_contains($r->url(), '/wp-json/redirection/v1/redirect')
             && $r['url'] === '/shop/prod-canonical'
-            && $r['action_data']['url'] === '/product/prod-1/');
+            && $r['action_data']['url'] === '/produkt/prod-1/');
 
         Http::assertSent(fn ($r) => $r->method() === 'POST'
             && str_contains($r->url(), '/wp-json/redirection/v1/redirect')
             && $r['url'] === '/shop/old-name-alias');
 
+        // The canonical /detail/{productId} URL also redirects to the same target,
+        // emitted once (from the canonical seo_url row only).
+        Http::assertSent(fn ($r) => $r->method() === 'POST'
+            && str_contains($r->url(), '/wp-json/redirection/v1/redirect')
+            && $r['url'] === '/detail/prodfk1'
+            && $r['action_data']['url'] === '/produkt/prod-1/');
+
         $lines = $this->csvLines();
         $this->assertSame('source,target,regex,code', $lines[0]);
-        $this->assertCount(3, $lines);
+        $this->assertCount(4, $lines);
+        $this->assertContains('/detail/prodfk1,/produkt/prod-1/,,301', $lines);
     }
 
     public function test_skip_when_source_already_exists_in_redirection(): void
@@ -525,7 +533,7 @@ class MigrateSeoUrlsJobTest extends TestCase
             && str_contains($r->url(), '/wp-json/redirection/v1/redirect'));
 
         $lines = $this->csvLines();
-        $this->assertSame('/dryrun-thing,/product/p/,,301', $lines[1]);
+        $this->assertSame('/dryrun-thing,/produkt/p/,,301', $lines[1]);
     }
 
     public function test_self_redirect_is_skipped(): void
@@ -540,7 +548,7 @@ class MigrateSeoUrlsJobTest extends TestCase
         ]);
 
         $this->bindReader(products: [
-            $this->seoRow('seo1', 'pfk', 'frontend.detail.page', 'product/same'),
+            $this->seoRow('seo1', 'pfk', 'frontend.detail.page', 'produkt/same'),
         ]);
 
         $this->fakeAvailableRedirection();
@@ -655,8 +663,10 @@ class MigrateSeoUrlsJobTest extends TestCase
 
         $lines = $this->csvLines();
         $this->assertSame('source,target,regex,code', $lines[0]);
-        $this->assertSame('/old-shoe,/product/shoe/,,301', $lines[1]);
-        $this->assertSame('/old-cat,/product-category/cat/,,301', $lines[2]);
+        $this->assertSame('/old-shoe,/produkt/shoe/,,301', $lines[1]);
+        // Products also emit their canonical /detail/{id} URL; categories do not.
+        $this->assertSame('/detail/p,/produkt/shoe/,,301', $lines[2]);
+        $this->assertSame('/old-cat,/kategoria-produktu/cat/,,301', $lines[3]);
     }
 
     public function test_pending_entity_with_slug_is_not_redirected_yet(): void

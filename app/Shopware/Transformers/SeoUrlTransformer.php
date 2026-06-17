@@ -7,8 +7,8 @@ use InvalidArgumentException;
 class SeoUrlTransformer
 {
     private const TARGETS = [
-        'product' => ['slug' => '/product/%s/', 'fallback' => '/?p=%d'],
-        'category' => ['slug' => '/product-category/%s/', 'fallback' => '/?cat=%d'],
+        'product' => ['slug' => '/produkt/%s/', 'fallback' => '/?p=%d'],
+        'category' => ['slug' => '/kategoria-produktu/%s/', 'fallback' => '/?cat=%d'],
         'cms_page' => ['slug' => '/%s/', 'fallback' => '/?page_id=%d'],
     ];
 

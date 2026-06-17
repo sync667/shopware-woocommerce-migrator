@@ -185,7 +185,7 @@ class MigrateProductJob implements ShouldQueue
             $this->log('info', "Migrated product '{$data['name']}' → WC #{$wooProductId}");
 
             foreach ($variants as $variant) {
-                $this->migrateVariant($variant, $wooProductId, $reader, $transformer, $woo, $imageMigrator, $stateManager, $globalAttrMap);
+                $this->migrateVariant($variant, $product->id, $wooProductId, $reader, $transformer, $woo, $imageMigrator, $stateManager, $globalAttrMap);
             }
 
             $crossSells = $reader->fetchCrossSells($product->id);
@@ -200,6 +200,7 @@ class MigrateProductJob implements ShouldQueue
 
     protected function migrateVariant(
         object $variant,
+        string $parentShopwareId,
         int $wooProductId,
         ProductReader $reader,
         ProductTransformer $transformer,
@@ -233,7 +234,10 @@ class MigrateProductJob implements ShouldQueue
             $wooVariationId = $result['id'] ?? null;
 
             if ($wooVariationId) {
-                $stateManager->set('variation', $variant->id, $wooVariationId, $this->migrationId);
+                $stateManager->set('variation', $variant->id, $wooVariationId, $this->migrationId, [
+                    'parent_woo_id' => $wooProductId,
+                    'parent_shopware_id' => $parentShopwareId,
+                ]);
                 $this->log('info', "Migrated variant '{$variant->sku}' → WC #{$wooVariationId}", $variant->id, 'variation');
             }
         } catch (\Throwable $e) {

@@ -225,6 +225,8 @@ class MigrateSeoUrlBatchJob implements ShouldQueue
             flock($csv, LOCK_UN);
         }
 
+        $this->emitCanonicalDetailRedirect($row, $entityType, $data, $csv, $client, $existingSources, $groupId, $defaultCode, $usingApi);
+
         if ($migration->is_dry_run) {
             $stateManager->markSkipped('seo_url', $row->id, $this->migrationId, $this->skipPayload($data, 'dry_run'));
 
@@ -255,6 +257,62 @@ class MigrateSeoUrlBatchJob implements ShouldQueue
         } catch (Throwable $e) {
             $stateManager->markFailed('seo_url', $row->id, $this->migrationId, $e->getMessage());
             $this->log('error', "Failed to push redirect: {$e->getMessage()}", $row->id);
+        }
+    }
+
+    /**
+     * Shopware serves a canonical, non-pretty URL for every product alongside its
+     * SEO slug: /detail/{productId} (stored verbatim in seo_url.path_info). Those
+     * canonical links are indexed and bookmarked, so emit a redirect for them too,
+     * pointing at the same WooCommerce target as the pretty URL.
+     *
+     * Only the canonical seo_url row per product carries this (is_canonical) so we
+     * emit exactly once per product/variant — non-canonical aliases share the same
+     * path_info and would otherwise produce duplicate rules. Products only; category
+     * /navigation/{id} paths were never publicly linked.
+     *
+     * @param  resource  $csv
+     * @param  array{source: string, target: string, code: int, is_self_redirect: bool, metadata: array<string, mixed>}  $data
+     * @param  array<string, true>  $existingSources
+     */
+    protected function emitCanonicalDetailRedirect(
+        object $row,
+        string $entityType,
+        array $data,
+        $csv,
+        ?RedirectionClient $client,
+        array $existingSources,
+        ?int $groupId,
+        int $defaultCode,
+        bool $usingApi,
+    ): void {
+        if ($entityType !== 'product' || empty($row->is_canonical)) {
+            return;
+        }
+
+        $source = (string) ($row->path_info ?? '');
+        if (! str_starts_with($source, '/detail/')) {
+            return;
+        }
+
+        if ($source === $data['target'] || isset($existingSources[$source])) {
+            return;
+        }
+
+        if (flock($csv, LOCK_EX)) {
+            fputcsv($csv, [$source, $data['target'], '', (string) $data['code']]);
+            fflush($csv);
+            flock($csv, LOCK_UN);
+        }
+
+        if (! $usingApi || $client === null || $groupId === null) {
+            return;
+        }
+
+        try {
+            $client->createRedirect($source, $data['target'], $data['code'] ?: $defaultCode, $groupId);
+        } catch (Throwable $e) {
+            $this->log('warning', "Failed to push canonical /detail redirect '{$source}': {$e->getMessage()}", $row->id);
         }
     }
 

@@ -63,6 +63,12 @@ class SeoUrlReader
      * uses seo_path_info to detect cross-entity source collisions before chunking
      * so the work-units it ships to batch workers are already a clean set.
      *
+     * Soft-deleted rows (is_deleted = 1) are intentionally INCLUDED: when a product
+     * variant or category is renamed Shopware soft-deletes the old seo_url, but that
+     * URL is still indexed by search engines and linked externally — it must still
+     * redirect. A live row always wins over a deleted one for the same (path, entity),
+     * and the batch job harmlessly skips any whose entity was fully removed (orphan).
+     *
      * @return array<int, object>
      */
     public function fetchAllIds(): array
@@ -74,9 +80,11 @@ class SeoUrlReader
                     LOWER(HEX(su.id)) AS id,
                     su.seo_path_info,
                     su.foreign_key,
+                    su.is_deleted,
                     ROW_NUMBER() OVER (
                         PARTITION BY su.seo_path_info, su.foreign_key
                         ORDER BY
+                            su.is_deleted ASC,
                             COALESCE(su.is_canonical, 0) DESC,
                             (su.sales_channel_id IS NULL) DESC,
                             su.created_at ASC,
@@ -84,13 +92,12 @@ class SeoUrlReader
                     ) AS rn
                 FROM seo_url su
                 WHERE (su.route_name IN (?, ?, ?) OR su.route_name LIKE ?)
-                  AND su.is_deleted = 0
                   AND su.language_id = ?
                   AND su.seo_path_info IS NOT NULL
                   AND su.seo_path_info != ?
             ) t
             WHERE rn = 1
-            ORDER BY id ASC
+            ORDER BY is_deleted ASC, id ASC
         ', [
             'frontend.detail.page',
             'frontend.navigation.page',
