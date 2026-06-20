@@ -72,4 +72,24 @@ return [
         ],
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Size chart ("Rozmiarówka")
+    |--------------------------------------------------------------------------
+    |
+    | custom_field   Shopware product custom-field (media type) holding the
+    |                size-chart media UUID.
+    | meta.image_id  WC postmeta key for the uploaded WP attachment ID.
+    | meta.image_url WC postmeta key for the uploaded image source URL.
+    |
+    */
+
+    'size_chart' => [
+        'custom_field' => env('SHOPWARE_SIZE_CHART_FIELD', 'product_additional_fields_size'),
+        'meta' => [
+            'image_id' => env('SIZE_CHART_META_IMAGE_ID', '_size_chart_image_id'),
+            'image_url' => env('SIZE_CHART_META_IMAGE_URL', '_size_chart_image_url'),
+        ],
+    ],
+
 ];

@@ -104,4 +104,51 @@ class MigrateProductBatchJobTest extends TestCase
         $this->assertStringContainsString('"providerNameSlug":"youtube"', $out);
         $this->assertStringContainsString('watch?v=xyz', $out);
     }
+
+    public function test_render_video_slots_per_product_override_replaces_layout_default(): void
+    {
+        $slot = (object) [
+            'slot_id' => 'slot-1',
+            'type' => 'youtube-video',
+            'config' => json_encode(['videoID' => ['source' => 'static', 'value' => 'layoutDefault']]),
+        ];
+
+        $overrides = ['slot-1' => ['videoID' => ['source' => 'static', 'value' => 'productOwnVideo']]];
+
+        $out = MigrateProductBatchJob::renderVideoSlots([$slot], $overrides);
+
+        $this->assertStringContainsString('watch?v=productOwnVideo', $out);
+        $this->assertStringNotContainsString('layoutDefault', $out);
+    }
+
+    public function test_render_video_slots_uses_layout_default_when_no_override_for_slot(): void
+    {
+        $slot = (object) [
+            'slot_id' => 'slot-1',
+            'type' => 'youtube-video',
+            'config' => json_encode(['videoID' => ['source' => 'static', 'value' => 'layoutDefault']]),
+        ];
+
+        $overrides = ['some-other-slot' => ['videoID' => ['source' => 'static', 'value' => 'unrelated']]];
+
+        $out = MigrateProductBatchJob::renderVideoSlots([$slot], $overrides);
+
+        $this->assertStringContainsString('watch?v=layoutDefault', $out);
+        $this->assertStringNotContainsString('unrelated', $out);
+    }
+
+    public function test_render_video_slots_override_clearing_video_skips_slot(): void
+    {
+        $slot = (object) [
+            'slot_id' => 'slot-1',
+            'type' => 'youtube-video',
+            'config' => json_encode(['videoID' => ['source' => 'static', 'value' => 'layoutDefault']]),
+        ];
+
+        $overrides = ['slot-1' => ['videoID' => ['source' => 'static', 'value' => null]]];
+
+        $out = MigrateProductBatchJob::renderVideoSlots([$slot], $overrides);
+
+        $this->assertSame('', $out);
+    }
 }

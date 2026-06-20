@@ -226,13 +226,19 @@ class ProductTransformer
             }
         }
 
-        // Custom fields (stored as individual _sw_cf_* meta entries)
+        // Custom fields (stored as individual _sw_cf_* meta entries).
+        // The size-chart field is a media UUID that is resolved to an uploaded WP
+        // attachment elsewhere (job / backfill), so the raw UUID is suppressed here.
         if (! empty($product->custom_fields)) {
             $customFields = is_string($product->custom_fields)
                 ? json_decode($product->custom_fields, true)
                 : (array) $product->custom_fields;
+            $sizeChartField = (string) config('migration.size_chart.custom_field');
             if (is_array($customFields)) {
                 foreach ($customFields as $key => $value) {
+                    if ($key === $sizeChartField) {
+                        continue;
+                    }
                     if ($value !== null && $value !== '' && $value !== []) {
                         $data['meta_data'][] = ['key' => '_sw_cf_'.$key, 'value' => $value];
                     }

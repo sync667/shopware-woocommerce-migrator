@@ -133,6 +133,7 @@ class ProductReader
                 p.purchase_prices,
                 p.release_date,
                 pt.custom_fields,
+                pt.slot_config,
                 p.created_at,
                 COALESCE(dtt.name, '') AS delivery_time_name,
                 {$maxVisibilitySql} AS max_visibility
@@ -223,6 +224,30 @@ class ProductReader
               AND pm.product_version_id = ?
             ORDER BY pm.position ASC
         ", [$this->db->languageIdBin(), $productId, $this->db->liveVersionIdBin()]);
+    }
+
+    /**
+     * Fetch a single media row by its UUID (hex). Used for media referenced outside the
+     * product gallery, e.g. the size-chart custom field (product_additional_fields_size).
+     */
+    public function fetchMediaById(string $mediaId): ?object
+    {
+        $rows = $this->db->select("
+            SELECT
+                LOWER(HEX(m.id)) AS media_id,
+                COALESCE(m.file_name, '') AS file_name,
+                COALESCE(m.file_extension, '') AS file_extension,
+                COALESCE(mt.alt, '') AS alt,
+                COALESCE(mt.title, '') AS title,
+                FLOOR(UNIX_TIMESTAMP(m.uploaded_at)) AS uploaded_at
+            FROM media m
+            LEFT JOIN media_translation mt
+                ON mt.media_id = m.id
+                AND mt.language_id = ?
+            WHERE m.id = UNHEX(?)
+        ", [$this->db->languageIdBin(), $mediaId]);
+
+        return $rows[0] ?? null;
     }
 
     public function fetchCategories(string $productId): array
@@ -388,7 +413,7 @@ class ProductReader
         }
 
         return $this->db->select("
-            SELECT cs.type, cst.config, cse.position AS section_pos, cb.position AS block_pos, cs.slot AS slot_name
+            SELECT LOWER(HEX(cs.id)) AS slot_id, cs.type, cst.config, cse.position AS section_pos, cb.position AS block_pos, cs.slot AS slot_name
             FROM cms_slot cs
             JOIN cms_block cb ON cb.id = cs.cms_block_id
             JOIN cms_section cse ON cse.id = cb.cms_section_id

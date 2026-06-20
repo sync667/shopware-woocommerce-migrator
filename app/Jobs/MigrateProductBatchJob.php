@@ -183,7 +183,11 @@ class MigrateProductBatchJob implements ShouldQueue
             $blockPurchaseRule = (bool) ($migration->settings['companion_options']['block_purchase_on_closeout'] ?? false);
 
             if (! empty($product->cms_page_id)) {
-                $videoEmbeds = self::renderVideoSlots($reader->fetchVideoSlots($product->cms_page_id));
+                $slotConfigOverrides = json_decode((string) ($product->slot_config ?? '{}'), true);
+                if (! is_array($slotConfigOverrides)) {
+                    $slotConfigOverrides = [];
+                }
+                $videoEmbeds = self::renderVideoSlots($reader->fetchVideoSlots($product->cms_page_id), $slotConfigOverrides);
                 if ($videoEmbeds !== '') {
                     $product->description = ((string) ($product->description ?? '')).$videoEmbeds;
                 }
@@ -268,6 +272,10 @@ class MigrateProductBatchJob implements ShouldQueue
                 }
                 // No fallback unshift needed: when no cover match, images are already in
                 // order with the first image at index 0 via the else branch above.
+            }
+
+            foreach ($this->resolveSizeChartMeta($product, $reader, $imageMigrator) as $meta) {
+                $data['meta_data'][] = $meta;
             }
 
             $result = $woo->createOrFind('products', $data, 'sku', $product->sku);
@@ -411,8 +419,11 @@ class MigrateProductBatchJob implements ShouldQueue
         }
     }
 
-    /** @param  array<int, object>  $slots */
-    public static function renderVideoSlots(array $slots): string
+    /**
+     * @param  array<int, object>  $slots
+     * @param  array<string, mixed>  $slotConfigOverrides  Per-product slot config from product_translation.slot_config, keyed by slot id.
+     */
+    public static function renderVideoSlots(array $slots, array $slotConfigOverrides = []): string
     {
         $out = '';
         foreach ($slots as $slot) {
@@ -420,6 +431,12 @@ class MigrateProductBatchJob implements ShouldQueue
             if (! is_array($config)) {
                 continue;
             }
+
+            $slotId = $slot->slot_id ?? null;
+            if (is_string($slotId) && isset($slotConfigOverrides[$slotId]) && is_array($slotConfigOverrides[$slotId])) {
+                $config = array_replace($config, $slotConfigOverrides[$slotId]);
+            }
+
             $id = $config['videoID']['value'] ?? null;
             if (! is_string($id) || $id === '') {
                 continue;
@@ -453,6 +470,61 @@ class MigrateProductBatchJob implements ShouldQueue
         }
 
         return $out;
+    }
+
+    /**
+     * Extract the size-chart media UUID from a product's custom_fields JSON, or null.
+     */
+    public static function sizeChartMediaId(?string $customFieldsJson): ?string
+    {
+        if ($customFieldsJson === null || $customFieldsJson === '') {
+            return null;
+        }
+        $fields = json_decode($customFieldsJson, true);
+        if (! is_array($fields)) {
+            return null;
+        }
+        $key = (string) config('migration.size_chart.custom_field');
+        $value = $fields[$key] ?? null;
+
+        return (is_string($value) && $value !== '') ? $value : null;
+    }
+
+    /**
+     * Upload the product's size-chart image (if any) to WordPress and return the
+     * meta entries pointing at the uploaded attachment.
+     *
+     * @return array<int, array{key: string, value: int|string}>
+     */
+    protected function resolveSizeChartMeta(object $product, ProductReader $reader, ImageMigrator $imageMigrator): array
+    {
+        $mediaId = self::sizeChartMediaId(is_string($product->custom_fields ?? null) ? $product->custom_fields : null);
+        if ($mediaId === null) {
+            return [];
+        }
+
+        $media = $reader->fetchMediaById($mediaId);
+        if ($media === null || empty($media->file_name) || empty($media->file_extension)) {
+            $this->log('warning', "Size-chart media {$mediaId} not found or incomplete", $product->id);
+
+            return [];
+        }
+
+        $url = $imageMigrator->buildShopwareMediaUrl($media->media_id, $media->file_name, $media->file_extension, isset($media->uploaded_at) ? (int) $media->uploaded_at : null);
+        $attachmentId = $imageMigrator->migrate($url, "{$media->file_name}.{$media->file_extension}", $media->title ?? '', $media->alt ?? '', $media->media_id, ['image/', 'application/pdf']);
+        if (! $attachmentId) {
+            $this->log('warning', "Size-chart image upload failed for media {$mediaId}", $product->id);
+
+            return [];
+        }
+
+        $meta = [['key' => (string) config('migration.size_chart.meta.image_id'), 'value' => $attachmentId]];
+        $wpUrl = $imageMigrator->getWordPressMediaUrl($attachmentId);
+        if ($wpUrl !== null) {
+            $meta[] = ['key' => (string) config('migration.size_chart.meta.image_url'), 'value' => $wpUrl];
+        }
+
+        return $meta;
     }
 
     protected function log(string $level, string $message, ?string $shopwareId = null, ?string $entityType = null): void

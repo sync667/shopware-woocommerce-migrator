@@ -5,7 +5,7 @@ A Laravel 12 web application with an Inertia.js + React dashboard that migrates 
 ## Features
 
 **Core migration**
-- **Ordered pipeline:** Manufacturers → Taxes → Categories → Products (+ variants, media, cross-sells) → Customers → Orders → Coupons → Reviews → Shipping Methods → Payment Methods → SEO URLs → (optional: CMS Pages, Product Streams, Newsletter, Wishlists)
+- **Ordered pipeline:** Manufacturers → Taxes → Categories → Products (+ variants, media, cross-sells, CMS videos, size charts) → Customers → Orders → Coupons → Reviews → Shipping Methods → Payment Methods → SEO URLs → (optional: CMS Pages, Product Streams, Newsletter, Wishlists)
 - **Per-migration settings:** every run stores its own source/target config and feature toggles
 - **Multi-storefront / multi-version safe:** all readers filter by `liveVersionIdBin()`; SEO URLs are deduplicated per `(path, foreign_key)` so multi-sales-channel shops don't produce duplicate redirects
 - **Async job processing:** Laravel Horizon queues with retry/backoff; `heavy` queue for cleanup and `products`/`customers`/`orders`/`coupons`/`reviews` queues for batched entities
@@ -31,6 +31,8 @@ A Laravel 12 web application with an Inertia.js + React dashboard that migrates 
 **Plumbing**
 - **Real-time dashboard:** live per-entity status cards, current step, ETA, last activity, recent errors/warnings
 - **Image migration:** downloads from Shopware (with anti-adblocker URL rewriting), validates real MIME via finfo, aligns extension, uploads to WP Media Library
+- **Product CMS videos:** YouTube/Vimeo slots from the product's CMS layout are appended to the description as Gutenberg `wp:embed` blocks. Per-product `product_translation.slot_config` overrides take precedence over the shared layout default, so each product keeps its own video.
+- **Size chart ("Rozmiarówka"):** the size-chart media custom field (`migration.size_chart.custom_field`) is uploaded to the WP Media Library (images **and** PDFs) and exposed on the product as `_size_chart_image_id` + `_size_chart_image_url` meta for the theme to render
 - **Password migration:** Shopware bcrypt hash preserved as `_shopware_password_hash` user meta + legacy SW5 hash + encoder preserved separately; customers get a forced reset on first login
 - **SSH tunnel:** connect to Shopware MySQL via a jump host (password or key)
 - **SQL dump upload:** import directly from a `.sql` / `.sql.gz` dump instead of connecting to Shopware live
@@ -228,6 +230,22 @@ php artisan shopware:migrate --cms-ids=abc123,def456 [... other options]
 ```
 
 > **Note:** the optional features added in recent releases — Omnibus pricing, newsletter export, wishlist export, cleanup-safety modes (`delete_media`, `media_mode`) — are wired through the dashboard / `POST /api/migrations` payload but not yet exposed as `php artisan shopware:migrate` flags. Use the web UI to enable them, or POST directly to the API.
+
+### Post-migration repair commands
+
+One-off, idempotent commands for repairing data after a run. All accept `--dry-run`.
+
+```bash
+# Repair WC order dates (created/updated/paid/completed) from Shopware
+php artisan shopware:fix-order-dates {migration} [--dry-run]
+
+# Backfill product size-chart images/PDFs (Rozmiarówka) → WP media + _size_chart_image_{id,url} meta.
+# Use --sw-base-url / --wc-url when the source or target host has moved since the run
+# (stored base URLs go stale after go-live).
+php artisan shopware:backfill-size-charts {migration} \
+  --sw-base-url=https://old.example.com \
+  --wc-url=https://shop.example.com [--dry-run] [--limit=0]
+```
 
 ## Migration Steps
 

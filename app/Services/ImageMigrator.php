@@ -51,7 +51,24 @@ class ImageMigrator
         );
     }
 
-    public function migrate(string $imageUrl, string $filename, string $title = '', string $altText = '', ?string $shopwareMediaId = null): ?int
+    /**
+     * Override the Shopware base URL used to build media download URLs. Needed by
+     * post-migration jobs when the source host has moved since the run (the stored
+     * base_url may now point at the live WooCommerce host).
+     */
+    public function setShopwareBaseUrl(string $shopwareBaseUrl): static
+    {
+        $this->shopwareBaseUrl = rtrim($shopwareBaseUrl, '/');
+
+        return $this;
+    }
+
+    /**
+     * @param  array<int, string>  $allowedMimePrefixes  Content-type prefixes accepted for upload.
+     *                                                   Defaults to images only; callers handling
+     *                                                   documents (e.g. PDF size charts) widen it.
+     */
+    public function migrate(string $imageUrl, string $filename, string $title = '', string $altText = '', ?string $shopwareMediaId = null, array $allowedMimePrefixes = ['image/']): ?int
     {
         // Skip-and-reuse path: if this Shopware media was already uploaded by a previous
         // migration of this tool (any run), the operator most likely doesn't want a
@@ -75,10 +92,15 @@ class ImageMigrator
             // so uploading HTML (soft-404) or a JPEG named .png causes rest_upload_sideload_error.
             $mimeType = $this->detectMimeType($contents);
 
-            if (! $mimeType || ! str_starts_with($mimeType, 'image/')) {
-                Log::warning("Skipping non-image content for {$filename}", [
+            $mimeAllowed = $mimeType !== null && array_any(
+                $allowedMimePrefixes,
+                fn (string $prefix) => str_starts_with($mimeType, $prefix),
+            );
+            if (! $mimeAllowed) {
+                Log::warning("Skipping disallowed content type for {$filename}", [
                     'url' => $imageUrl,
                     'detected_mime' => $mimeType ?? 'unknown',
+                    'allowed' => $allowedMimePrefixes,
                 ]);
 
                 return null;
@@ -248,6 +270,7 @@ class ImageMigrator
             'image/gif' => 'gif',
             'image/webp' => 'webp',
             'image/svg+xml' => 'svg',
+            'application/pdf' => 'pdf',
         ];
 
         $correctExt = $extByMime[$mimeType] ?? null;

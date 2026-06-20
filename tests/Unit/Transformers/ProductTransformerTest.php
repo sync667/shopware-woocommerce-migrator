@@ -628,4 +628,38 @@ class ProductTransformerTest extends TestCase
         $this->assertNotNull($meta);
         $this->assertSame('2026-06-01 09:00:00', $meta['value']);
     }
+
+    public function test_ordinary_custom_field_emitted_as_sw_cf_meta(): void
+    {
+        $product = $this->makeProduct([
+            'custom_fields' => json_encode(['some_other_field' => 'keep-me']),
+        ]);
+        $result = $this->transformer->transform($product);
+        $meta = collect($result['meta_data'])->firstWhere('key', '_sw_cf_some_other_field');
+
+        $this->assertNotNull($meta);
+        $this->assertSame('keep-me', $meta['value']);
+    }
+
+    public function test_size_chart_custom_field_not_emitted_as_raw_sw_cf_meta(): void
+    {
+        config(['migration.size_chart.custom_field' => 'product_additional_fields_size']);
+
+        $product = $this->makeProduct([
+            'custom_fields' => json_encode([
+                'product_additional_fields_size' => 'cf5220bffd1d4512add78744271b4db6',
+                'some_other_field' => 'keep-me',
+            ]),
+        ]);
+        $result = $this->transformer->transform($product);
+
+        $hasRawSizeChart = collect($result['meta_data'])
+            ->contains(fn ($m) => $m['key'] === '_sw_cf_product_additional_fields_size');
+        $this->assertFalse($hasRawSizeChart, 'Raw size-chart UUID meta should be suppressed');
+
+        $this->assertNotNull(
+            collect($result['meta_data'])->firstWhere('key', '_sw_cf_some_other_field'),
+            'Other custom fields should still pass through'
+        );
+    }
 }
