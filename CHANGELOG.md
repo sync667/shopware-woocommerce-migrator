@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0](https://github.com/sync667/shopware-woocommerce-migrator/compare/v0.6.0...v0.7.0) (2026-06-21)
+
+
+### Features
+
+* add GMT date fields to order transformation and normalize timestamps ([845274a](https://github.com/sync667/shopware-woocommerce-migrator/commit/845274aab892242d18c0ac8b068c4325dad72d2b))
+* add size chart media handling and per-product video slot configuration overrides ([09ab762](https://github.com/sync667/shopware-woocommerce-migrator/commit/09ab762116e4145ac66251efdc845138d90a41f0))
+* implement layout image handling for product descriptions with per-product overrides ([0f47072](https://github.com/sync667/shopware-woocommerce-migrator/commit/0f47072462d92780d30a526bc61c8b2177543d26))
+* persist parent product's Shopware ID in variant migration and update SEO URL handling ([da959db](https://github.com/sync667/shopware-woocommerce-migrator/commit/da959db3915ba59a29b4875506a43772812799ca))
+
 ## [0.6.0](https://github.com/sync667/shopware-woocommerce-migrator/compare/v0.5.0...v0.6.0) (2026-06-15)
 
 
