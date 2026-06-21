@@ -151,4 +151,118 @@ class MigrateProductBatchJobTest extends TestCase
 
         $this->assertSame('', $out);
     }
+
+    public function test_resolve_layout_image_media_override_beats_default_and_preserves_order(): void
+    {
+        $slots = [
+            (object) ['slot_id' => 's1', 'media' => 'defaultA'],
+            (object) ['slot_id' => 's2', 'media' => 'defaultB'],
+        ];
+        $overrides = ['s1' => ['media' => ['value' => 'overrideA']]];
+
+        $ids = MigrateProductBatchJob::resolveLayoutImageMediaIds($slots, $overrides, []);
+
+        $this->assertSame(['overrideA', 'defaultB'], $ids);
+    }
+
+    public function test_resolve_layout_image_media_skips_gallery_and_cover(): void
+    {
+        $slots = [
+            (object) ['slot_id' => 's1', 'media' => 'inGallery'],
+            (object) ['slot_id' => 's2', 'media' => 'uniqueImg'],
+        ];
+
+        $ids = MigrateProductBatchJob::resolveLayoutImageMediaIds($slots, [], ['ingallery']);
+
+        $this->assertSame(['uniqueImg'], $ids);
+    }
+
+    public function test_resolve_layout_image_media_null_override_clears_slot_no_default_fallback(): void
+    {
+        // Product explicitly cleared the image (slot_config media.value = null) — must NOT
+        // fall back to the layout default.
+        $slots = [
+            (object) ['slot_id' => 's1', 'media' => 'layoutDefault'],
+        ];
+        $overrides = ['s1' => ['media' => ['source' => 'static', 'value' => null]]];
+
+        $ids = MigrateProductBatchJob::resolveLayoutImageMediaIds($slots, $overrides, []);
+
+        $this->assertSame([], $ids);
+    }
+
+    public function test_resolve_layout_image_media_uses_default_when_no_override_entry(): void
+    {
+        // No slot_config entry for the slot at all → layout default applies.
+        $slots = [
+            (object) ['slot_id' => 's1', 'media' => 'layoutDefault'],
+        ];
+
+        $ids = MigrateProductBatchJob::resolveLayoutImageMediaIds($slots, ['other' => ['media' => ['value' => 'x']]], []);
+
+        $this->assertSame(['layoutDefault'], $ids);
+    }
+
+    public function test_resolve_layout_image_media_skips_null_and_dedupes_within_product(): void
+    {
+        $slots = [
+            (object) ['slot_id' => 's1', 'media' => 'imgX'],
+            (object) ['slot_id' => 's2', 'media' => null],
+            (object) ['slot_id' => 's3', 'media' => 'imgX'],
+        ];
+
+        $ids = MigrateProductBatchJob::resolveLayoutImageMediaIds($slots, [], []);
+
+        $this->assertSame(['imgX'], $ids);
+    }
+
+    public function test_render_layout_images_block_wraps_markers_and_emits_wp_image(): void
+    {
+        $out = MigrateProductBatchJob::renderLayoutImagesBlock([
+            ['id' => 12, 'url' => 'https://wp/a.jpg', 'alt' => 'Alpha'],
+            ['id' => 34, 'url' => 'https://wp/b.png', 'alt' => ''],
+        ]);
+
+        $this->assertStringContainsString('<!-- sw:layout-images:start -->', $out);
+        $this->assertStringContainsString('<!-- sw:layout-images:end -->', $out);
+        $this->assertSame(2, substr_count($out, '<!-- wp:image'));
+        $this->assertStringContainsString('"id":12', $out);
+        $this->assertStringContainsString('https://wp/a.jpg', $out);
+        $this->assertStringContainsString('wp-image-34', $out);
+        $this->assertStringContainsString('alt="Alpha"', $out);
+    }
+
+    public function test_render_layout_images_block_empty_returns_empty_string(): void
+    {
+        $this->assertSame('', MigrateProductBatchJob::renderLayoutImagesBlock([]));
+    }
+
+    public function test_render_layout_images_block_escapes_html_in_url_and_alt(): void
+    {
+        $out = MigrateProductBatchJob::renderLayoutImagesBlock([
+            ['id' => 1, 'url' => 'https://wp/x.jpg?a="><script>', 'alt' => 'a"><b>'],
+        ]);
+
+        $this->assertStringNotContainsString('<script>', $out);
+        $this->assertStringNotContainsString('<b>', $out);
+        $this->assertStringContainsString('&quot;', $out);
+    }
+
+    public function test_strip_layout_images_block_removes_existing_marker_block(): void
+    {
+        $desc = 'KEEP TEXT'.MigrateProductBatchJob::renderLayoutImagesBlock([
+            ['id' => 5, 'url' => 'https://wp/old.jpg', 'alt' => ''],
+        ]);
+
+        $stripped = MigrateProductBatchJob::stripLayoutImagesBlock($desc);
+
+        $this->assertSame('KEEP TEXT', $stripped);
+        $this->assertStringNotContainsString('old.jpg', $stripped);
+        $this->assertStringNotContainsString('sw:layout-images', $stripped);
+    }
+
+    public function test_strip_layout_images_block_noop_when_absent(): void
+    {
+        $this->assertSame('just a description', MigrateProductBatchJob::stripLayoutImagesBlock('just a description'));
+    }
 }

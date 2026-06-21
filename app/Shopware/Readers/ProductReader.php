@@ -428,6 +428,37 @@ class ProductReader
         ", [$this->db->languageIdBin(), $cmsPageId, $this->db->liveVersionIdBin()]);
     }
 
+    /**
+     * Ordered `image` CMS slots for a product's layout, with each slot's layout-default
+     * media UUID. Per-product overrides live in product_translation.slot_config (resolved
+     * by the caller). Ordered top-to-bottom: section → block → slot.
+     *
+     * @return array<int, object> rows with `slot_id` and `media` (default media hex or null)
+     */
+    public function fetchImageSlots(string $cmsPageId): array
+    {
+        if ($cmsPageId === '') {
+            return [];
+        }
+
+        return $this->db->select("
+            SELECT
+                LOWER(HEX(cs.id)) AS slot_id,
+                LOWER(JSON_UNQUOTE(JSON_EXTRACT(cst.config, '$.media.value'))) AS media
+            FROM cms_slot cs
+            JOIN cms_block cb ON cb.id = cs.cms_block_id
+            JOIN cms_section cse ON cse.id = cb.cms_section_id
+            LEFT JOIN cms_slot_translation cst
+                ON cst.cms_slot_id = cs.id
+                AND cst.cms_slot_version_id = cs.version_id
+                AND cst.language_id = ?
+            WHERE cse.cms_page_id = UNHEX(?)
+              AND cs.version_id = ?
+              AND cs.type = 'image'
+            ORDER BY cse.position ASC, cb.position ASC, cs.slot ASC
+        ", [$this->db->languageIdBin(), $cmsPageId, $this->db->liveVersionIdBin()]);
+    }
+
     public function fetchCrossSells(string $productId): array
     {
         // productList = manual list, productStream = dynamic (resolved via product_stream_mapping).

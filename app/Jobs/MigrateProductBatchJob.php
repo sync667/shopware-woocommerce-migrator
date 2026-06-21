@@ -278,6 +278,14 @@ class MigrateProductBatchJob implements ShouldQueue
                 $data['meta_data'][] = $meta;
             }
 
+            // Layout `image` slots (per-product slot_config overrides) appended to the
+            // description, skipping any media already shown in the gallery/cover.
+            $galleryMediaIds = array_map(static fn ($m) => strtolower((string) $m->media_id), $media);
+            $layoutImagesHtml = $this->buildLayoutImagesHtml($product, $reader, $imageMigrator, $galleryMediaIds);
+            if ($layoutImagesHtml !== '') {
+                $data['description'] = self::stripLayoutImagesBlock((string) ($data['description'] ?? '')).$layoutImagesHtml;
+            }
+
             $result = $woo->createOrFind('products', $data, 'sku', $product->sku);
             $wooProductId = $result['id'] ?? null;
 
@@ -473,6 +481,86 @@ class MigrateProductBatchJob implements ShouldQueue
     }
 
     /**
+     * Resolve a product's layout `image` slots to an ordered, de-duplicated list of media
+     * UUIDs to embed in the description. Per-product slot_config override (media.value) wins
+     * over the slot's layout default; images already in the product gallery/cover are skipped.
+     *
+     * @param  array<int, object>  $slots  ordered slots, each with ->slot_id and ->media (layout default)
+     * @param  array<string, mixed>  $overrides  decoded product_translation.slot_config
+     * @param  array<int, string>  $galleryMediaIds  lowercase-hex media ids already in the gallery/cover
+     * @return array<int, string>
+     */
+    public static function resolveLayoutImageMediaIds(array $slots, array $overrides, array $galleryMediaIds): array
+    {
+        $skip = array_flip(array_map('strtolower', $galleryMediaIds));
+        $out = [];
+        $seen = [];
+        foreach ($slots as $slot) {
+            $slotId = $slot->slot_id ?? null;
+
+            // A per-product slot_config override wins EXCLUSIVELY: if the product set a media
+            // override (even to null, i.e. cleared the image) we honour it and never fall back
+            // to the shared layout default. Only when there is no override entry at all do we
+            // use the layout default.
+            $override = is_string($slotId) && isset($overrides[$slotId]) && is_array($overrides[$slotId])
+                ? $overrides[$slotId]
+                : null;
+            if ($override !== null && array_key_exists('media', $override)) {
+                $mediaCfg = $override['media'];
+                $mediaId = is_array($mediaCfg) ? ($mediaCfg['value'] ?? null) : null;
+            } else {
+                $mediaId = $slot->media ?? null;
+            }
+
+            if (! is_string($mediaId) || $mediaId === '') {
+                continue;
+            }
+            if (isset($skip[strtolower($mediaId)]) || isset($seen[$mediaId])) {
+                continue;
+            }
+            $seen[$mediaId] = true;
+            $out[] = $mediaId;
+        }
+
+        return $out;
+    }
+
+    /**
+     * Render uploaded layout images as Gutenberg wp:image blocks, wrapped in markers so a
+     * backfill can strip-and-rebuild idempotently. Returns '' when there are no images.
+     *
+     * @param  array<int, array{id: int, url: string, alt: string}>  $images
+     */
+    public static function renderLayoutImagesBlock(array $images): string
+    {
+        if (empty($images)) {
+            return '';
+        }
+
+        $out = "\n<!-- sw:layout-images:start -->";
+        foreach ($images as $img) {
+            $id = (int) $img['id'];
+            $url = htmlspecialchars((string) $img['url'], ENT_QUOTES, 'UTF-8');
+            $alt = htmlspecialchars((string) ($img['alt'] ?? ''), ENT_QUOTES, 'UTF-8');
+            $out .= "\n<!-- wp:image {\"id\":{$id},\"sizeSlug\":\"large\",\"linkDestination\":\"none\"} -->\n"
+                ."<figure class=\"wp-block-image size-large\"><img src=\"{$url}\" alt=\"{$alt}\" class=\"wp-image-{$id}\"/></figure>"
+                ."\n<!-- /wp:image -->";
+        }
+        $out .= "\n<!-- sw:layout-images:end -->";
+
+        return $out;
+    }
+
+    /**
+     * Remove a previously-appended layout-images marker block from a description so the
+     * backfill never accumulates duplicates across runs.
+     */
+    public static function stripLayoutImagesBlock(string $description): string
+    {
+        return preg_replace('/\n?<!-- sw:layout-images:start -->.*?<!-- sw:layout-images:end -->/s', '', $description) ?? $description;
+    }
+
+    /**
      * Extract the size-chart media UUID from a product's custom_fields JSON, or null.
      */
     public static function sizeChartMediaId(?string $customFieldsJson): ?string
@@ -525,6 +613,54 @@ class MigrateProductBatchJob implements ShouldQueue
         }
 
         return $meta;
+    }
+
+    /**
+     * Resolve, upload, and render a product's layout `image` slots as a marker-wrapped
+     * block of wp:image blocks, ready to append to the description. Returns '' when there
+     * are no eligible images.
+     *
+     * @param  array<int, string>  $galleryMediaIds  lowercase-hex media ids already in the gallery/cover
+     */
+    protected function buildLayoutImagesHtml(object $product, ProductReader $reader, ImageMigrator $imageMigrator, array $galleryMediaIds): string
+    {
+        if (empty($product->cms_page_id)) {
+            return '';
+        }
+
+        $slots = $reader->fetchImageSlots($product->cms_page_id);
+        if (empty($slots)) {
+            return '';
+        }
+
+        $overrides = json_decode(is_string($product->slot_config ?? null) ? $product->slot_config : '{}', true);
+        if (! is_array($overrides)) {
+            $overrides = [];
+        }
+
+        $mediaIds = self::resolveLayoutImageMediaIds($slots, $overrides, $galleryMediaIds);
+
+        $images = [];
+        foreach ($mediaIds as $mediaId) {
+            $media = $reader->fetchMediaById($mediaId);
+            if ($media === null || empty($media->file_name) || empty($media->file_extension)) {
+                continue;
+            }
+            $url = $imageMigrator->buildShopwareMediaUrl($media->media_id, $media->file_name, $media->file_extension, isset($media->uploaded_at) ? (int) $media->uploaded_at : null);
+            $attachmentId = $imageMigrator->migrate($url, "{$media->file_name}.{$media->file_extension}", $media->title ?? '', $media->alt ?? '', $media->media_id);
+            if (! $attachmentId) {
+                $this->log('warning', "Layout image upload failed for media {$mediaId}", $product->id);
+
+                continue;
+            }
+            $wpUrl = $imageMigrator->getWordPressMediaUrl($attachmentId);
+            if ($wpUrl === null) {
+                continue;
+            }
+            $images[] = ['id' => $attachmentId, 'url' => $wpUrl, 'alt' => $media->alt ?? ''];
+        }
+
+        return self::renderLayoutImagesBlock($images);
     }
 
     protected function log(string $level, string $message, ?string $shopwareId = null, ?string $entityType = null): void
